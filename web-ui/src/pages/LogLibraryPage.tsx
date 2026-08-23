@@ -49,7 +49,7 @@ export default function LogLibraryPage({ processes, reload }: Props) {
 
   // @group BusinessLogic > FlushLogs : Delete all log files for a process
   async function handleFlush(p: ProcessInfo) {
-    if (!confirm(`Delete all log files for "${p.name}"?`)) return
+    if (!confirm(`删除“${p.name}”的全部日志文件？`)) return
     setFlushing(p.id)
     try {
       await api.deleteLogs(p.id)
@@ -92,11 +92,11 @@ export default function LogLibraryPage({ processes, reload }: Props) {
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <ScrollText size={17} style={{ color: 'var(--color-primary)' }} />
-          <h2 style={{ fontSize: 16, fontWeight: 600, margin: 0 }}>Log Library</h2>
+          <h2 style={{ fontSize: 16, fontWeight: 600, margin: 0 }}>日志库</h2>
           <span style={{ fontSize: 11, color: 'var(--color-muted-foreground)' }}>
-            {processes.length} process{processes.length !== 1 ? 'es' : ''}
+            {processes.length} 个进程
             {' · '}
-            {stillLoading ? 'counting…' : `${totalDates} log date${totalDates !== 1 ? 's' : ''}`}
+            {stillLoading ? '统计中…' : `${totalDates} 个日志日期`}
           </span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -109,7 +109,7 @@ export default function LogLibraryPage({ processes, reload }: Props) {
             <input
               value={filter}
               onChange={e => setFilter(e.target.value)}
-              placeholder="Filter by name or namespace…"
+              placeholder="按名称或命名空间筛选…"
               style={{
                 paddingLeft: 26, paddingRight: 10, paddingTop: 5, paddingBottom: 5,
                 fontSize: 12, width: 220,
@@ -118,7 +118,7 @@ export default function LogLibraryPage({ processes, reload }: Props) {
               }}
             />
           </div>
-          <button onClick={reload} title="Refresh process list" style={smallBtn}>
+          <button onClick={reload} title="刷新进程列表" style={smallBtn}>
             <RefreshCw size={13} />
           </button>
         </div>
@@ -128,11 +128,11 @@ export default function LogLibraryPage({ processes, reload }: Props) {
       <div style={{ flex: 1, overflow: 'auto', padding: '12px 20px' }}>
         {processes.length === 0 ? (
           <div style={{ padding: 32, color: 'var(--color-muted-foreground)', textAlign: 'center' }}>
-            No processes registered yet.
+            尚未注册进程。
           </div>
         ) : visible.length === 0 ? (
           <div style={{ padding: 32, color: 'var(--color-muted-foreground)', textAlign: 'center' }}>
-            No processes match "{filter}".
+            没有匹配“{filter}”的进程。
           </div>
         ) : (
           sortedNs.map(ns => {
@@ -145,7 +145,7 @@ export default function LogLibraryPage({ processes, reload }: Props) {
                   color: 'var(--color-muted-foreground)', textTransform: 'uppercase',
                   marginBottom: 6, paddingLeft: 2,
                 }}>
-                  {ns} · {procs.length} process{procs.length !== 1 ? 'es' : ''}
+                  {ns} · {procs.length} 个进程
                 </div>
 
                 {/* Process cards */}
@@ -207,7 +207,7 @@ function LogRow({ p, meta, isLast, isFlushing, onView, onViewToday, onFlush }: {
         <span
           style={{ fontWeight: 600, fontSize: 13, cursor: 'pointer' }}
           onClick={onView}
-          title={`View logs for ${p.name}`}
+          title={`查看 ${p.name} 的日志`}
         >
           {p.name}
         </span>
@@ -231,17 +231,17 @@ function LogRow({ p, meta, isLast, isFlushing, onView, onViewToday, onFlush }: {
             {meta.dates.length > 0 && <DateBadges dates={meta.dates} onView={onView} />}
           </>
         ) : (
-          <span style={{ fontSize: 11, color: 'var(--color-muted-foreground)' }}>no logs</span>
+          <span style={{ fontSize: 11, color: 'var(--color-muted-foreground)' }}>无日志</span>
         )}
       </div>
 
       {/* Actions */}
       <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-        <button onClick={onView} style={viewBtn}>View Logs</button>
+        <button onClick={onView} style={viewBtn}>查看日志</button>
         <button
           onClick={onFlush}
           disabled={isFlushing}
-          title="Delete all log files for this process"
+          title="删除此进程的全部日志文件"
           style={{
             ...iconBtnBase,
             color: 'var(--color-destructive)',
@@ -258,13 +258,13 @@ function LogRow({ p, meta, isLast, isFlushing, onView, onViewToday, onFlush }: {
 // @group BusinessLogic > TodayBadge : Green "Today" chip shown when current out.log/err.log exists
 function TodayBadge({ onClick }: { onClick: () => void }) {
   return (
-    <span onClick={onClick} title="View today's live logs" style={{
+    <span onClick={onClick} title="查看今天的实时日志" style={{
       fontSize: 10, fontWeight: 600,
       padding: '1px 7px', borderRadius: 10,
       background: 'rgba(34,197,94,0.12)', color: 'var(--color-status-running)',
       border: '1px solid rgba(34,197,94,0.3)',
       cursor: 'pointer', whiteSpace: 'nowrap',
-    }}>Today</span>
+    }}>今天</span>
   )
 }
 
@@ -277,7 +277,7 @@ function DateBadges({ dates, onView }: { dates: string[]; onView: () => void }) 
   return (
     <div style={{ display: 'flex', gap: 4, alignItems: 'center', flexWrap: 'nowrap' }}>
       {visible.map(d => (
-        <span key={d} onClick={onView} title={`View logs for ${d}`} style={{
+        <span key={d} onClick={onView} title={`查看 ${d} 的日志`} style={{
           fontSize: 10, fontWeight: 500,
           padding: '1px 6px', borderRadius: 10,
           background: 'rgba(79,156,249,0.12)', color: 'var(--color-status-sleeping)',
@@ -289,7 +289,7 @@ function DateBadges({ dates, onView }: { dates: string[]; onView: () => void }) 
         <span style={{
           fontSize: 10, color: 'var(--color-muted-foreground)',
           padding: '1px 4px',
-        }}>+{extra} more</span>
+        }}>还有 {extra} 个</span>
       )}
     </div>
   )

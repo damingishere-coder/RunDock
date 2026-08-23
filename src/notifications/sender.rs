@@ -86,7 +86,7 @@ pub async fn fire_log_alert(
                         { "title": "Stderr",     "value": stderr_count.to_string(), "short": true },
                         { "title": "Threshold",  "value": threshold.to_string(),    "short": true },
                     ],
-                    "footer": "alter-pm2 · log alert",
+                    "footer": "RunDock · log alert",
                     "ts": Utc::now().timestamp(),
                 }]
             });
@@ -131,7 +131,7 @@ pub async fn fire_log_alert(
                         { "name": "Stderr",     "value": stderr_count.to_string(), "inline": true },
                         { "name": "Threshold",  "value": threshold.to_string(),   "inline": true },
                     ],
-                    "footer": { "text": "alter-pm2 · log alert" },
+                    "footer": { "text": "RunDock · log alert" },
                     "timestamp": Utc::now().to_rfc3339(),
                 }]
             });
@@ -315,7 +315,7 @@ async fn send_slack(client: &reqwest::Client, sl: &SlackTarget, proc: &ProcessIn
                 { "title": "Event",     "value": event.label(),                           "short": true },
                 { "title": "Status",    "value": format!("{:?}", proc.status).to_lowercase(), "short": true },
             ],
-            "footer": "alter-pm2",
+            "footer": "RunDock",
             "ts": Utc::now().timestamp(),
         }]
     });
@@ -333,7 +333,7 @@ async fn send_slack(client: &reqwest::Client, sl: &SlackTarget, proc: &ProcessIn
 
 // @group BusinessLogic > SendTeams : POST Microsoft Teams adaptive card
 async fn send_teams(client: &reqwest::Client, tm: &TeamsTarget, proc: &ProcessInfo, event: ProcessEvent) {
-    let summary = format!("{} {} — alter-pm2", proc.name, event.label());
+    let summary = format!("{} {} — RunDock", proc.name, event.label());
 
     let payload = json!({
         "@type":      "MessageCard",
@@ -419,7 +419,7 @@ async fn send_namespace_slack(
                 { "title": "Event",     "value": event.label(),      "short": true },
                 { "title": "Processes", "value": names.join(", "),   "short": false },
             ],
-            "footer": "alter-pm2",
+            "footer": "RunDock",
             "ts": Utc::now().timestamp(),
         }]
     });
@@ -454,7 +454,7 @@ async fn send_discord(client: &reqwest::Client, dc: &DiscordTarget, proc: &Proce
                 { "name": "Status",    "value": format!("{:?}", proc.status).to_lowercase(),   "inline": true },
                 { "name": "Restarts",  "value": proc.restart_count.to_string(),                "inline": true },
             ],
-            "footer": { "text": "alter-pm2" },
+            "footer": { "text": "RunDock" },
             "timestamp": Utc::now().to_rfc3339(),
         }]
     });
@@ -490,7 +490,7 @@ async fn send_namespace_discord(
                 { "name": "Count",     "value": processes.len().to_string(), "inline": true },
                 { "name": "Processes", "value": names.join(", "), "inline": false },
             ],
-            "footer": { "text": "alter-pm2" },
+            "footer": { "text": "RunDock" },
             "timestamp": Utc::now().to_rfc3339(),
         }]
     });

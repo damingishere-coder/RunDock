@@ -139,8 +139,8 @@ export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>
     const label = name
       ? name
       : resolvedCwd
-        ? resolvedCwd.split(/[\\/]/).filter(Boolean).pop() ?? 'terminal'
-        : 'terminal'
+        ? resolvedCwd.split(/[\\/]/).filter(Boolean).pop() ?? '终端'
+        : '终端'
     // Stable key: prefer process name, fall back to cwd, skip generic tabs
     const processKey = name
       ? `proc:${name}`
@@ -272,9 +272,9 @@ export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>
     instance.ws = ws
 
     ws.onopen  = () => { instance.connected = true }
-    ws.onerror = () => { term.writeln('\r\n\x1b[31m[connection error]\x1b[0m') }
+    ws.onerror = () => { term.writeln('\r\n\x1b[31m[连接错误]\x1b[0m') }
     ws.onclose = () => {
-      if (instance.connected) term.writeln('\r\n\x1b[33m[disconnected]\x1b[0m')
+      if (instance.connected) term.writeln('\r\n\x1b[33m[已断开连接]\x1b[0m')
       instance.connected = false
     }
     ws.onmessage = (e: MessageEvent) => {
@@ -283,8 +283,8 @@ export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>
       } else if (typeof e.data === 'string') {
         try {
           const msg = JSON.parse(e.data)
-          if (msg.type === 'error') term.writeln(`\r\n\x1b[31m[error] ${msg.message}\x1b[0m`)
-          else if (msg.type === 'exit') term.writeln(`\r\n\x1b[33m[process exited with code ${msg.code}]\x1b[0m`)
+          if (msg.type === 'error') term.writeln(`\r\n\x1b[31m[错误] ${msg.message}\x1b[0m`)
+          else if (msg.type === 'exit') term.writeln(`\r\n\x1b[33m[进程已退出，退出码 ${msg.code}]\x1b[0m`)
         } catch { term.write(e.data) }
       }
     }
@@ -487,7 +487,7 @@ export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>
         {/* Terminal label */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '0 10px', color: '#555', flexShrink: 0 }}>
           <SquareTerminal size={13} />
-          <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', opacity: 0.7 }}>Terminal</span>
+          <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', opacity: 0.7 }}>终端</span>
         </div>
 
         {/* Tab list */}
@@ -497,14 +497,14 @@ export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>
               <SquareTerminal size={11} style={{ opacity: 0.7, flexShrink: 0 }} />
               <span style={{ maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis' }}>{tab.title}</span>
               {tab.splitPaneId && (
-                <span title="Split pane active" style={{ display: 'flex', flexShrink: 0, marginLeft: 1, opacity: 0.45 }}>
+                <span title="拆分窗格已激活" style={{ display: 'flex', flexShrink: 0, marginLeft: 1, opacity: 0.45 }}>
                   <SquareSplitHorizontal size={9} />
                 </span>
               )}
               <button
                 style={{ ...iconBtnStyle, width: 16, height: 16, marginLeft: 2, color: '#666' }}
                 onClick={e => { e.stopPropagation(); closeTab(tab.id) }}
-                title="Close tab"
+                title="关闭标签页"
                 onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = '#f87171' }}
                 onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = '#666' }}
               >
@@ -516,7 +516,7 @@ export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>
 
         {/* New tab */}
         <button style={{ ...iconBtnStyle, marginLeft: 4, flexShrink: 0 }} onClick={() => addTab()}
-          title={`New terminal (${shortcuts.newTab})`}
+          title={`新建终端（${shortcuts.newTab}）`}
           onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = '#e8e8e8' }}
           onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = '#888' }}>
           <Plus size={13} />
@@ -524,7 +524,7 @@ export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>
 
         {/* Split pane */}
         <button style={{ ...iconBtnStyle, flexShrink: 0 }} onClick={splitActivePane}
-          title={`Split pane (${shortcuts.splitPane})`}
+          title={`拆分窗格（${shortcuts.splitPane}）`}
           onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = '#e8e8e8' }}
           onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = '#888' }}>
           <SquareSplitHorizontal size={13} />
@@ -534,7 +534,7 @@ export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>
         <button
           style={{ ...iconBtnStyle, flexShrink: 0, color: showHistory ? 'var(--color-primary)' : '#888' }}
           onClick={() => setShowHistory(s => !s)}
-          title="Command history"
+          title="命令历史"
           onMouseEnter={e => { if (!showHistory) (e.currentTarget as HTMLElement).style.color = '#e8e8e8' }}
           onMouseLeave={e => { if (!showHistory) (e.currentTarget as HTMLElement).style.color = showHistory ? 'var(--color-primary)' : '#888' }}
         >
@@ -545,7 +545,7 @@ export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>
 
         {/* Minimize */}
         <button style={{ ...iconBtnStyle, marginRight: 2 }} onClick={() => onChangePanelState('hidden')}
-          title="Minimize"
+          title="最小化"
           onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = '#e8e8e8' }}
           onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = '#888' }}>
           <ChevronDown size={14} />
@@ -553,7 +553,7 @@ export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>
 
         {/* Maximize / Restore */}
         <button style={{ ...iconBtnStyle, marginRight: 6 }} onClick={() => onChangePanelState(isMax ? 'normal' : 'maximized')}
-          title={isMax ? 'Restore' : 'Maximize'}
+          title={isMax ? '还原' : '最大化'}
           onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = '#e8e8e8' }}
           onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = '#888' }}>
           {isMax ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
@@ -584,7 +584,7 @@ export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>
                   <div style={{ width: 2, background: '#1e1e1e', flexShrink: 0 }} />
                   <div style={{ flex: 1, position: 'relative', minWidth: 0 }}>
                     <button
-                      title="Close split pane"
+                      title="关闭拆分窗格"
                       onClick={() => closeSplitPane(tab.id)}
                       style={{
                         position: 'absolute', top: 4, right: 6, zIndex: 10,
@@ -610,7 +610,7 @@ export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>
           {tabs.length === 0 && (
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#555', fontSize: 13, gap: 8 }}>
               <SquareTerminal size={18} />
-              <span>Click + to open a terminal</span>
+              <span>点击 + 打开终端</span>
             </div>
           )}
         </div>
@@ -631,20 +631,20 @@ export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>
               display: 'flex', alignItems: 'center', justifyContent: 'space-between',
               flexShrink: 0,
             }}>
-              <span>History</span>
+              <span>历史记录</span>
               <span style={{ color: '#3a3a3a', fontWeight: 400, fontSize: 11 }}>{activeHistory.length}</span>
             </div>
             <div style={{ flex: 1, overflowY: 'auto' }}>
               {activeHistory.length === 0
                 ? (
                   <div style={{ padding: '12px 10px', fontSize: 11, color: '#3a3a3a', fontStyle: 'italic' }}>
-                    No commands yet — type something!
+                    暂无命令记录，请输入内容！
                   </div>
                 )
                 : activeHistory.map(({ cmd, count }) => (
                   <div
                     key={cmd}
-                    title={`${cmd}\nClick to paste`}
+                    title={`${cmd}\n点击粘贴`}
                     onClick={() => pasteToTerminal(cmd)}
                     style={{
                       display: 'flex', alignItems: 'center', gap: 6,
@@ -699,7 +699,7 @@ export function TerminalStatusBarBtn({
     <button
       style={style}
       onClick={onToggle}
-      title={active ? 'Hide terminal' : 'Show terminal'}
+      title={active ? '隐藏终端' : '显示终端'}
       onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'color-mix(in srgb, var(--color-foreground) 10%, transparent)' }}
       onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = active ? 'color-mix(in srgb, var(--color-foreground) 10%, transparent)' : 'transparent' }}
     >

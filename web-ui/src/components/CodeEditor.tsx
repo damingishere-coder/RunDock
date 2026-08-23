@@ -66,7 +66,7 @@ export function CodeEditor({ value, onChange, language, height = 300, readOnly =
           {language ?? 'text'}
         </span>
         <span style={{ fontSize: 11, color: 'var(--color-muted-foreground)' }}>
-          {lineCount} {lineCount === 1 ? 'line' : 'lines'}
+          {lineCount} 行
         </span>
       </div>
 

@@ -39,6 +39,17 @@ function stateColor(state: string): string {
   }
 }
 
+function stateLabel(state: string): string {
+  switch (state.toUpperCase()) {
+    case 'LISTENING': return '监听中'
+    case 'ESTABLISHED': return '已建立'
+    case 'TIME_WAIT': return '等待关闭'
+    case 'CLOSE_WAIT': return '等待关闭'
+    case 'FIN_WAIT_2': return '等待结束'
+    default: return state
+  }
+}
+
 // @group Utilities > Ports : Detect whether a local_address is IPv6
 function isIPv6(addr: string): boolean {
   return addr.startsWith('[') || (addr.match(/:/g) ?? []).length >= 2
@@ -76,7 +87,7 @@ export default function PortFinderPage() {
       setPorts(data)
       lastLoadRef.current = Date.now()
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Failed to load ports')
+      setError(e instanceof Error ? e.message : '加载端口失败')
     } finally {
       setLoading(false)
     }
@@ -95,10 +106,10 @@ export default function PortFinderPage() {
         await new Promise(r => setTimeout(r, 400))
         await load()
       } else {
-        setKillError({ pid, msg: result.error ?? 'Kill failed' })
+        setKillError({ pid, msg: result.error ?? '终止进程失败' })
       }
     } catch {
-      setKillError({ pid, msg: 'Network error' })
+      setKillError({ pid, msg: '网络错误' })
     } finally {
       setKillingPid(null)
     }
@@ -234,7 +245,7 @@ export default function PortFinderPage() {
 
         <Td>
           {entry.state
-            ? <span style={{ color: stateColor(entry.state), fontSize: 11, fontWeight: 500 }}>{entry.state}</span>
+            ? <span style={{ color: stateColor(entry.state), fontSize: 11, fontWeight: 500 }}>{stateLabel(entry.state)}</span>
             : <span style={{ color: 'var(--color-muted-foreground)', fontSize: 11 }}>—</span>
           }
         </Td>
@@ -264,7 +275,7 @@ export default function PortFinderPage() {
                 {entry.process_name}
               </span>
             )
-            : <span style={{ color: 'var(--color-muted-foreground)', fontSize: 11 }}>Idle</span>
+            : <span style={{ color: 'var(--color-muted-foreground)', fontSize: 11 }}>空闲</span>
           }
         </Td>
 
@@ -275,7 +286,7 @@ export default function PortFinderPage() {
             <button
               onClick={() => handleTunnel(entry.port, entry.process_name)}
               disabled={tunnelingPort === entry.port}
-              title={`Tunnel port ${entry.port} publicly`}
+              title={`将端口 ${entry.port} 暴露到公网`}
               style={{
                 display: 'inline-flex', alignItems: 'center', gap: 4,
                 padding: '2px 8px', fontSize: 10, fontWeight: 500,
@@ -289,7 +300,7 @@ export default function PortFinderPage() {
               }}
             >
               <Globe size={10} />
-              {tunnelingPort === entry.port ? '…' : tunneledPort === entry.port ? 'Done' : 'Tunnel'}
+              {tunnelingPort === entry.port ? '…' : tunneledPort === entry.port ? '完成' : '隧道'}
             </button>
           )}
 
@@ -305,26 +316,26 @@ export default function PortFinderPage() {
           {!hasError && killable && (
             confirming ? (
               <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                <span style={{ fontSize: 10, color: 'var(--color-muted-foreground)', whiteSpace: 'nowrap' }}>Kill?</span>
+                <span style={{ fontSize: 10, color: 'var(--color-muted-foreground)', whiteSpace: 'nowrap' }}>终止？</span>
                 <button
                   onClick={() => handleKill(entry.pid!)}
                   disabled={killing}
                   style={{ padding: '2px 7px', fontSize: 10, fontWeight: 600, background: 'var(--color-destructive)', color: '#fff', border: 'none', borderRadius: 3, cursor: 'pointer', opacity: killing ? 0.5 : 1 }}
                 >
-                  {killing ? '…' : 'Yes'}
+                  {killing ? '…' : '是'}
                 </button>
                 <button
                   onClick={() => setConfirmingPid(null)}
                   disabled={killing}
                   style={{ padding: '2px 7px', fontSize: 10, fontWeight: 500, background: 'var(--color-secondary)', color: 'var(--color-foreground)', border: '1px solid var(--color-border)', borderRadius: 3, cursor: 'pointer' }}
                 >
-                  No
+                  否
                 </button>
               </div>
             ) : (
               <button
                 onClick={() => { setKillError(null); setConfirmingPid(entry.pid!) }}
-                title={`Kill ${entry.process_name ?? 'process'} (PID ${entry.pid})`}
+                title={`终止 ${entry.process_name ?? '进程'}（PID ${entry.pid}）`}
                 style={{
                   width: 26, height: 26, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
                   background: 'color-mix(in srgb, var(--color-destructive) 12%, transparent)',
@@ -358,10 +369,10 @@ export default function PortFinderPage() {
       }}>
         <div style={{ flex: 1 }}>
           <h1 style={{ margin: 0, fontSize: 16, fontWeight: 600, color: 'var(--color-foreground)' }}>
-            Port Finder
+            端口查找
           </h1>
           <div style={{ fontSize: 11, color: 'var(--color-muted-foreground)', marginTop: 2 }}>
-            {loading ? 'Loading…' : error ? error : `${filtered.length} entries · ${grouped.length} groups · updated ${lastLoad}`}
+            {loading ? '加载中…' : error ? error : `${filtered.length} 个条目 · ${grouped.length} 个分组 · 更新于 ${lastLoad}`}
           </div>
         </div>
 
@@ -376,7 +387,7 @@ export default function PortFinderPage() {
                 borderRadius: 4, cursor: 'pointer', color: 'var(--color-foreground)',
               }}
             >
-              Expand All
+              全部展开
             </button>
             <button
               onClick={() => setOpenPorts(new Set())}
@@ -386,7 +397,7 @@ export default function PortFinderPage() {
                 borderRadius: 4, cursor: 'pointer', color: 'var(--color-foreground)',
               }}
             >
-              Collapse All
+              全部收起
             </button>
           </div>
         )}
@@ -394,7 +405,7 @@ export default function PortFinderPage() {
         <button
           onClick={load}
           disabled={loading}
-          title="Refresh"
+          title="刷新"
           style={{
             display: 'flex', alignItems: 'center', gap: 5,
             padding: '5px 10px', fontSize: 12, fontWeight: 500,
@@ -404,7 +415,7 @@ export default function PortFinderPage() {
           }}
         >
           <RefreshCw size={12} style={{ animation: loading ? 'spin 1s linear infinite' : undefined }} />
-          Refresh
+          刷新
         </button>
       </div>
 
@@ -421,7 +432,7 @@ export default function PortFinderPage() {
           }} />
           <input
             type="text"
-            placeholder="Filter by port, process or address…"
+            placeholder="按端口、进程或地址筛选…"
             value={search}
             onChange={e => setSearch(e.target.value)}
             style={{
@@ -464,7 +475,7 @@ export default function PortFinderPage() {
               background: stateFilter === s ? 'var(--color-primary)' : 'var(--color-secondary)',
               color: stateFilter === s ? '#fff' : 'var(--color-foreground)',
             }}>
-              {s === 'ALL' ? 'All States' : s === 'LISTENING' ? 'Listening' : 'Established'}
+              {s === 'ALL' ? '全部状态' : s === 'LISTENING' ? '监听中' : '已建立'}
             </button>
           ))}
         </div>
@@ -484,7 +495,7 @@ export default function PortFinderPage() {
             }}
           >
             {processNames.map(n => (
-              <option key={n} value={n}>{n === 'ALL' ? 'All Processes' : n}</option>
+              <option key={n} value={n}>{n === 'ALL' ? '全部进程' : n}</option>
             ))}
           </select>
         )}
@@ -502,14 +513,14 @@ export default function PortFinderPage() {
           <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
             <thead>
               <tr>
-                <Th width={64}>Port</Th>
-                <Th width={64}>Protocol</Th>
-                <Th width={108}>State</Th>
-                <Th width={180}>Local Address</Th>
-                <Th width={180}>Remote Address</Th>
+                <Th width={64}>端口</Th>
+                <Th width={64}>协议</Th>
+                <Th width={108}>状态</Th>
+                <Th width={180}>本地地址</Th>
+                <Th width={180}>远程地址</Th>
                 <Th width={64} right>PID</Th>
-                <Th>Process</Th>
-                <Th width={110}>Actions</Th>
+                <Th>进程</Th>
+                <Th width={110}>操作</Th>
               </tr>
             </thead>
             <tbody>
@@ -519,7 +530,7 @@ export default function PortFinderPage() {
                     padding: '32px 20px', textAlign: 'center',
                     fontSize: 13, color: 'var(--color-muted-foreground)',
                   }}>
-                    {ports.length === 0 ? 'No ports found' : 'No matching ports'}
+                    {ports.length === 0 ? '未找到端口' : '没有匹配的端口'}
                   </td>
                 </tr>
               )}
@@ -601,7 +612,7 @@ export default function PortFinderPage() {
 
                           {/* Entry count */}
                           <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--color-muted-foreground)', opacity: 0.6 }}>
-                            {all.length} {all.length === 1 ? 'entry' : 'entries'}
+                            {all.length} 个条目
                           </span>
                         </div>
                       </td>
@@ -619,7 +630,7 @@ export default function PortFinderPage() {
                               background: 'color-mix(in srgb, var(--color-status-sleeping) 5%, transparent)',
                               borderBottom: '1px solid var(--color-border)',
                             }}>
-                              IPv4 · {ipv4.length} {ipv4.length === 1 ? 'entry' : 'entries'}
+                              IPv4 · {ipv4.length} 个条目
                             </td>
                           </tr>
                         )}
@@ -641,7 +652,7 @@ export default function PortFinderPage() {
                               background: 'color-mix(in srgb, var(--color-status-running) 5%, transparent)',
                               borderBottom: '1px solid var(--color-border)',
                             }}>
-                              IPv6 · {ipv6.length} {ipv6.length === 1 ? 'entry' : 'entries'}
+                              IPv6 · {ipv6.length} 个条目
                             </td>
                           </tr>
                         )}

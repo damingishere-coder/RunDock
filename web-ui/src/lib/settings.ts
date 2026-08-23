@@ -104,20 +104,20 @@ export async function resetSettings(): Promise<AppSettings> {
 
 // @group Constants : Refresh interval options for the dropdown
 export const REFRESH_INTERVAL_OPTIONS: { label: string; value: number }[] = [
-  { label: '1 second',   value: 1000  },
-  { label: '2 seconds',  value: 2000  },
-  { label: '3 seconds',  value: 3000  },
-  { label: '5 seconds',  value: 5000  },
-  { label: '10 seconds', value: 10000 },
-  { label: '30 seconds', value: 30000 },
-  { label: '1 minute',   value: 60000 },
+  { label: '1 秒',   value: 1000  },
+  { label: '2 秒',  value: 2000  },
+  { label: '3 秒',  value: 3000  },
+  { label: '5 秒',  value: 5000  },
+  { label: '10 秒', value: 10000 },
+  { label: '30 秒', value: 30000 },
+  { label: '1 分钟',   value: 60000 },
 ]
 
 // @group Constants : Log tail line count options
 export const LOG_TAIL_OPTIONS: { label: string; value: number }[] = [
-  { label: '50 lines',   value: 50   },
-  { label: '100 lines',  value: 100  },
-  { label: '200 lines',  value: 200  },
-  { label: '500 lines',  value: 500  },
-  { label: '1000 lines', value: 1000 },
+  { label: '50 行',   value: 50   },
+  { label: '100 行',  value: 100  },
+  { label: '200 行',  value: 200  },
+  { label: '500 行',  value: 500  },
+  { label: '1000 行', value: 1000 },
 ]

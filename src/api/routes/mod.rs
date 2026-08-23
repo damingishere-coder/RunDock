@@ -10,6 +10,7 @@ pub mod metrics;
 pub mod notifications;
 pub mod ports;
 pub mod processes;
+pub mod projects;
 pub mod scripts;
 pub mod system;
 pub mod telegram;

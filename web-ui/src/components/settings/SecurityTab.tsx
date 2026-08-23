@@ -1,12 +1,17 @@
 // @group BusinessLogic > SecurityTab : Security settings — password, PIN, session lock
 
 import { useEffect, useState } from 'react'
-import { Check, Eye, EyeOff, Lock, Shield } from 'lucide-react'
+import { Check, Eye, EyeOff, Lock, Shield, ShieldOff } from 'lucide-react'
 import { api } from '@/lib/api'
+import { clearSessionToken, setSessionToken } from '@/lib/auth'
+import { Dialog } from '@/components/Dialog'
+import { useDialog } from '@/hooks/useDialog'
 import { card, inputStyle, sectionTitle, selectStyle, SettingRow } from './shared'
 
 export default function SecurityTab() {
+  const { dialogState, danger, handleConfirm, handleCancel } = useDialog()
   // @group BusinessLogic > Security : Change password state
+  const [passwordConfigured, setPasswordConfigured] = useState(false)
   const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [confirmNewPassword, setConfirmNewPassword] = useState('')
@@ -31,24 +36,60 @@ export default function SecurityTab() {
 
   useEffect(() => {
     api.authStatus().then(s => {
+      setPasswordConfigured(s.password_configured)
       setPinConfigured(s.pin_configured ?? false)
       setLockTimeoutMins(String(s.lock_timeout_mins ?? 0))
     }).catch(() => {})
   }, [])
 
-  async function handleChangePassword(e: React.FormEvent) {
+  async function handleSavePassword(e: React.FormEvent) {
     e.preventDefault()
     setPwChangeError(null)
-    if (newPassword !== confirmNewPassword) { setPwChangeError('New passwords do not match'); return }
-    if (newPassword.length < 8) { setPwChangeError('Password must be at least 8 characters'); return }
+    if (newPassword !== confirmNewPassword) { setPwChangeError('两次输入的新密码不一致'); return }
+    if (newPassword.length < 8) { setPwChangeError('密码至少需要 8 个字符'); return }
     setPwChangeSaving(true)
     try {
-      await api.authChangePassword(currentPassword, newPassword)
+      if (passwordConfigured) {
+        await api.authChangePassword(currentPassword, newPassword)
+      } else {
+        const { session_token } = await api.authSetup(newPassword)
+        setSessionToken(session_token)
+        setPasswordConfigured(true)
+        window.dispatchEvent(new CustomEvent('auth-config-updated'))
+      }
       setPwChangeSaved(true)
       setCurrentPassword(''); setNewPassword(''); setConfirmNewPassword('')
       setTimeout(() => setPwChangeSaved(false), 2000)
     } catch (err: unknown) {
-      setPwChangeError((err as Error)?.message ?? 'Failed to change password')
+      setPwChangeError((err as Error)?.message ?? '修改密码失败')
+    } finally {
+      setPwChangeSaving(false)
+    }
+  }
+
+  async function handleDisablePassword() {
+    const confirmed = await danger(
+      '关闭网页密码？',
+      '以后打开 RunDock 将直接进入。PIN、通行密钥、自动锁定和现有网页会话也会一起清除。此模式只适合保持 127.0.0.1 本机访问。',
+      '关闭密码',
+    )
+    if (!confirmed) return
+
+    setPwChangeError(null)
+    setPwChangeSaving(true)
+    try {
+      await api.authRemovePassword()
+      clearSessionToken()
+      setPasswordConfigured(false)
+      setPinConfigured(false)
+      setLockTimeoutMins('0')
+      setCurrentPassword('')
+      setNewPassword('')
+      setConfirmNewPassword('')
+      window.dispatchEvent(new CustomEvent('auth-config-updated'))
+      window.dispatchEvent(new CustomEvent('lock-config-updated'))
+    } catch (err: unknown) {
+      setPwChangeError((err as Error)?.message ?? '关闭网页密码失败')
     } finally {
       setPwChangeSaving(false)
     }
@@ -58,9 +99,9 @@ export default function SecurityTab() {
     e.preventDefault()
     setPinError(null)
     if (pinInput.length !== 4 && pinInput.length !== 6) {
-      setPinError('PIN must be exactly 4 or 6 digits'); return
+      setPinError('PIN 必须正好为 4 位或 6 位数字'); return
     }
-    if (!/^\d+$/.test(pinInput)) { setPinError('PIN must contain only digits'); return }
+    if (!/^\d+$/.test(pinInput)) { setPinError('PIN 只能包含数字'); return }
     setPinSaving(true)
     try {
       await api.authSetPin(pinInput)
@@ -69,7 +110,7 @@ export default function SecurityTab() {
       setPinInput('')
       setTimeout(() => setPinSaved(false), 2000)
     } catch (err: unknown) {
-      setPinError((err as Error)?.message ?? 'Failed to set PIN')
+      setPinError((err as Error)?.message ?? '设置 PIN 失败')
     } finally {
       setPinSaving(false)
     }
@@ -83,7 +124,7 @@ export default function SecurityTab() {
       setPinConfigured(false)
       setPinInput('')
     } catch (err: unknown) {
-      setPinError((err as Error)?.message ?? 'Failed to remove PIN')
+      setPinError((err as Error)?.message ?? '移除 PIN 失败')
     } finally {
       setPinSaving(false)
     }
@@ -158,17 +199,36 @@ export default function SecurityTab() {
 
   return (
     <>
-      <p style={sectionTitle}>Password</p>
+      <Dialog
+        open={dialogState.open}
+        title={dialogState.title}
+        message={dialogState.message}
+        variant={dialogState.variant}
+        confirmLabel={dialogState.confirmLabel}
+        cancelLabel={dialogState.cancelLabel}
+        onConfirm={handleConfirm}
+        onCancel={handleCancel}
+      />
+      <p style={sectionTitle}>密码</p>
       <div style={card}>
         <div style={{ marginBottom: 4 }}>
-          <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--color-foreground)' }}>Change password</div>
-          <div style={{ fontSize: 11, color: 'var(--color-muted-foreground)', marginTop: 2, marginBottom: 16 }}>Update your dashboard login password.</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 13, fontWeight: 600, color: passwordConfigured ? 'var(--color-status-running)' : 'var(--color-muted-foreground)' }}>
+            {passwordConfigured ? <Shield size={14} /> : <ShieldOff size={14} />}
+            {passwordConfigured ? '网页密码已开启' : '网页密码已关闭'}
+          </div>
+          <div style={{ fontSize: 11, color: 'var(--color-muted-foreground)', marginTop: 4, marginBottom: 16 }}>
+            {passwordConfigured ? '访问 RunDock 控制台时需要登录。' : '打开 RunDock 将直接进入，不需要输入密码。'}
+          </div>
         </div>
-        <form onSubmit={handleChangePassword}>
-          <PwField label="Current password" value={currentPassword} onChange={setCurrentPassword} autoComplete="current-password" show={showCurrentPw} onToggle={() => setShowCurrentPw(p => !p)} />
-          <div style={{ height: 1, background: 'var(--color-border)', margin: '4px 0 16px' }} />
-          <PwField label="New password" value={newPassword} onChange={setNewPassword} autoComplete="new-password" show={showNewPw} onToggle={() => setShowNewPw(p => !p)} />
-          <PwField label="Confirm new password" value={confirmNewPassword} onChange={setConfirmNewPassword} autoComplete="new-password" show={showConfirmPw} onToggle={() => setShowConfirmPw(p => !p)} />
+        <form onSubmit={handleSavePassword}>
+          {passwordConfigured && (
+            <>
+              <PwField label="当前密码" value={currentPassword} onChange={setCurrentPassword} autoComplete="current-password" show={showCurrentPw} onToggle={() => setShowCurrentPw(p => !p)} />
+              <div style={{ height: 1, background: 'var(--color-border)', margin: '4px 0 16px' }} />
+            </>
+          )}
+          <PwField label={passwordConfigured ? '新密码' : '设置新密码'} value={newPassword} onChange={setNewPassword} autoComplete="new-password" show={showNewPw} onToggle={() => setShowNewPw(p => !p)} />
+          <PwField label="确认新密码" value={confirmNewPassword} onChange={setConfirmNewPassword} autoComplete="new-password" show={showConfirmPw} onToggle={() => setShowConfirmPw(p => !p)} />
 
           {newPassword.length > 0 && (
             <div style={{ marginBottom: 14 }}>
@@ -182,7 +242,7 @@ export default function SecurityTab() {
                 ))}
               </div>
               <span style={{ fontSize: 10, color: 'var(--color-muted-foreground)' }}>
-                {newPassword.length < 8 ? 'Too short' : strength === 4 ? 'Strong' : strength === 3 ? 'Good' : 'Fair — add uppercase, numbers, symbols'}
+                {newPassword.length < 8 ? '太短' : strength === 4 ? '强' : strength === 3 ? '良好' : '一般 — 请加入大写字母、数字和符号'}
               </span>
             </div>
           )}
@@ -206,35 +266,54 @@ export default function SecurityTab() {
               border: '1px solid color-mix(in srgb, var(--color-status-running) 30%, transparent)',
               fontSize: 12, color: 'var(--color-status-running)',
             }}>
-              <Check size={13} /> Password changed successfully.
+              <Check size={13} /> {passwordConfigured ? '密码保存成功。' : '网页密码已关闭。'}
             </div>
           )}
 
           <button
             type="submit"
-            disabled={pwChangeSaving || !currentPassword || !newPassword || !confirmNewPassword}
+            disabled={pwChangeSaving || (passwordConfigured && !currentPassword) || !newPassword || !confirmNewPassword}
             style={{
               display: 'flex', alignItems: 'center', gap: 7,
               padding: '8px 18px', fontSize: 13, fontWeight: 600,
               background: pwChangeSaved ? 'var(--color-status-running)' : 'var(--color-primary)',
               color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer',
-              opacity: (pwChangeSaving || !currentPassword || !newPassword || !confirmNewPassword) ? 0.5 : 1,
+              opacity: (pwChangeSaving || (passwordConfigured && !currentPassword) || !newPassword || !confirmNewPassword) ? 0.5 : 1,
               transition: 'background 0.2s, opacity 0.15s',
             }}
           >
             <Shield size={13} />
-            {pwChangeSaving ? 'Updating…' : 'Update password'}
+            {pwChangeSaving ? '保存中…' : passwordConfigured ? '更新密码' : '开启网页密码'}
           </button>
         </form>
+        {passwordConfigured && (
+          <div style={{ marginTop: 18, paddingTop: 16, borderTop: '1px solid var(--color-border)' }}>
+            <button
+              type="button"
+              onClick={handleDisablePassword}
+              disabled={pwChangeSaving}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 7,
+                padding: '7px 13px', fontSize: 12, fontWeight: 600,
+                background: 'transparent', color: 'var(--color-destructive)',
+                border: '1px solid var(--color-destructive)', borderRadius: 6,
+                cursor: pwChangeSaving ? 'not-allowed' : 'pointer', opacity: pwChangeSaving ? 0.5 : 1,
+              }}
+            >
+              <ShieldOff size={13} /> 关闭网页密码
+            </button>
+          </div>
+        )}
       </div>
 
+      {passwordConfigured && <>
       <p style={sectionTitle}>PIN</p>
       <div style={card}>
         <SettingRow
-          label="Quick-unlock PIN"
+          label="快速解锁 PIN"
           description={pinConfigured
-            ? 'A PIN is set. Enter a new one to replace it, or remove it.'
-            : 'Set a 4 or 6 digit PIN for the lock screen. Faster than typing the full password.'}
+            ? 'PIN 已设置。输入新的 PIN 进行替换，或将其移除。'
+            : '为锁屏设置 4 位或 6 位 PIN，比输入完整密码更快。'}
           isLast
           control={
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
@@ -249,7 +328,7 @@ export default function SecurityTab() {
                   maxLength={6}
                   value={pinInput}
                   onChange={e => setPinInput(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                  placeholder={pinConfigured ? 'New PIN (4 or 6 digits)' : 'PIN (4 or 6 digits)'}
+                  placeholder={pinConfigured ? '新 PIN（4 位或 6 位）' : 'PIN（4 位或 6 位）'}
                   style={{ ...inputStyle, width: 160, fontSize: 12, padding: '5px 10px', letterSpacing: '0.15em', fontFamily: 'monospace' }}
                 />
                 <button
@@ -262,7 +341,7 @@ export default function SecurityTab() {
                     opacity: (pinSaving || pinInput.length < 4) ? 0.5 : 1, transition: 'background 0.2s',
                   }}
                 >
-                  {pinSaved ? 'Saved!' : pinConfigured ? 'Update' : 'Set PIN'}
+                  {pinSaved ? '已保存！' : pinConfigured ? '更新' : '设置 PIN'}
                 </button>
                 {pinConfigured && (
                   <button
@@ -278,7 +357,7 @@ export default function SecurityTab() {
                       opacity: pinSaving ? 0.5 : 1,
                     }}
                   >
-                    Remove
+                    移除
                   </button>
                 )}
               </form>
@@ -287,11 +366,11 @@ export default function SecurityTab() {
         />
       </div>
 
-      <p style={sectionTitle}>Session</p>
+      <p style={sectionTitle}>会话</p>
       <div style={card}>
         <SettingRow
-          label="Auto-lock after inactivity"
-          description="Automatically lock the dashboard after a period of inactivity. Uses PIN if set, otherwise password."
+          label="无操作后自动锁定"
+          description="无操作一段时间后自动锁定控制台。已设置 PIN 时使用 PIN，否则使用密码。"
           isLast
           control={
             <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
@@ -300,11 +379,11 @@ export default function SecurityTab() {
                 onChange={e => setLockTimeoutMins(e.target.value)}
                 style={{ ...selectStyle, minWidth: 120 }}
               >
-                <option value="0">Disabled</option>
-                <option value="5">5 minutes</option>
-                <option value="15">15 minutes</option>
-                <option value="30">30 minutes</option>
-                <option value="60">1 hour</option>
+                <option value="0">已禁用</option>
+                <option value="5">5 分钟</option>
+                <option value="15">15 分钟</option>
+                <option value="30">30 分钟</option>
+                <option value="60">1 小时</option>
               </select>
               <button
                 onClick={handleSaveLockTimeout}
@@ -318,12 +397,13 @@ export default function SecurityTab() {
                 }}
               >
                 <Lock size={11} />
-                {lockSaved ? 'Saved!' : lockSaving ? 'Saving…' : 'Save'}
+                {lockSaved ? '已保存！' : lockSaving ? '保存中…' : '保存'}
               </button>
             </div>
           }
         />
       </div>
+      </>}
     </>
   )
 }

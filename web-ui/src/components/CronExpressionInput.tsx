@@ -4,15 +4,15 @@ import { useState } from 'react'
 
 // @group BusinessLogic > Presets : Common cron schedule presets
 const PRESETS = [
-  { label: 'Every minute',    value: '* * * * *' },
-  { label: 'Every 5 minutes', value: '*/5 * * * *' },
-  { label: 'Every 15 minutes',value: '*/15 * * * *' },
-  { label: 'Every 30 minutes',value: '*/30 * * * *' },
-  { label: 'Hourly',          value: '0 * * * *' },
-  { label: 'Daily at midnight',value: '0 0 * * *' },
-  { label: 'Daily at noon',   value: '0 12 * * *' },
-  { label: 'Weekly (Monday)', value: '0 9 * * 1' },
-  { label: 'Monthly (1st)',   value: '0 0 1 * *' },
+  { label: '每分钟',    value: '* * * * *' },
+  { label: '每 5 分钟', value: '*/5 * * * *' },
+  { label: '每 15 分钟',value: '*/15 * * * *' },
+  { label: '每 30 分钟',value: '*/30 * * * *' },
+  { label: '每小时',          value: '0 * * * *' },
+  { label: '每天午夜',value: '0 0 * * *' },
+  { label: '每天中午',   value: '0 12 * * *' },
+  { label: '每周一', value: '0 9 * * 1' },
+  { label: '每月 1 日',   value: '0 0 1 * *' },
 ]
 
 // @group Utilities > CronParser : Compute next N run times from a 5-field cron expression
@@ -71,24 +71,24 @@ function getNextRuns(expr: string, count = 3): Date[] {
 // @group Utilities > CronDescription : Human-readable description of a cron expression
 function describe(expr: string): string {
   const parts = expr.trim().split(/\s+/)
-  if (parts.length !== 5) return 'Invalid expression'
+  if (parts.length !== 5) return '表达式无效'
   const [min, hour, dom, month, dow] = parts
 
-  if (expr === '* * * * *') return 'Every minute'
+  if (expr === '* * * * *') return '每分钟'
   if (min.startsWith('*/') && hour === '*' && dom === '*' && month === '*' && dow === '*') {
-    return `Every ${min.slice(2)} minutes`
+    return `每 ${min.slice(2)} 分钟`
   }
-  if (min === '0' && hour === '*' && dom === '*' && month === '*' && dow === '*') return 'Every hour at :00'
+  if (min === '0' && hour === '*' && dom === '*' && month === '*' && dow === '*') return '每小时整点'
   if (min !== '*' && hour !== '*' && dom === '*' && month === '*' && dow === '*') {
-    return `Daily at ${hour.padStart(2,'0')}:${min.padStart(2,'0')}`
+    return `每天 ${hour.padStart(2,'0')}:${min.padStart(2,'0')}`
   }
   if (min !== '*' && hour !== '*' && dom === '*' && month === '*' && dow !== '*') {
-    const days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday']
-    const dayName = days[parseInt(dow)] ?? `day ${dow}`
-    return `Every ${dayName} at ${hour.padStart(2,'0')}:${min.padStart(2,'0')}`
+    const days = ['周日','周一','周二','周三','周四','周五','周六']
+    const dayName = days[parseInt(dow)] ?? `第 ${dow} 天`
+    return `每${dayName} ${hour.padStart(2,'0')}:${min.padStart(2,'0')}`
   }
   if (min !== '*' && hour !== '*' && dom !== '*' && month === '*' && dow === '*') {
-    return `Monthly on day ${dom} at ${hour.padStart(2,'0')}:${min.padStart(2,'0')}`
+    return `每月 ${dom} 日 ${hour.padStart(2,'0')}:${min.padStart(2,'0')}`
   }
   return `${min} ${hour} ${dom} ${month} ${dow}`
 }
@@ -113,7 +113,7 @@ export function CronExpressionInput({ value, onChange, style }: Props) {
         <input
           value={value}
           onChange={e => onChange(e.target.value)}
-          placeholder="* * * * *  (min hr dom mon dow)"
+          placeholder="* * * * *（分 时 日 月 周）"
           style={{
             flex: 1, padding: '7px 10px', fontSize: 13,
             background: 'var(--color-muted)', border: `1px solid ${isValid || !value ? 'var(--color-border)' : 'var(--color-destructive)'}`,
@@ -131,7 +131,7 @@ export function CronExpressionInput({ value, onChange, style }: Props) {
               borderRadius: 5, cursor: 'pointer', color: 'var(--color-foreground)',
             }}
           >
-            Presets ▾
+            常用计划 ▾
           </button>
           {showPresets && (
             <div style={{
@@ -168,11 +168,11 @@ export function CronExpressionInput({ value, onChange, style }: Props) {
             <>
               <div style={{ color: 'var(--color-status-running)', fontWeight: 600, marginBottom: 4 }}>{description}</div>
               <div style={{ color: 'var(--color-muted-foreground)' }}>
-                Next runs: {nextRuns.map(d => d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })).join('  ·  ')}
+                下次运行：{nextRuns.map(d => d.toLocaleString('zh-CN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })).join('  ·  ')}
               </div>
             </>
           ) : (
-            <div style={{ color: 'var(--color-destructive)' }}>Invalid cron expression</div>
+            <div style={{ color: 'var(--color-destructive)' }}>定时任务表达式无效</div>
           )}
         </div>
       )}

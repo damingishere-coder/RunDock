@@ -28,13 +28,13 @@ pub async fn send_message(bot_token: &str, chat_id: i64, text: &str) -> Result<(
 
 // @group BusinessLogic > Commands : /ping — liveness check
 pub async fn cmd_ping(bot_token: &str, chat_id: i64) -> Result<()> {
-    send_message(bot_token, chat_id, "🏓 Pong! alter daemon is running.").await
+    send_message(bot_token, chat_id, "🏓 Pong! RunDock daemon is running.").await
 }
 
 // @group BusinessLogic > Commands : /help — list available commands
 pub async fn cmd_help(bot_token: &str, chat_id: i64) -> Result<()> {
     let text = concat!(
-        "🤖 <b>alter-pm2 Bot Commands</b>\n\n",
+        "🤖 <b>RunDock Bot Commands</b>\n\n",
         "/list — list all processes\n",
         "/status &lt;name&gt; — detailed info for a process\n",
         "/status ns &lt;ns&gt; — status of all processes in namespace\n",

@@ -369,6 +369,18 @@ Navigates to `http://127.0.0.1:2999/`. Requires the daemon to be running.
 
 ---
 
+### `alter auth disable`
+
+Disable the web dashboard password without prompting for it. The CLI authenticates with its local master token, then clears the dashboard password, PIN, passkeys, auto-lock setting, and active browser sessions.
+
+```powershell
+alter auth disable
+```
+
+Use passwordless mode only while the daemon remains bound to `127.0.0.1` or another loopback address. A new password can be configured later from **Settings → Security**.
+
+---
+
 ### `alter startup`
 
 Generate instructions or commands to run the daemon automatically at system startup.

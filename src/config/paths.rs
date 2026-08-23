@@ -36,6 +36,10 @@ pub fn state_file() -> PathBuf {
     data_dir().join("state.json")
 }
 
+pub fn projects_file() -> PathBuf {
+    data_dir().join("projects.json")
+}
+
 pub fn pid_file() -> PathBuf {
     data_dir().join("daemon.pid")
 }

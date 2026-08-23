@@ -32,7 +32,7 @@ pub async fn send(webhook_url: &str, event: &NotificationEvent) -> Result<()> {
                 "elements": [{
                     "type": "mrkdwn",
                     "text": format!(
-                        "_alter-pm2 · {}_",
+                        "_RunDock · {}_",
                         chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC")
                     )
                 }]

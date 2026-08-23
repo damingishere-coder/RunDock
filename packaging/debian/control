@@ -1,15 +1,15 @@
 Package: alter
 Version: VERSION_PLACEHOLDER
 Architecture: ARCH_PLACEHOLDER
-Maintainer: thechandanbhagat <thechandanbhagat@gmail.com>
+Maintainer: damingishere-coder <damingishere-coder@users.noreply.github.com>
 Installed-Size: SIZE_PLACEHOLDER
 Depends: libc6 (>= 2.17)
 Section: utils
 Priority: optional
-Homepage: https://github.com/thechandanbhagat/alter-pm
-Description: A process manager for your developers
- Run and manage any application — Python, Node.js, Go, Rust, .NET, PHP —
- from a single binary with a built-in web dashboard.
+Homepage: https://github.com/damingishere-coder/RunDock
+Description: RunDock developer project console (compatible alter CLI)
+ Run and manage Python, Node.js, Go, Rust, .NET and PHP applications
+ from a single binary with a polished web dashboard.
  .
  Features: auto-restart, watch mode, namespaces, live log streaming,
  state persistence, ecosystem config, full REST API.

@@ -12,6 +12,7 @@ pub fn router(state: Arc<DaemonState>) -> Router {
     // @group Authentication : Protected routes — require valid bearer token
     let protected = Router::new()
         .nest("/processes", routes::processes::router(Arc::clone(&state)))
+        .nest("/projects", routes::projects::router(Arc::clone(&state)))
         .nest("/system", routes::system::router(Arc::clone(&state))
             .merge(routes::ui_settings::router()))
         .nest("/ecosystem", routes::ecosystem::router(Arc::clone(&state)))

@@ -19,10 +19,10 @@ export interface AppNotification {
 
 // @group Utilities > eventConfig : Visual config per event type
 export const eventConfig: Record<NotifEvent, { color: string; label: string }> = {
-  crash:   { color: 'var(--color-status-crashed)',  label: 'crashed'   },
-  restart: { color: 'var(--color-status-starting)', label: 'restarted' },
-  started: { color: 'var(--color-status-running)',  label: 'started'   },
-  stopped: { color: 'var(--color-status-stopped)',  label: 'stopped'   },
+  crash:   { color: 'var(--color-status-crashed)',  label: '已崩溃'   },
+  restart: { color: 'var(--color-status-starting)', label: '已重启' },
+  started: { color: 'var(--color-status-running)',  label: '已启动'   },
+  stopped: { color: 'var(--color-status-stopped)',  label: '已停止'   },
 }
 
 // @group Utilities > isActive : True for statuses that mean "process is doing something"
@@ -32,13 +32,13 @@ const INACTIVE: ReadonlySet<ProcessStatus> = new Set(['stopped', 'errored', 'sle
 // @group Utilities > relativeTime : Human-readable relative timestamp
 export function relativeTime(date: Date): string {
   const secs = Math.floor((Date.now() - date.getTime()) / 1000)
-  if (secs < 5)  return 'just now'
-  if (secs < 60) return `${secs}s ago`
+  if (secs < 5)  return '刚刚'
+  if (secs < 60) return `${secs}秒前`
   const mins = Math.floor(secs / 60)
-  if (mins < 60) return `${mins}m ago`
+  if (mins < 60) return `${mins}分钟前`
   const hrs = Math.floor(mins / 60)
-  if (hrs < 24)  return `${hrs}h ago`
-  return `${Math.floor(hrs / 24)}d ago`
+  if (hrs < 24)  return `${hrs}小时前`
+  return `${Math.floor(hrs / 24)}天前`
 }
 
 // @group BusinessLogic > useNotificationTray : Main hook — consumes process list, emits AppNotifications on transitions
@@ -76,22 +76,22 @@ export function useNotificationTray(processes: ProcessInfo[]) {
       if (curStatus === 'errored') {
         // Crashed / hit max restarts
         event = 'crash'
-        detail = p.last_exit_code != null ? `Exit code: ${p.last_exit_code}` : 'Process errored'
+        detail = p.last_exit_code != null ? `退出码：${p.last_exit_code}` : '进程出错'
 
       } else if (ACTIVE.has(prevStatus) && curStatus === 'stopped') {
         // Manually or naturally stopped
         event = 'stopped'
-        detail = p.last_exit_code != null ? `Exit code: ${p.last_exit_code}` : 'Process stopped'
+        detail = p.last_exit_code != null ? `退出码：${p.last_exit_code}` : '进程已停止'
 
       } else if (INACTIVE.has(prevStatus) && ACTIVE.has(curStatus)) {
         if (curCount > prevCount) {
           // Auto-restarted
           event = 'restart'
-          detail = `Auto-restarted ×${curCount}`
+          detail = `自动重启 ×${curCount}`
         } else {
           // Freshly started / manually started
           event = 'started'
-          detail = p.pid != null ? `PID: ${p.pid}` : 'Process online'
+          detail = p.pid != null ? `PID：${p.pid}` : '进程已上线'
         }
       }
 

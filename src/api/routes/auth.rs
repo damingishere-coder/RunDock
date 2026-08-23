@@ -23,6 +23,7 @@ pub fn router(state: Arc<DaemonState>) -> Router {
         .route("/login", post(login))
         .route("/pin/login", post(pin_login))
         .route("/session", delete(logout))
+        .route("/password", delete(disable_password))
         .route("/change-password", post(change_password))
         .route("/pin", post(set_pin).delete(remove_pin))
         .route("/settings", patch(update_settings))
@@ -79,14 +80,19 @@ async fn setup_password(
         });
     }
     if body.password.len() < 8 {
-        return Err(ApiError::bad_request("Password must be at least 8 characters"));
+        return Err(ApiError::bad_request(
+            "Password must be at least 8 characters",
+        ));
     }
     auth.set_password(&body.password)
         .map_err(|e| ApiError::internal(e.to_string()))?;
     auth_config::save(&auth).map_err(|e| ApiError::internal(e.to_string()))?;
 
     let (token, expires_at) = create_session(&state).await;
-    Ok(Json(LoginResponse { session_token: token, expires_at: expires_at.to_rfc3339() }))
+    Ok(Json(LoginResponse {
+        session_token: token,
+        expires_at: expires_at.to_rfc3339(),
+    }))
 }
 
 // @group Authentication > Login : Password-based login -- returns session token
@@ -109,7 +115,10 @@ async fn login(
     drop(auth);
 
     let (token, expires_at) = create_session(&state).await;
-    Ok(Json(LoginResponse { session_token: token, expires_at: expires_at.to_rfc3339() }))
+    Ok(Json(LoginResponse {
+        session_token: token,
+        expires_at: expires_at.to_rfc3339(),
+    }))
 }
 
 // @group Authentication > PIN Login : PIN-based login (quick unlock / lock screen)
@@ -132,15 +141,47 @@ async fn pin_login(
     drop(auth);
 
     let (token, expires_at) = create_session(&state).await;
-    Ok(Json(LoginResponse { session_token: token, expires_at: expires_at.to_rfc3339() }))
+    Ok(Json(LoginResponse {
+        session_token: token,
+        expires_at: expires_at.to_rfc3339(),
+    }))
 }
 
 // @group Authentication > Logout : Invalidate the current session token
-async fn logout(State(state): State<Arc<DaemonState>>, headers: HeaderMap) -> Json<serde_json::Value> {
+async fn logout(
+    State(state): State<Arc<DaemonState>>,
+    headers: HeaderMap,
+) -> Json<serde_json::Value> {
     if let Some(token) = extract_bearer(&headers) {
         state.sessions.remove(&token);
     }
     Json(serde_json::json!({ "success": true }))
+}
+
+// @group Authentication > DisablePassword : Remove all browser authentication
+// settings while preserving the CLI master token. Requires an authenticated
+// session/master token when a password is currently configured.
+async fn disable_password(
+    State(state): State<Arc<DaemonState>>,
+    headers: HeaderMap,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let already_disabled = {
+        let auth = state.auth.read().await;
+        !auth.web_auth_enabled()
+    };
+
+    if !already_disabled && !is_session_valid(&state, &headers).await {
+        return Err(ApiError::unauthorized("Not authenticated"));
+    }
+
+    {
+        let mut auth = state.auth.write().await;
+        auth.disable_web_auth();
+        auth_config::save(&auth).map_err(|e| ApiError::internal(e.to_string()))?;
+    }
+    state.sessions.clear();
+
+    Ok(Json(serde_json::json!({ "success": true })))
 }
 
 // @group Authentication > ChangePassword : Update password (requires current password)
@@ -166,7 +207,9 @@ async fn change_password(
         });
     }
     if body.new_password.len() < 8 {
-        return Err(ApiError::bad_request("Password must be at least 8 characters"));
+        return Err(ApiError::bad_request(
+            "Password must be at least 8 characters",
+        ));
     }
     auth.set_password(&body.new_password)
         .map_err(|e| ApiError::internal(e.to_string()))?;
@@ -189,7 +232,8 @@ async fn set_pin(
         return Err(ApiError::unauthorized("Not authenticated"));
     }
     let mut auth = state.auth.write().await;
-    auth.set_pin(&body.pin).map_err(|e| ApiError::bad_request(e.to_string()))?;
+    auth.set_pin(&body.pin)
+        .map_err(|e| ApiError::bad_request(e.to_string()))?;
     auth_config::save(&auth).map_err(|e| ApiError::internal(e.to_string()))?;
     Ok(Json(serde_json::json!({ "success": true })))
 }
@@ -232,7 +276,9 @@ async fn update_settings(
 async fn passkey_not_supported() -> (StatusCode, Json<serde_json::Value>) {
     (
         StatusCode::NOT_IMPLEMENTED,
-        Json(serde_json::json!({ "error": "Passkey support requires OpenSSL -- not yet available on this build" })),
+        Json(
+            serde_json::json!({ "error": "Passkey support requires OpenSSL -- not yet available on this build" }),
+        ),
     )
 }
 
@@ -246,9 +292,13 @@ async fn create_session(state: &DaemonState) -> (String, chrono::DateTime<chrono
 
 // @group Utilities : Check if the request carries a valid session or master token
 async fn is_session_valid(state: &DaemonState, headers: &HeaderMap) -> bool {
-    let Some(token) = extract_bearer(headers) else { return false };
+    let Some(token) = extract_bearer(headers) else {
+        return false;
+    };
     let auth = state.auth.read().await;
-    if auth.master_token == token { return true; }
+    if auth.master_token == token {
+        return true;
+    }
     drop(auth);
     if let Some(exp) = state.sessions.get(&token) {
         return *exp > Utc::now();

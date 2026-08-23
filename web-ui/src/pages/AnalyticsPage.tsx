@@ -73,11 +73,11 @@ export default function AnalyticsPage({ processes, settings, reload }: Props) {
     const activeCount    = running + watching + sleeping
 
     const statusSegments: StatusSegment[] = ([
-      { status: 'running'  as const, count: running + watching, color: STATUS_COLORS.running,  label: 'Running'  },
-      { status: 'sleeping' as const, count: sleeping,           color: STATUS_COLORS.sleeping, label: 'Sleeping' },
-      { status: 'stopped'  as const, count: stopped + stopping, color: STATUS_COLORS.stopped,  label: 'Stopped'  },
-      { status: 'crashed'  as const, count: crashed + errored,  color: STATUS_COLORS.crashed,  label: 'Crashed'  },
-      { status: 'starting' as const, count: starting,           color: STATUS_COLORS.starting, label: 'Starting' },
+      { status: 'running'  as const, count: running + watching, color: STATUS_COLORS.running,  label: '运行中'  },
+      { status: 'sleeping' as const, count: sleeping,           color: STATUS_COLORS.sleeping, label: '休眠中' },
+      { status: 'stopped'  as const, count: stopped + stopping, color: STATUS_COLORS.stopped,  label: '已停止'  },
+      { status: 'crashed'  as const, count: crashed + errored,  color: STATUS_COLORS.crashed,  label: '已崩溃'  },
+      { status: 'starting' as const, count: starting,           color: STATUS_COLORS.starting, label: '启动中' },
     ] as StatusSegment[]).filter(s => s.count > 0)
 
     return {
@@ -100,9 +100,9 @@ export default function AnalyticsPage({ processes, settings, reload }: Props) {
 
         {/* Title row */}
         <div style={{ padding: '11px 24px', display: 'flex', alignItems: 'center', gap: 12 }}>
-          <span style={{ fontSize: 14, fontWeight: 700, letterSpacing: '-0.3px' }}>Overview</span>
+          <span style={{ fontSize: 14, fontWeight: 700, letterSpacing: '-0.3px' }}>概览</span>
           <span style={{ fontSize: 12, color: 'var(--color-muted-foreground)' }}>
-            {processes.length} processes · {stats.namespaces.length} namespace{stats.namespaces.length !== 1 ? 's' : ''}
+            {processes.length} 个进程 · {stats.namespaces.length} 个命名空间
           </span>
           <div style={{ flex: 1 }} />
           {health && (
@@ -117,14 +117,14 @@ export default function AnalyticsPage({ processes, settings, reload }: Props) {
 
         {/* Stat strip */}
         <div style={{ display: 'flex', borderTop: '1px solid var(--color-border)' }}>
-          <StatCell n={stats.total}                             label="Total" />
-          <StatCell n={stats.activeCount}                      label="Running"  c={stats.activeCount > 0 ? 'var(--color-status-running)' : undefined} />
-          <StatCell n={stats.stopped + stats.stopping}         label="Stopped" />
-          <StatCell n={stats.crashed + stats.errored}          label="Crashed"  c={hasCrashed ? '#ef4444' : undefined} />
+          <StatCell n={stats.total}                             label="总数" />
+          <StatCell n={stats.activeCount}                      label="运行中"  c={stats.activeCount > 0 ? 'var(--color-status-running)' : undefined} />
+          <StatCell n={stats.stopped + stats.stopping}         label="已停止" />
+          <StatCell n={stats.crashed + stats.errored}          label="已崩溃"  c={hasCrashed ? '#ef4444' : undefined} />
           <div style={{ flex: 1 }} />
           <StatCell n={formatCpu(stats.totalCpu)}              label="CPU"      c="#60a5fa" />
-          <StatCell n={formatBytes(stats.totalMem)}            label="Memory"   c="#a78bfa" />
-          <StatCell n={String(stats.totalRestarts)}            label="Restarts" c={stats.totalRestarts > 0 ? '#f59e0b' : undefined} />
+          <StatCell n={formatBytes(stats.totalMem)}            label="内存"   c="#a78bfa" />
+          <StatCell n={String(stats.totalRestarts)}            label="重启次数" c={stats.totalRestarts > 0 ? '#f59e0b' : undefined} />
         </div>
       </div>
 
@@ -140,28 +140,28 @@ export default function AnalyticsPage({ processes, settings, reload }: Props) {
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 14px', background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.22)', borderLeft: '3px solid #ef4444', borderRadius: '0 6px 6px 0' }}>
                 <AlertTriangle size={13} color="#ef4444" style={{ flexShrink: 0 }} />
                 <span style={{ flex: 1, fontSize: 12.5, color: '#ef4444' }}>
-                  <strong>{stats.crashedList.length} crashed</strong>
+                  <strong>{stats.crashedList.length} 个进程已崩溃</strong>
                   <span style={{ fontWeight: 400, marginLeft: 6, opacity: 0.8 }}>— {stats.crashedList.map(p => p.name).join(', ')}</span>
                 </span>
-                <button onClick={restartCrashed} style={dangerBtn}><RotateCcw size={10} />Restart all</button>
-                <button onClick={() => navigate('/processes')} style={ghostBtn}>View</button>
+                <button onClick={restartCrashed} style={dangerBtn}><RotateCcw size={10} />全部重启</button>
+                <button onClick={() => navigate('/processes')} style={ghostBtn}>查看</button>
               </div>
             )}
 
             {/* Namespace table */}
             <div>
-              <ColHeader>Namespaces</ColHeader>
+              <ColHeader>命名空间</ColHeader>
               {stats.namespaces.length === 0
-                ? <Muted>No namespaces yet.</Muted>
+                ? <Muted>暂无命名空间。</Muted>
                 : (
                   <div style={{ border: '1px solid var(--color-border)', borderRadius: 8, overflow: 'hidden', marginTop: 8 }}>
                     {/* Table header */}
                     <div style={nsHeaderRow}>
                       <span />
-                      <span style={thStyle}>Namespace</span>
-                      <span style={thStyle}>Status</span>
+                      <span style={thStyle}>命名空间</span>
+                      <span style={thStyle}>状态</span>
                       <span style={{ ...thStyle, textAlign: 'right' }}>CPU</span>
-                      <span style={{ ...thStyle, textAlign: 'right' }}>Memory</span>
+                      <span style={{ ...thStyle, textAlign: 'right' }}>内存</span>
                       <span />
                     </div>
                     {stats.namespaces.map((ns, i) => (
@@ -181,7 +181,7 @@ export default function AnalyticsPage({ processes, settings, reload }: Props) {
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 12 }}>
 
                 {stats.longestRunning.length > 0 && (
-                  <LeaderPanel icon={Clock} title="Longest Running">
+                  <LeaderPanel icon={Clock} title="运行时间最长">
                     {stats.longestRunning.map((p, i) => (
                       <LRow key={p.id} rank={i + 1} name={p.name} dot="var(--color-status-running)"
                         metric={formatUptime(p.uptime_secs ?? 0)} mc="var(--color-status-running)"
@@ -191,7 +191,7 @@ export default function AnalyticsPage({ processes, settings, reload }: Props) {
                 )}
 
                 {stats.topMemory.length > 0 && (
-                  <LeaderPanel icon={MemoryStick} title="Top Memory">
+                  <LeaderPanel icon={MemoryStick} title="内存占用最高">
                     {stats.topMemory.map((p, i) => {
                       const pct = stats.totalMem > 0 ? ((p.memory_bytes ?? 0) / stats.totalMem) * 100 : 0
                       return (
@@ -211,7 +211,7 @@ export default function AnalyticsPage({ processes, settings, reload }: Props) {
                 )}
 
                 {stats.topRestarters.length > 0 && (
-                  <LeaderPanel icon={TrendingUp} title="Restart Leaders">
+                  <LeaderPanel icon={TrendingUp} title="重启次数最多">
                     {stats.topRestarters.map((p, i) => (
                       <LRow key={p.id} rank={i + 1} name={p.name} dot={statusColor(p.status)}
                         metric={`${p.restart_count}×`} mc="#ef4444"
@@ -229,12 +229,12 @@ export default function AnalyticsPage({ processes, settings, reload }: Props) {
 
             {/* Distribution */}
             <div style={sidePanel}>
-              <PanelLabel>Distribution</PanelLabel>
+              <PanelLabel>分布</PanelLabel>
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginTop: 16, gap: 14 }}>
                 <Donut segments={stats.statusSegments} total={stats.total} />
                 <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 6 }}>
                   {stats.statusSegments.length === 0
-                    ? <span style={{ fontSize: 12, color: 'var(--color-muted-foreground)', textAlign: 'center' }}>No processes</span>
+                    ? <span style={{ fontSize: 12, color: 'var(--color-muted-foreground)', textAlign: 'center' }}>暂无进程</span>
                     : stats.statusSegments.map(s => (
                         <div key={s.status} style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
                           <span style={{ width: 8, height: 8, borderRadius: 2, background: s.color, flexShrink: 0 }} />
@@ -253,15 +253,15 @@ export default function AnalyticsPage({ processes, settings, reload }: Props) {
             {/* System */}
             {health && (
               <div style={sidePanel}>
-                <PanelLabel>System</PanelLabel>
+                <PanelLabel>系统</PanelLabel>
                 <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column' }}>
-                  <KV k="Status"      v={health.status}             vc={health.status === 'running' ? 'var(--color-status-running)' : '#ef4444'} />
-                  <KV k="Version"     v={`v${health.version}`} />
-                  <KV k="Uptime"      v={formatUptime(health.uptime_secs)} />
-                  <KV k="Processes"   v={String(health.process_count)} />
-                  <KV k="Active"      v={String(stats.activeCount)} vc={stats.activeCount > 0 ? 'var(--color-status-running)' : undefined} />
-                  <KV k="AutoRestart" v={String(autorestart)} />
-                  <KV k="Cron jobs"   v={String(cronCount)} last />
+                  <KV k="状态"      v={health.status === 'running' ? '运行中' : health.status}             vc={health.status === 'running' ? 'var(--color-status-running)' : '#ef4444'} />
+                  <KV k="版本"     v={`v${health.version}`} />
+                  <KV k="运行时长"      v={formatUptime(health.uptime_secs)} />
+                  <KV k="进程数"   v={String(health.process_count)} />
+                  <KV k="活动进程"      v={String(stats.activeCount)} vc={stats.activeCount > 0 ? 'var(--color-status-running)' : undefined} />
+                  <KV k="自动重启" v={String(autorestart)} />
+                  <KV k="定时任务"   v={String(cronCount)} last />
                 </div>
               </div>
             )}
@@ -276,10 +276,10 @@ export default function AnalyticsPage({ processes, settings, reload }: Props) {
 
         {/* Empty state */}
         {processes.length === 0 && (
-          <div style={{ textAlign: 'center', padding: '60px 0' }}>
-            <div style={{ fontSize: 13, color: 'var(--color-muted-foreground)', marginBottom: 14 }}>No processes registered yet</div>
+              <div style={{ textAlign: 'center', padding: '60px 0' }}>
+            <div style={{ fontSize: 13, color: 'var(--color-muted-foreground)', marginBottom: 14 }}>尚未注册进程</div>
             <button onClick={() => navigate('/start')} style={{ padding: '8px 20px', fontSize: 13, fontWeight: 600, borderRadius: 6, cursor: 'pointer', background: 'var(--color-primary)', border: 'none', color: '#fff' }}>
-              Start your first process
+              启动你的第一个进程
             </button>
           </div>
         )}
@@ -304,9 +304,9 @@ function NsListRow({ ns, last, onNavigate, onStart }: { ns: NsRow; last: boolean
   const dot = ns.crashed > 0 ? '#ef4444' : ns.running > 0 ? 'var(--color-status-running)' : 'var(--color-muted-foreground)'
   const pct = ns.total > 0 ? (ns.running / ns.total) * 100 : 0
   const statusLabel = ns.crashed > 0
-    ? `${ns.crashed} crashed`
-    : ns.running > 0 ? `${ns.running}/${ns.total} running`
-    : 'all stopped'
+    ? `${ns.crashed} 个已崩溃`
+    : ns.running > 0 ? `${ns.running}/${ns.total} 运行中`
+    : '全部已停止'
   const statusColor2 = ns.crashed > 0 ? '#ef4444' : ns.running > 0 ? 'var(--color-status-running)' : 'var(--color-muted-foreground)'
 
   return (
@@ -355,7 +355,7 @@ function NsListRow({ ns, last, onNavigate, onStart }: { ns: NsRow; last: boolean
       <div style={{ display: 'flex', gap: 5, justifyContent: 'flex-end' }} onClick={e => e.stopPropagation()}>
         {(ns.stopped > 0 || ns.crashed > 0) && (
           <button onClick={onStart} style={rowBtn}>
-            <Play size={9} />Start
+            <Play size={9} />启动
           </button>
         )}
         <button onClick={onNavigate} style={{ ...rowBtn, padding: '3px 8px' }}>
@@ -387,7 +387,7 @@ function Donut({ segments, total }: { segments: StatusSegment[]; total: number }
         )
       })}
       <text x={cx} y={cy - 4} textAnchor="middle" fill="var(--color-foreground)" fontSize={22} fontWeight="700">{total}</text>
-      <text x={cx} y={cy + 13} textAnchor="middle" fill="var(--color-muted-foreground)" fontSize={9} fontWeight="600" letterSpacing="0.5">PROCS</text>
+      <text x={cx} y={cy + 13} textAnchor="middle" fill="var(--color-muted-foreground)" fontSize={9} fontWeight="600" letterSpacing="0.5">进程</text>
     </svg>
   )
 }
@@ -470,7 +470,7 @@ function LogStatsSection({ processes }: { processes: ProcessInfo[] }) {
   return (
     <div style={{ border: '1px solid var(--color-border)', borderRadius: 8, padding: '14px 16px', background: 'var(--color-card)' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-        <PanelLabel>Log Volume · 5-min intervals</PanelLabel>
+        <PanelLabel>日志量 · 5 分钟间隔</PanelLabel>
         <div style={{ display: 'flex', gap: 10, fontSize: 11 }}>
           <span style={{ display: 'flex', alignItems: 'center', gap: 4, color: 'var(--color-muted-foreground)' }}>
             <span style={{ width: 7, height: 7, borderRadius: 1, background: 'var(--color-status-running)', display: 'inline-block' }} />stdout

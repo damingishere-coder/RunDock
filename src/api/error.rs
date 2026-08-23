@@ -12,19 +12,38 @@ pub struct ApiError {
 
 impl ApiError {
     pub fn not_found(msg: impl ToString) -> Self {
-        Self { status: StatusCode::NOT_FOUND, message: msg.to_string() }
+        Self {
+            status: StatusCode::NOT_FOUND,
+            message: msg.to_string(),
+        }
     }
 
     pub fn bad_request(msg: impl ToString) -> Self {
-        Self { status: StatusCode::BAD_REQUEST, message: msg.to_string() }
+        Self {
+            status: StatusCode::BAD_REQUEST,
+            message: msg.to_string(),
+        }
     }
 
     pub fn internal(msg: impl ToString) -> Self {
-        Self { status: StatusCode::INTERNAL_SERVER_ERROR, message: msg.to_string() }
+        Self {
+            status: StatusCode::INTERNAL_SERVER_ERROR,
+            message: msg.to_string(),
+        }
     }
 
     pub fn unauthorized(msg: impl ToString) -> Self {
-        Self { status: StatusCode::UNAUTHORIZED, message: msg.to_string() }
+        Self {
+            status: StatusCode::UNAUTHORIZED,
+            message: msg.to_string(),
+        }
+    }
+
+    pub fn conflict(msg: impl ToString) -> Self {
+        Self {
+            status: StatusCode::CONFLICT,
+            message: msg.to_string(),
+        }
     }
 }
 

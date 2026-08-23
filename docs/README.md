@@ -1,8 +1,8 @@
-# alter — Process Manager
+# RunDock — Developer Project Console
 
 > A fast, lightweight process manager for Windows (and cross-platform). Manage any runtime — Python, Node.js, Go, Rust, .NET, PHP, Ruby — from a single tool with a built-in web dashboard.
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](../../LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](../LICENSE)
 [![Built with Rust](https://img.shields.io/badge/Built%20with-Rust-orange.svg)](https://www.rust-lang.org/)
 [![Platform: Windows](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey.svg)]()
 
@@ -10,7 +10,7 @@
 
 ## Table of Contents
 
-- [Why alter?](#why-alter)
+- [Why RunDock?](#why-rundock)
 - [Features](#features)
 - [Windows Notes](#windows-notes)
 - [Installation](#installation)
@@ -24,9 +24,9 @@
 
 ---
 
-## Why alter?
+## Why RunDock?
 
-Managing background processes on Windows has always been awkward. `alter` gives you:
+Managing background processes on Windows has always been awkward. RunDock gives you a polished dashboard while retaining the compatible `alter` command:
 
 - **No console window popups** — processes run silently in the background
 - **Auto-restart** on crash with exponential backoff
@@ -60,7 +60,7 @@ Managing background processes on Windows has always been awkward. `alter` gives 
 
 ## Windows Notes
 
-alter is **designed with Windows in mind**:
+RunDock is **designed with Windows in mind** while retaining the compatible `alter` CLI:
 
 - Processes spawn with `CREATE_NO_WINDOW` — **no black console windows** appearing on your taskbar
 - Daemon runs as a detached hidden background process
@@ -89,8 +89,8 @@ alter is **designed with Windows in mind**:
 
 ```powershell
 # Clone the repo
-git clone https://github.com/your-org/alter.git
-cd alter
+git clone https://github.com/damingishere-coder/RunDock.git
+cd RunDock
 
 # Release build (optimized, stripped binary)
 cargo build --release
@@ -272,7 +272,7 @@ The web dashboard supports global keyboard shortcuts (active when not typing in 
 | [CLI Reference](./CLI.md) | All commands, flags, and examples |
 | [API Reference](./API.md) | Full REST API documentation |
 | [Ecosystem Config](./ECOSYSTEM_CONFIG.md) | Config file format reference |
-| [Architecture](./ARCHITECTURE.md) | How alter works under the hood |
+| [Architecture](./ARCHITECTURE.md) | How RunDock works under the hood |
 | [Changelog](./CHANGELOG.md) | Version history |
 
 ---

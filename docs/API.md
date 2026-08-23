@@ -19,6 +19,8 @@ The host and port can be changed when starting the daemon (`alter daemon start -
 
 By default the API is unauthenticated and binds to `127.0.0.1` (loopback only). Once a dashboard password is configured, **all** API routes require a valid bearer token.
 
+Removing the dashboard password returns the daemon to passwordless mode. Keep the daemon bound to a loopback address when using this mode.
+
 ### Token types
 
 | Token | Source | Expiry |
@@ -542,6 +544,24 @@ POST /api/v1/auth/change-password
 
 ---
 
+### `DELETE /auth/password`
+
+Disable dashboard authentication. When a password is configured, this request requires a valid session token or CLI master token. The operation removes the password, PIN, passkeys, auto-lock setting, and active browser sessions while preserving the CLI master token.
+
+```
+DELETE /api/v1/auth/password
+Authorization: Bearer <session_or_master_token>
+```
+
+**Response:**
+```json
+{ "success": true }
+```
+
+After this succeeds, protected API routes accept requests without an Authorization header because no dashboard password is configured.
+
+---
+
 ### `POST /auth/pin`
 
 Set or update the quick-unlock PIN (4 or 6 digits only, numeric).
@@ -675,7 +695,7 @@ GET /api/v1/telegram/botinfo
 
 **Response (success):**
 ```json
-{ "ok": true, "username": "MyAlterBot", "first_name": "Alter PM" }
+{ "ok": true, "username": "MyRunDockBot", "first_name": "RunDock" }
 ```
 
 **Response (failure):**
@@ -805,6 +825,26 @@ POST /api/v1/notifications/test
 ```
 
 **Config cascade priority:** process-level `notify` → namespace config → global config. The first non-null value per channel wins.
+
+---
+
+## Projects
+
+Projects are stable logical groups. A `managed` project aggregates one or more technical processes; a `desktop` project is a persistent software launcher with zero process members and `status: "desktop"`. Older project records without `kind` remain `managed`.
+
+| Method | Endpoint | Purpose |
+|--------|----------|---------|
+| `GET` | `/projects` | List project aggregates, members, status, CPU, and memory |
+| `GET` | `/projects/{id}` | Get one project |
+| `PATCH` | `/projects/{id}` | Update display metadata, managed state, or `kind` / `launch_uri` |
+| `POST` | `/projects/{id}/start` | Start all stopped enabled members |
+| `POST` | `/projects/{id}/stop` | Stop all active members |
+| `POST` | `/projects/{id}/restart` | Restart all enabled members |
+| `PATCH` | `/processes/{id}/project` | Assign a process with `{ "project_id": "uuid" }` |
+
+Project action responses include one result per component. `success` is false when any component fails, and the corresponding result contains an explicit `error`.
+
+Desktop launch URIs must use a validated non-HTTP custom protocol such as `wanmotai://open`; `http`, `https`, `file`, `javascript`, and `data` are rejected. Desktop projects reject start, stop, restart, enable, and disable operations with HTTP `409 Conflict`.
 
 ---
 

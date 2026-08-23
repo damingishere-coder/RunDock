@@ -30,6 +30,12 @@ const METRIC_SAMPLE_INTERVAL_TICKS: u32 = 20;
 
 pub type ProcessRegistry = DashMap<Uuid, Arc<RwLock<ManagedProcess>>>;
 
+#[derive(Debug, Clone)]
+pub struct ManagedProcessSnapshot {
+    pub info: ProcessInfo,
+    pub config: AppConfig,
+}
+
 pub struct ProcessManager {
     pub registry: Arc<ProcessRegistry>,
     restart_tx: mpsc::Sender<RestartEvent>,
@@ -149,8 +155,11 @@ impl ProcessManager {
         process.status = ProcessStatus::Running;
         process.pid = Some(pid);
         process.started_at = Some(Utc::now()); // approximate — original start time is unknown
+        process.desired_running = true;
+        process.generation = 1;
 
         let id = process.id;
+        let generation = process.generation;
         let info = process.to_info();
         let arc = Arc::new(RwLock::new(process));
         self.registry.insert(id, Arc::clone(&arc));
@@ -172,11 +181,14 @@ impl ProcessManager {
                 match registry.get(&id) {
                     Some(entry) => {
                         let mut proc = entry.write().await;
+                        if !proc.desired_running || proc.generation != generation {
+                            return;
+                        }
                         proc.status = ProcessStatus::Stopped;
                         proc.pid = None;
                         proc.stopped_at = Some(Utc::now());
                         (
-                            proc.config.autorestart,
+                            proc.config.autorestart && proc.config.enabled,
                             proc.restart_count,
                             proc.config.max_restarts,
                             proc.config.restart_delay_ms,
@@ -189,11 +201,15 @@ impl ProcessManager {
             if autorestart && restart_count < max_restarts {
                 tokio::time::sleep(tokio::time::Duration::from_millis(restart_delay_ms)).await;
                 let _ = restart_tx
-                    .send(RestartEvent::Restart { process_id: id })
+                    .send(RestartEvent::Restart { process_id: id, generation })
                     .await;
             } else {
                 let _ = restart_tx
-                    .send(RestartEvent::Exited { process_id: id, exit_code: None })
+                    .send(RestartEvent::Exited {
+                        process_id: id,
+                        generation,
+                        exit_code: None,
+                    })
                     .await;
             }
         });
@@ -205,6 +221,8 @@ impl ProcessManager {
     pub async fn register_sleeping(&self, id: Uuid, config: AppConfig, cron_run_history: Vec<CronRun>) -> Result<ProcessInfo> {
         let mut process = ManagedProcess::new_with_id(id, config.clone());
         process.status = ProcessStatus::Sleeping;
+        process.desired_running = true;
+        process.generation = 1;
         process.cron_run_history = cron_run_history;
         if let Some(expr) = &config.cron {
             process.cron_next_run = next_run(expr);
@@ -226,49 +244,84 @@ impl ProcessManager {
     // @group BusinessLogic > Lifecycle : Stop a running process
     pub async fn stop(&self, id: Uuid) -> Result<ProcessInfo> {
         let arc = self.get_arc(id)?;
-        let mut proc = arc.write().await;
+        let (pid, is_cron, pre_stop, cwd, env, stop_generation) = {
+            let mut proc = arc.write().await;
+            let stoppable = matches!(
+                proc.status,
+                ProcessStatus::Starting
+                    | ProcessStatus::Running
+                    | ProcessStatus::Watching
+                    | ProcessStatus::Sleeping
+            );
+            if !stoppable {
+                return Err(anyhow!(
+                    "process '{}' is not running, starting, or sleeping",
+                    proc.config.name
+                ));
+            }
 
-        let stoppable = matches!(
-            proc.status,
-            ProcessStatus::Running | ProcessStatus::Watching | ProcessStatus::Sleeping
-        );
-        if !stoppable {
-            return Err(anyhow!("process '{}' is not running or sleeping", proc.config.name));
-        }
+            // Invalidate every exit/restart event created by the current spawn
+            // before doing any asynchronous work.
+            proc.desired_running = false;
+            proc.generation = proc.generation.wrapping_add(1);
+            let stop_generation = proc.generation;
+            proc.status = ProcessStatus::Stopping;
 
-        // Kill the cron scheduler if one exists
-        if proc.config.cron.is_some() {
+            if let Some(handle) = proc.health_check_handle.take() {
+                handle.abort();
+            }
+
+            (
+                proc.pid,
+                proc.config.cron.is_some(),
+                proc.config.pre_stop.clone(),
+                proc.config.cwd.clone(),
+                proc.config.env.clone(),
+                stop_generation,
+            )
+        };
+
+        if is_cron {
             if let Some(sched) = self.cron_schedulers.lock().await.remove(&id) {
                 sched.abort();
             }
         }
 
-        proc.status = ProcessStatus::Stopping;
-
-        // @group BusinessLogic > HealthCheck : Abort health check loop before killing the process
-        if let Some(handle) = proc.health_check_handle.take() {
-            handle.abort();
-        }
-
-        // @group BusinessLogic > Hooks : Run pre_stop hook before killing the process
-        if let Some(cmd) = &proc.config.pre_stop.clone() {
-            let cwd = proc.config.cwd.clone();
-            let env = proc.config.env.clone();
-            if let Err(e) = crate::process::hooks::run_hook(cmd, cwd.as_deref(), &env).await {
+        if let Some(cmd) = pre_stop {
+            if let Err(e) = crate::process::hooks::run_hook(&cmd, cwd.as_deref(), &env).await {
                 tracing::warn!("pre_stop hook failed: {e}");
             }
         }
 
-        if let Some(pid) = proc.pid {
-            kill_process(pid);
+        if let Some(pid) = pid {
+            if let Err(error) = kill_process(pid).await {
+                let mut proc = arc.write().await;
+                if proc.generation == stop_generation {
+                    proc.status = if is_pid_alive(pid) {
+                        ProcessStatus::Running
+                    } else {
+                        ProcessStatus::Stopped
+                    };
+                    if proc.status == ProcessStatus::Stopped {
+                        proc.pid = None;
+                        proc.stopped_at = Some(Utc::now());
+                    }
+                }
+                return Err(error);
+            }
         }
 
-        proc.status = ProcessStatus::Stopped;
-        proc.pid = None;
-        proc.stopped_at = Some(Utc::now());
-        proc.cron_next_run = None;
-
-        let info_for_notif = proc.to_info();
+        let info_for_notif = {
+            let mut proc = arc.write().await;
+            if proc.generation != stop_generation {
+                return Ok(proc.to_info());
+            }
+            proc.status = ProcessStatus::Stopped;
+            proc.pid = None;
+            proc.stopped_at = Some(Utc::now());
+            proc.cron_next_run = None;
+            proc.to_info()
+        };
         let notif = Arc::clone(&self.notifications);
         let suppress = Arc::clone(&self.bulk_suppress);
         let info_clone = info_for_notif.clone();
@@ -283,11 +336,33 @@ impl ProcessManager {
         Ok(info_for_notif)
     }
 
+    // @group BusinessLogic > Lifecycle : Start a registered stopped process.
+    pub async fn start_existing(&self, id: Uuid) -> Result<ProcessInfo> {
+        {
+            let arc = self.get_arc(id)?;
+            let proc = arc.read().await;
+            if !proc.config.enabled {
+                return Err(anyhow!("process '{}' is disabled", proc.config.name));
+            }
+            if !matches!(
+                proc.status,
+                ProcessStatus::Stopped | ProcessStatus::Crashed | ProcessStatus::Errored
+            ) {
+                return Err(anyhow!("process '{}' is already active", proc.config.name));
+            }
+        }
+        self.do_spawn(id).await?;
+        self.get(id).await
+    }
+
     // @group BusinessLogic > Lifecycle : Restart a process (stop then start)
     pub async fn restart(&self, id: Uuid) -> Result<ProcessInfo> {
         {
             let arc = self.get_arc(id)?;
             let proc = arc.read().await;
+            if !proc.config.enabled {
+                return Err(anyhow!("process '{}' is disabled", proc.config.name));
+            }
             let is_active = matches!(
                 proc.status,
                 ProcessStatus::Running | ProcessStatus::Watching | ProcessStatus::Sleeping
@@ -377,6 +452,15 @@ impl ProcessManager {
         let arc = self.get_arc(id)?;
         let mut guard = arc.write().await;
         guard.config.enabled = enabled;
+        Ok(guard.to_info())
+    }
+
+    // @group BusinessLogic > Project : Change logical project membership
+    // without touching the running child or any lifecycle configuration.
+    pub async fn assign_project(&self, id: Uuid, project_id: Uuid) -> Result<ProcessInfo> {
+        let arc = self.get_arc(id)?;
+        let mut guard = arc.write().await;
+        guard.config.project_id = Some(project_id);
         Ok(guard.to_info())
     }
 
@@ -486,6 +570,20 @@ impl ProcessManager {
         result
     }
 
+    // @group DatabaseOperations : Snapshot runtime state together with the complete config
+    pub async fn snapshot(&self) -> Vec<ManagedProcessSnapshot> {
+        let mut result = Vec::new();
+        for entry in self.registry.iter() {
+            let proc = entry.value().read().await;
+            result.push(ManagedProcessSnapshot {
+                info: proc.to_info(),
+                config: proc.config.clone(),
+            });
+        }
+        result.sort_by(|a, b| a.info.created_at.cmp(&b.info.created_at));
+        result
+    }
+
     // @group BusinessLogic > LogStats : Return bucketed stdout/stderr log counts for a process
     pub async fn get_log_stats(&self, id: Uuid) -> Vec<crate::models::log_stats::LogStatsBucket> {
         match self.registry.get(&id) {
@@ -544,8 +642,11 @@ impl ProcessManager {
     async fn do_spawn(&self, id: Uuid) -> Result<()> {
         let arc = self.get_arc(id)?;
 
-        let (config, log_tx, log_stats) = {
+        let (config, log_tx, log_stats, generation) = {
             let mut proc = arc.write().await;
+            proc.desired_running = true;
+            proc.generation = proc.generation.wrapping_add(1);
+            let generation = proc.generation;
             proc.status = ProcessStatus::Starting;
             proc.started_at = Some(Utc::now());
             proc.stopped_at = None;
@@ -559,13 +660,21 @@ impl ProcessManager {
             let writer = LogWriter::new(&log_dir, proc.log_tx.clone())?;
             proc.log_writer = Some(writer);
 
-            (proc.config.clone(), proc.log_tx.clone(), Arc::clone(&proc.log_stats))
+            (
+                proc.config.clone(),
+                proc.log_tx.clone(),
+                Arc::clone(&proc.log_stats),
+                generation,
+            )
         };
 
         // @group BusinessLogic > Hooks : Run pre_start hook before spawning
         if let Some(cmd) = &config.pre_start {
             if let Err(e) = crate::process::hooks::run_hook(cmd, config.cwd.as_deref(), &config.env).await {
-                arc.write().await.status = ProcessStatus::Errored;
+                let mut proc = arc.write().await;
+                if proc.generation == generation && proc.desired_running {
+                    proc.status = ProcessStatus::Errored;
+                }
                 return Err(anyhow::anyhow!("pre_start hook failed: {e}"));
             }
         }
@@ -592,7 +701,10 @@ impl ProcessManager {
         .await {
             Ok(c) => c,
             Err(e) => {
-                arc.write().await.status = ProcessStatus::Errored;
+                let mut proc = arc.write().await;
+                if proc.generation == generation && proc.desired_running {
+                    proc.status = ProcessStatus::Errored;
+                }
                 return Err(e);
             }
         };
@@ -601,6 +713,13 @@ impl ProcessManager {
 
         let info_for_notif = {
             let mut proc = arc.write().await;
+            if proc.generation != generation || !proc.desired_running {
+                drop(proc);
+                if let Some(pid) = pid {
+                    let _ = kill_process(pid).await;
+                }
+                return Err(anyhow!("process start was cancelled by a stop request"));
+            }
             proc.pid = pid;
             // Cron jobs don't use autorestart — they're driven by the scheduler.
             // Watch mode and normal mode keep existing behaviour.
@@ -656,6 +775,7 @@ impl ProcessManager {
         let rtx = self.restart_tx.clone();
         tokio::spawn(watch_and_restart(
             id,
+            generation,
             effective_autorestart,
             config.max_restarts,
             config.restart_delay_ms,
@@ -683,10 +803,23 @@ impl ProcessManager {
             let watch_restart_tx = {
                 let (tx, mut rx) = mpsc::channel::<Uuid>(8);
                 let manager_rtx = self.restart_tx.clone();
+                let manager_registry = Arc::clone(&self.registry);
                 tokio::spawn(async move {
                     while let Some(pid_id) = rx.recv().await {
+                        let Some(entry) = manager_registry.get(&pid_id) else {
+                            continue;
+                        };
+                        let proc = entry.read().await;
+                        if !proc.desired_running {
+                            continue;
+                        }
+                        let current_generation = proc.generation;
+                        drop(proc);
                         let _ = manager_rtx
-                            .send(RestartEvent::Restart { process_id: pid_id })
+                            .send(RestartEvent::Restart {
+                                process_id: pid_id,
+                                generation: current_generation,
+                            })
                             .await;
                     }
                 });
@@ -718,7 +851,10 @@ impl ProcessManager {
     ) {
         while let Some(event) = rx.recv().await {
             match event {
-                RestartEvent::Restart { process_id } => {
+                RestartEvent::Restart {
+                    process_id,
+                    generation,
+                } => {
                     if let Some(arc) = registry.get(&process_id) {
                         let arc = Arc::clone(arc.value());
                         let rtx = restart_tx.clone();
@@ -727,16 +863,32 @@ impl ProcessManager {
 
                         tokio::spawn(async move {
                             // Stop existing child if still alive
-                            {
+                            let new_generation = {
                                 let mut proc = arc.write().await;
+                                if !proc.desired_running || proc.generation != generation {
+                                    return;
+                                }
                                 if let Some(pid) = proc.pid {
-                                    kill_process(pid);
+                                    drop(proc);
+                                    if let Err(error) = kill_process(pid).await {
+                                        tracing::warn!(
+                                            "failed to stop process {process_id} before restart: {error}"
+                                        );
+                                        return;
+                                    }
+                                    proc = arc.write().await;
+                                    if !proc.desired_running || proc.generation != generation {
+                                        return;
+                                    }
                                 }
                                 proc.pid = None;
                                 proc.restart_count += 1;
+                                proc.generation = proc.generation.wrapping_add(1);
+                                let new_generation = proc.generation;
                                 proc.status = ProcessStatus::Starting;
                                 proc.started_at = Some(Utc::now());
-                            }
+                                new_generation
+                            };
 
                             let (config, log_tx, log_stats) = {
                                 let mut proc = arc.write().await;
@@ -771,6 +923,15 @@ impl ProcessManager {
                                     let pid = child.id();
                                     let info_for_notif = {
                                         let mut proc = arc.write().await;
+                                        if !proc.desired_running
+                                            || proc.generation != new_generation
+                                        {
+                                            drop(proc);
+                                            if let Some(pid) = pid {
+                                                let _ = kill_process(pid).await;
+                                            }
+                                            return;
+                                        }
                                         proc.pid = pid;
                                         proc.health_status = None;
                                         proc.status = if config.watch {
@@ -794,6 +955,7 @@ impl ProcessManager {
                                     });
                                     tokio::spawn(watch_and_restart(
                                         process_id,
+                                        new_generation,
                                         config.autorestart,
                                         config.max_restarts,
                                         config.restart_delay_ms,
@@ -806,6 +968,11 @@ impl ProcessManager {
                                     tracing::error!("failed to respawn process {process_id}: {e}");
                                     if let Some(arc_entry) = registry2.get(&process_id) {
                                         let mut proc = arc_entry.write().await;
+                                        if !proc.desired_running
+                                            || proc.generation != new_generation
+                                        {
+                                            return;
+                                        }
                                         proc.status = ProcessStatus::Errored;
                                         let info_for_notif = proc.to_info();
                                         let notif2 = Arc::clone(&notifications);
@@ -822,9 +989,16 @@ impl ProcessManager {
                     }
                 }
 
-                RestartEvent::Exited { process_id, exit_code } => {
+                RestartEvent::Exited {
+                    process_id,
+                    generation,
+                    exit_code,
+                } => {
                     if let Some(arc) = registry.get(&process_id) {
                         let mut proc = arc.write().await;
+                        if !proc.desired_running || proc.generation != generation {
+                            continue;
+                        }
                         // Cron jobs transition to Sleeping instead of Stopped
                         proc.status = if proc.config.cron.is_some() {
                             ProcessStatus::Sleeping
@@ -841,11 +1015,18 @@ impl ProcessManager {
                     }
                 }
 
-                RestartEvent::MaxRestartsReached { process_id, exit_code } => {
+                RestartEvent::MaxRestartsReached {
+                    process_id,
+                    generation,
+                    exit_code,
+                } => {
                     let notifications = Arc::clone(&notifications);
                     if let Some(arc) = registry.get(&process_id) {
                         let info_for_notif = {
                             let mut proc = arc.write().await;
+                            if !proc.desired_running || proc.generation != generation {
+                                continue;
+                            }
                             proc.status = ProcessStatus::Errored;
                             proc.pid = None;
                             proc.last_exit_code = exit_code;
@@ -889,7 +1070,7 @@ impl ProcessManager {
                     let config = {
                         let proc = arc.read().await;
                         // Only fire if still in Sleeping state (not manually stopped)
-                        if proc.status != ProcessStatus::Sleeping {
+                        if proc.status != ProcessStatus::Sleeping || !proc.desired_running {
                             return;
                         }
                         proc.config.clone()
@@ -899,13 +1080,19 @@ impl ProcessManager {
                     let run_started_at = Utc::now();
 
                     // Transition to Starting
-                    {
+                    let generation = {
                         let mut proc = arc.write().await;
+                        if !proc.desired_running || proc.status != ProcessStatus::Sleeping {
+                            return;
+                        }
+                        proc.generation = proc.generation.wrapping_add(1);
+                        let generation = proc.generation;
                         proc.status = ProcessStatus::Starting;
                         proc.started_at = Some(run_started_at);
                         proc.stopped_at = None;
                         proc.cron_next_run = None;
-                    }
+                        generation
+                    };
 
                     let log_dir = crate::config::paths::process_log_dir(&config.name);
                     let _ = std::fs::create_dir_all(&log_dir);
@@ -934,7 +1121,15 @@ impl ProcessManager {
                     // Handle the exit event inline — record run history, transition to Sleeping, fire CronFailed if needed
                     tokio::spawn(async move {
                         if let Some(event) = local_restart_rx.recv().await {
-                            if let crate::process::restarter::RestartEvent::Exited { exit_code, .. } = event {
+                            if let crate::process::restarter::RestartEvent::Exited {
+                                generation: event_generation,
+                                exit_code,
+                                ..
+                            } = event
+                            {
+                                if event_generation != generation {
+                                    return;
+                                }
                                 let finished_at = Utc::now();
                                 let duration_secs = (finished_at - run_started_at)
                                     .num_seconds()
@@ -946,6 +1141,9 @@ impl ProcessManager {
                                 };
                                 let info_for_fail = {
                                     let mut proc = arc2.write().await;
+                                    if proc.generation != generation || !proc.desired_running {
+                                        return;
+                                    }
                                     // Only transition back to Sleeping if the job wasn't manually stopped.
                                     // If status is Stopped, the user explicitly stopped it while it was
                                     // running — don't override that decision.
@@ -999,6 +1197,13 @@ impl ProcessManager {
                             let pid = child.id();
                             let info_for_notif = {
                                 let mut proc = arc.write().await;
+                                if proc.generation != generation || !proc.desired_running {
+                                    drop(proc);
+                                    if let Some(pid) = pid {
+                                        let _ = kill_process(pid).await;
+                                    }
+                                    return;
+                                }
                                 proc.pid = pid;
                                 proc.status = ProcessStatus::Running;
                                 proc.to_info()
@@ -1018,6 +1223,7 @@ impl ProcessManager {
                             });
                             tokio::spawn(watch_and_restart(
                                 process_id,
+                                generation,
                                 false, // cron jobs never auto-restart — scheduler drives re-runs
                                 config.max_restarts,
                                 config.restart_delay_ms,
@@ -1027,8 +1233,12 @@ impl ProcessManager {
                             ));
 
                             // Ensure the scheduler is still alive (it may have been dropped on stop)
+                            let should_schedule = {
+                                let proc = arc.read().await;
+                                proc.desired_running && proc.generation == generation
+                            };
                             let has_scheduler = cron_schedulers.lock().await.contains_key(&process_id);
-                            if !has_scheduler {
+                            if should_schedule && !has_scheduler {
                                 if let Some(expr) = &config.cron {
                                     if let Ok(sched) = CronScheduler::start(process_id, expr, trigger_tx) {
                                         cron_schedulers.lock().await.insert(process_id, sched);
@@ -1040,6 +1250,9 @@ impl ProcessManager {
                             tracing::error!("cron: failed to spawn process {process_id}: {e}");
                             let info_for_notif = {
                                 let mut proc = arc.write().await;
+                                if proc.generation != generation || !proc.desired_running {
+                                    return;
+                                }
                                 proc.status = ProcessStatus::Errored;
                                 proc.to_info()
                             };
@@ -1264,30 +1477,47 @@ pub fn is_pid_alive(pid: u32) -> bool {
 }
 
 // @group Utilities : Kill a single orphaned process by PID (used when re-adopting on daemon restart)
-pub fn kill_orphan_pid(pid: u32) {
-    #[cfg(target_os = "windows")]
-    {
-        let _ = std::process::Command::new("taskkill")
-            .args(["/PID", &pid.to_string(), "/T", "/F"])
-            .output();
-    }
-    #[cfg(not(target_os = "windows"))]
-    {
-        unsafe {
-            libc::kill(pid as i32, libc::SIGTERM);
-        }
-    }
+pub async fn kill_orphan_pid(pid: u32) -> Result<()> {
+    kill_process(pid).await
 }
 
-// @group Utilities : Platform-aware process tree kill
-// On Windows, /T kills the entire process tree (cmd.exe → node/vite children).
-// On Linux/Mac, kill the process group so all children are also terminated.
-fn kill_process(pid: u32) {
+// @group Utilities : Platform-aware verified process tree kill
+// A manual stop is only reported as successful after the root PID disappears.
+async fn kill_process(pid: u32) -> Result<()> {
+    if !is_pid_alive(pid) {
+        return Ok(());
+    }
+
     #[cfg(target_os = "windows")]
     {
-        let _ = std::process::Command::new("taskkill")
+        let output = tokio::process::Command::new("taskkill")
             .args(["/PID", &pid.to_string(), "/T", "/F"])
-            .output();
+            .output()
+            .await
+            .map_err(|error| anyhow!("failed to execute taskkill for PID {pid}: {error}"))?;
+
+        for _ in 0..30 {
+            if !is_pid_alive(pid) {
+                return Ok(());
+            }
+            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+        }
+
+        let detail = String::from_utf8_lossy(if output.stderr.is_empty() {
+            &output.stdout
+        } else {
+            &output.stderr
+        })
+        .trim()
+        .to_string();
+        return Err(anyhow!(
+            "failed to stop PID {pid}{}",
+            if detail.is_empty() {
+                String::new()
+            } else {
+                format!(": {detail}")
+            }
+        ));
     }
     #[cfg(not(target_os = "windows"))]
     {
@@ -1297,5 +1527,94 @@ fn kill_process(pid: u32) {
             // Fallback: also send to the process itself
             libc::kill(pid as i32, libc::SIGTERM);
         }
+        for _ in 0..30 {
+            if !is_pid_alive(pid) {
+                return Ok(());
+            }
+            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+        }
+        Err(anyhow!("failed to stop PID {pid}: process is still alive"))
+    }
+}
+
+#[cfg(test)]
+mod lifecycle_tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    fn test_config(name: String) -> AppConfig {
+        AppConfig {
+            name,
+            project_id: None,
+            script: "test".to_string(),
+            args: vec![],
+            cwd: None,
+            instances: 1,
+            autorestart: true,
+            max_restarts: 3,
+            restart_delay_ms: 10,
+            watch: false,
+            watch_paths: vec![],
+            watch_ignore: vec![],
+            env: HashMap::new(),
+            namespace: "tests".to_string(),
+            log_file: None,
+            error_file: None,
+            max_log_size_mb: 1,
+            cron: None,
+            cron_last_run: None,
+            cron_next_run: None,
+            notify: None,
+            log_alert: None,
+            env_file: None,
+            health_check_url: None,
+            health_check_interval_secs: 30,
+            health_check_timeout_secs: 5,
+            health_check_retries: 3,
+            pre_start: None,
+            post_start: None,
+            pre_stop: None,
+            enabled: true,
+        }
+    }
+
+    #[tokio::test]
+    async fn manual_stop_rejects_stale_autorestart_event() {
+        let manager = ProcessManager::new(Arc::new(RwLock::new(NotificationsStore::default())));
+        let name = format!("stop-race-{}", Uuid::new_v4());
+        let id = Uuid::new_v4();
+        manager.register_stopped(id, test_config(name)).await;
+        let generation = {
+            let entry = manager.registry.get(&id).unwrap();
+            let mut process = entry.write().await;
+            process.status = ProcessStatus::Running;
+            process.desired_running = true;
+            process.generation = 7;
+            process.generation
+        };
+
+        let stopped = manager.stop(id).await.unwrap();
+        assert_eq!(stopped.status, ProcessStatus::Stopped);
+        manager
+            .restart_tx
+            .send(RestartEvent::Restart {
+                process_id: id,
+                generation,
+            })
+            .await
+            .unwrap();
+        tokio::time::sleep(tokio::time::Duration::from_millis(150)).await;
+
+        let info = manager.get(id).await.unwrap();
+        assert_eq!(info.status, ProcessStatus::Stopped);
+        assert_eq!(info.pid, None);
+        let desired_running = manager
+            .registry
+            .get(&id)
+            .unwrap()
+            .read()
+            .await
+            .desired_running;
+        assert!(!desired_running);
     }
 }

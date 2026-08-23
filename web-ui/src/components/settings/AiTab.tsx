@@ -10,7 +10,7 @@ type Provider = 'ollama' | 'copilot' | 'github' | 'claude' | 'openai'
 
 // 'github' kept in type for backwards compat but hidden from the UI selector
 const PROVIDER_LABELS: Record<Provider, string> = {
-  ollama:   'Ollama (local)',
+  ollama:   'Ollama（本地）',
   copilot:  'GitHub Copilot',
   github:   'GitHub Models',
   claude:   'Claude (Anthropic)',
@@ -100,11 +100,11 @@ export default function AiTab() {
           setAuthError(null)
           loadModels('github')
         } else if (status.status === 'expired') {
-          setAuthPhase('idle'); setAuthError('Code expired — please try again.')
+          setAuthPhase('idle'); setAuthError('验证码已过期，请重试。')
         } else if (status.status === 'denied') {
-          setAuthPhase('idle'); setAuthError('Authorization denied by GitHub.')
+          setAuthPhase('idle'); setAuthError('GitHub 拒绝了授权。')
         } else if (status.status === 'error') {
-          setAuthPhase('idle'); setAuthError(status.message ?? 'Unknown error from GitHub.')
+          setAuthPhase('idle'); setAuthError(status.message ?? 'GitHub 返回未知错误。')
         } else if (status.interval) {
           setPollInterval(status.interval)
         }
@@ -177,7 +177,7 @@ export default function AiTab() {
       setPollInterval(data.interval)
       setAuthPhase('in_progress')
     } catch (e: unknown) {
-      setAuthError((e as Error)?.message ?? 'Failed to start GitHub login.')
+      setAuthError((e as Error)?.message ?? '启动 GitHub 登录失败。')
     }
   }
 
@@ -198,7 +198,7 @@ export default function AiTab() {
     }).catch(() => {})
   }
 
-  const SaveButton = ({ label = 'Save' }: { label?: string }) => (
+  const SaveButton = ({ label = '保存' }: { label?: string }) => (
     <button
       onClick={saveAiSettings}
       disabled={aiSaving}
@@ -209,26 +209,26 @@ export default function AiTab() {
         opacity: aiSaving ? 0.6 : 1, transition: 'background 0.2s',
       }}
     >
-      {aiSaved ? 'Saved!' : aiSaving ? 'Saving…' : label}
+      {aiSaved ? '已保存！' : aiSaving ? '保存中…' : label}
     </button>
   )
 
   return (
     <>
-      <p style={sectionTitle}>AI Assistant</p>
+      <p style={sectionTitle}>AI 助手</p>
       <div style={card}>
 
-        {/* Enable toggle */}
+        {/* 启用开关 */}
         <SettingRow
-          label="Enable AI assistant"
-          description="Show the AI panel button in the sidebar."
+          label="启用 AI 助手"
+          description="在侧边栏显示 AI 面板按钮。"
           control={<Toggle checked={aiEnabled} onChange={setAiEnabled} />}
         />
 
-        {/* Provider selector */}
+        {/* 服务提供商选择 */}
         <SettingRow
-          label="Provider"
-          description="Select which AI service to use for chat responses."
+          label="服务提供商"
+          description="选择用于聊天回复的 AI 服务。"
           control={
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <select
@@ -240,43 +240,43 @@ export default function AiTab() {
                   <option key={p} value={p}>{PROVIDER_LABELS[p]}</option>
                 ))}
               </select>
-              <SaveButton label="Save" />
+              <SaveButton label="保存" />
             </div>
           }
         />
 
-        {/* ── GitHub Copilot section ── */}
+        {/* ── GitHub Copilot 区域 ── */}
         {provider === 'copilot' && (
           <SettingRow
             label="GitHub Copilot"
             description={
               authPhase === 'connected'
-                ? <>Uses your active Copilot subscription via <strong>@{authUsername}</strong>. No extra configuration needed.</>
-                : <>Requires an active <a href="https://github.com/features/copilot" target="_blank" rel="noreferrer" style={{ color: 'var(--color-primary)', textDecoration: 'none' }}>GitHub Copilot</a> subscription. Sign in using the GitHub provider first to link your account.</>
+                ? <>通过 <strong>@{authUsername}</strong> 使用当前 Copilot 订阅。无需其他配置。</>
+                : <>需要有效的 <a href="https://github.com/features/copilot" target="_blank" rel="noreferrer" style={{ color: 'var(--color-primary)', textDecoration: 'none' }}>GitHub Copilot</a> 订阅。请先使用 GitHub 提供商登录以关联账户。</>
             }
             control={
               authPhase === 'connected'
-                ? <span style={{ fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 4, background: 'color-mix(in srgb, var(--color-status-running) 18%, transparent)', color: 'var(--color-status-running)' }}>✓ Ready</span>
-                : <span style={{ fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 4, background: 'color-mix(in srgb, var(--color-destructive) 15%, transparent)', color: 'var(--color-destructive)' }}>Not connected</span>
+                ? <span style={{ fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 4, background: 'color-mix(in srgb, var(--color-status-running) 18%, transparent)', color: 'var(--color-status-running)' }}>✓ 就绪</span>
+                : <span style={{ fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 4, background: 'color-mix(in srgb, var(--color-destructive) 15%, transparent)', color: 'var(--color-destructive)' }}>未连接</span>
             }
           />
         )}
 
-        {/* ── GitHub Models section ── */}
+        {/* ── GitHub Models 区域 ── */}
         {provider === 'github' && (
           <>
             <SettingRow
-              label="GitHub OAuth App Client ID"
+              label="GitHub OAuth 应用 Client ID"
               description={
                 aiClientIdBuiltin
-                  ? 'Client ID is built into this binary — no manual configuration needed.'
+                  ? 'Client ID 已内置于此程序，无需手动配置。'
                   : <>
-                      Create an OAuth App at{' '}
+                      请在{' '}
                       <a href="https://github.com/settings/developers" target="_blank" rel="noreferrer"
                         style={{ color: 'var(--color-primary)', textDecoration: 'none' }}>
                         github.com/settings/developers
                       </a>
-                      {' '}and enable "Device Flow". Paste the Client ID here (no secret needed).
+                      {' '}创建 OAuth 应用并启用“设备流程”，然后将 Client ID 粘贴到此处（无需密钥）。
                     </>
               }
               control={
@@ -286,7 +286,7 @@ export default function AiTab() {
                       fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 4,
                       background: 'color-mix(in srgb, var(--color-status-running) 18%, transparent)',
                       color: 'var(--color-status-running)',
-                    }}>✓ Built-in</span>
+                    }}>✓ 已内置</span>
                   ) : (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                       <input
@@ -305,8 +305,8 @@ export default function AiTab() {
             />
 
             <SettingRow
-              label="GitHub account"
-              description="Sign in to let alter fetch an access token automatically via GitHub OAuth."
+              label="GitHub 账户"
+              description="登录后，RunDock 可通过 GitHub OAuth 自动获取访问令牌。"
               control={
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
                   {authPhase === 'idle' && (
@@ -319,7 +319,7 @@ export default function AiTab() {
                         border: 'none', borderRadius: 5, cursor: 'pointer',
                       }}
                     >
-                      <Github size={13} /> Sign in with GitHub
+                      <Github size={13} /> 使用 GitHub 登录
                     </button>
                   )}
                   {authPhase === 'in_progress' && (
@@ -330,7 +330,7 @@ export default function AiTab() {
                       minWidth: 230,
                     }}>
                       <div style={{ fontSize: 11, color: 'var(--color-muted-foreground)', alignSelf: 'flex-start' }}>
-                        Enter this code at:
+                        请在以下地址输入此验证码：
                       </div>
                       <div style={{ alignSelf: 'flex-start' }}>
                         <a href={deviceUri || 'https://github.com/login/device'} target="_blank" rel="noreferrer"
@@ -344,7 +344,7 @@ export default function AiTab() {
                         </code>
                         <button
                           onClick={copyDeviceCode}
-                          title="Copy code"
+                          title="复制验证码"
                           style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: codeCopied ? 'var(--color-status-running)' : 'var(--color-muted-foreground)', display: 'flex', alignItems: 'center' }}
                         >
                           {codeCopied ? <Check size={14} /> : <Copy size={14} />}
@@ -352,27 +352,27 @@ export default function AiTab() {
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, alignSelf: 'flex-start' }}>
                         <Loader size={12} style={{ animation: 'spin 1s linear infinite', color: 'var(--color-muted-foreground)' }} />
-                        <span style={{ fontSize: 11, color: 'var(--color-muted-foreground)' }}>Waiting for authorization…</span>
+                        <span style={{ fontSize: 11, color: 'var(--color-muted-foreground)' }}>等待授权…</span>
                       </div>
                       <button
                         onClick={cancelDeviceFlow}
                         style={{ alignSelf: 'flex-start', padding: '4px 10px', fontSize: 11, background: 'transparent', border: '1px solid var(--color-border)', borderRadius: 4, cursor: 'pointer', color: 'var(--color-muted-foreground)' }}
                       >
-                        Cancel
+                        取消
                       </button>
                     </div>
                   )}
                   {authPhase === 'connected' && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                       <span style={{ fontSize: 12, color: 'var(--color-status-running)', fontWeight: 500 }}>
-                        ✓ Connected as @{authUsername}
+                        ✓ 已连接为 @{authUsername}
                       </span>
                       <button
                         onClick={disconnect}
-                        title="Disconnect GitHub account"
+                        title="断开 GitHub 账户"
                         style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 10px', fontSize: 11, background: 'transparent', border: '1px solid var(--color-border)', borderRadius: 4, cursor: 'pointer', color: 'var(--color-muted-foreground)' }}
                       >
-                        <LogOut size={11} /> Disconnect
+                        <LogOut size={11} /> 断开连接
                       </button>
                     </div>
                   )}
@@ -387,13 +387,13 @@ export default function AiTab() {
           </>
         )}
 
-        {/* ── Claude section ── */}
+        {/* ── Claude 区域 ── */}
         {provider === 'claude' && (
           <SettingRow
-            label="Anthropic API key"
+            label="Anthropic API 密钥"
             description={
               <>
-                Get your key at{' '}
+                可在此处获取密钥：{' '}
                 <a href="https://console.anthropic.com/" target="_blank" rel="noreferrer"
                   style={{ color: 'var(--color-primary)', textDecoration: 'none' }}>
                   console.anthropic.com
@@ -417,12 +417,12 @@ export default function AiTab() {
           />
         )}
 
-        {/* ── OpenAI section ── */}
+        {/* ── OpenAI 区域 ── */}
         {provider === 'openai' && (
           <>
             <SettingRow
-              label="OpenAI API key"
-              description="Your OpenAI secret key (sk-…). Leave blank to keep existing."
+              label="OpenAI API 密钥"
+              description="你的 OpenAI 私密密钥（sk-…）。留空以保留现有密钥。"
               control={
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                   <input
@@ -438,8 +438,8 @@ export default function AiTab() {
               }
             />
             <SettingRow
-              label="API base URL"
-              description="Override for OpenAI-compatible endpoints (e.g. Azure, LM Studio, Groq)."
+              label="API 基础 URL"
+              description="用于覆盖 OpenAI 兼容端点（例如 Azure、LM Studio、Groq）。"
               control={
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                   <input
@@ -458,11 +458,11 @@ export default function AiTab() {
           </>
         )}
 
-        {/* ── Ollama section ── */}
+        {/* ── Ollama 区域 ── */}
         {provider === 'ollama' && (
           <SettingRow
-            label="Ollama base URL"
-            description="URL of your local Ollama instance."
+            label="Ollama 基础 URL"
+            description="本地 Ollama 实例的 URL。"
             control={
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <input
@@ -480,10 +480,10 @@ export default function AiTab() {
           />
         )}
 
-        {/* ── Model selector (all providers) ── */}
+        {/* ── 模型选择（所有提供商） ── */}
         <SettingRow
-          label="Model"
-          description={`${PROVIDER_LABELS[provider]} model to use for chat responses.`}
+          label="模型"
+          description={`用于聊天回复的 ${PROVIDER_LABELS[provider]} 模型。`}
           isLast
           control={
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -504,7 +504,7 @@ export default function AiTab() {
               <button
                 onClick={() => loadModels()}
                 disabled={modelsLoading}
-                title="Refresh model list"
+                title="刷新模型列表"
                 style={{
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   width: 28, height: 28, borderRadius: 5,

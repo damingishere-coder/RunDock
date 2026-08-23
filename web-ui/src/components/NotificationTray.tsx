@@ -86,15 +86,15 @@ export function NotificationTray({
           borderBottom: '1px solid var(--color-border)',
           display: 'flex', alignItems: 'center', gap: 8,
         }}>
-          <span style={{ fontWeight: 600, fontSize: 14, flex: 1 }}>Activity</span>
+          <span style={{ fontWeight: 600, fontSize: 14, flex: 1 }}>活动</span>
           <button
             onClick={() => { navigate('/notifications'); onClose() }}
-            title="Notification settings"
+            title="通知设置"
             style={iconBtn}
           >
             <Settings size={14} />
           </button>
-          <button onClick={onClose} title="Close" style={iconBtn}>
+          <button onClick={onClose} title="关闭" style={iconBtn}>
             <X size={14} />
           </button>
         </div>
@@ -106,13 +106,13 @@ export function NotificationTray({
             borderBottom: '1px solid var(--color-border)',
             display: 'flex', gap: 8,
           }}>
-            <button onClick={onMarkAllRead} style={actionBtn} title="Mark all as read">
+            <button onClick={onMarkAllRead} style={actionBtn} title="全部标记为已读">
               <CheckCheck size={12} />
-              Mark all read
+              全部已读
             </button>
-            <button onClick={onClearAll} style={{ ...actionBtn, color: 'var(--color-destructive)' }} title="Clear all">
+            <button onClick={onClearAll} style={{ ...actionBtn, color: 'var(--color-destructive)' }} title="清空全部">
               <Trash2 size={12} />
-              Clear all
+              清空全部
             </button>
           </div>
         )}
@@ -126,9 +126,9 @@ export function NotificationTray({
               color: 'var(--color-muted-foreground)',
             }}>
               <span style={{ fontSize: 32, opacity: 0.5 }}>🔔</span>
-              <span style={{ fontSize: 13 }}>No activity yet</span>
+              <span style={{ fontSize: 13 }}>暂无活动</span>
               <span style={{ fontSize: 11, textAlign: 'center', maxWidth: 200, lineHeight: 1.5 }}>
-                Process events (crash, restart, start, stop) will appear here.
+                进程事件（崩溃、重启、启动、停止）会显示在这里。
               </span>
             </div>
           ) : (
@@ -203,7 +203,7 @@ function NotifRow({
       {/* Dismiss button */}
       <button
         onClick={e => { e.stopPropagation(); onDismiss() }}
-        title="Dismiss"
+        title="忽略"
         style={{ ...iconBtn, opacity: 0.4, flexShrink: 0, marginTop: 0, width: 20, height: 20 }}
         onMouseEnter={e => { e.currentTarget.style.opacity = '1' }}
         onMouseLeave={e => { e.currentTarget.style.opacity = '0.4' }}

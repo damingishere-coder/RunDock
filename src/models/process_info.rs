@@ -19,6 +19,9 @@ pub enum HealthCheckStatus {
 pub struct ProcessInfo {
     pub id: Uuid,
     pub name: String,
+    /// Stable logical project membership. `None` is a legacy record and is
+    /// interpreted as belonging to a project whose ID equals this process ID.
+    pub project_id: Option<Uuid>,
     pub script: String,
     pub args: Vec<String>,
     pub cwd: Option<String>,

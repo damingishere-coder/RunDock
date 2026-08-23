@@ -98,7 +98,7 @@ export function EnvFilePanel({ processId, processName, onClose, onRestart }: Pro
 
   function switchTab(name: string) {
     if (dirty) {
-      if (!window.confirm('You have unsaved changes. Discard and switch files?')) return
+      if (!window.confirm('有未保存的更改。要放弃更改并切换文件吗？')) return
     }
     setActiveTab(name)
     loadFile(name)
@@ -145,7 +145,7 @@ export function EnvFilePanel({ processId, processName, onClose, onRestart }: Pro
     // Find the path of the active file
     const activeFile = files.find(f => f.name === activeTab)
     if (!activeFile?.path) {
-      setError('Cannot sync: file path unknown')
+      setError('无法同步：文件路径未知')
       setSyncing(false)
       return
     }
@@ -153,9 +153,9 @@ export function EnvFilePanel({ processId, processName, onClose, onRestart }: Pro
     try {
       const result = await api.syncEnvFiles(activeFile.path)
       if (result.success) {
-        setSyncMsg(`✓ Synced keys to ${result.synced_files} file${result.synced_files !== 1 ? 's' : ''}`)
+        setSyncMsg(`✓ 已将键同步到 ${result.synced_files} 个文件`)
       } else {
-        setSyncMsg(`Synced ${result.synced_files} files${result.errors?.length ? ` (${result.errors.length} errors)` : ''}`)
+        setSyncMsg(`已同步 ${result.synced_files} 个文件${result.errors?.length ? `（${result.errors.length} 个错误）` : ''}`)
       }
       setTimeout(() => setSyncMsg(''), 4000)
     } catch (e: any) {
@@ -222,7 +222,7 @@ export function EnvFilePanel({ processId, processName, onClose, onRestart }: Pro
       {/* Body */}
       <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', padding: '8px 12px', gap: 6 }}>
         {loadingList || loadingFile ? (
-          <div style={{ color: 'var(--color-muted-foreground)', padding: 24, textAlign: 'center', fontSize: 13 }}>Loading…</div>
+          <div style={{ color: 'var(--color-muted-foreground)', padding: 24, textAlign: 'center', fontSize: 13 }}>加载中…</div>
         ) : (
           <>
             {!exists && (
@@ -231,7 +231,7 @@ export function EnvFilePanel({ processId, processName, onClose, onRestart }: Pro
                 background: 'var(--color-muted)', color: 'var(--color-muted-foreground)',
                 borderLeft: `3px solid ${activeColor}`,
               }}>
-                No <code>{activeTab}</code> found. Saving will create it.
+                未找到 <code>{activeTab}</code>。保存时将创建该文件。
               </div>
             )}
 
@@ -264,18 +264,18 @@ export function EnvFilePanel({ processId, processName, onClose, onRestart }: Pro
         gap: 6, flexShrink: 0, flexWrap: 'wrap',
       }}>
         <span style={{ fontSize: 11, color: 'var(--color-muted-foreground)', flexShrink: 0 }}>
-          {dirty ? <span style={{ color: activeColor }}>● Unsaved</span> : saved ? '✓ Saved' : `${lineCount} line${lineCount !== 1 ? 's' : ''}`}
+          {dirty ? <span style={{ color: activeColor }}>● 未保存</span> : saved ? '✓ 已保存' : `${lineCount} 行`}
         </span>
         <div style={{ display: 'flex', gap: 5 }}>
           {hasMultipleFiles && (
             <button
               disabled={syncing || loadingFile}
               onClick={handleSync}
-              title="Sync keys from this file to all other env files"
+              title="将此文件中的键同步到其他环境文件"
               style={{ ...cancelBtnStyle, display: 'flex', alignItems: 'center', gap: 4, opacity: syncing || loadingFile ? 0.6 : 1 }}
             >
               <RefreshCw size={11} strokeWidth={2} />
-              {syncing ? 'Syncing…' : 'Sync Keys'}
+              {syncing ? '同步中…' : '同步键'}
             </button>
           )}
           <button
@@ -283,14 +283,14 @@ export function EnvFilePanel({ processId, processName, onClose, onRestart }: Pro
             onClick={() => handleSave(false)}
             style={{ ...cancelBtnStyle, opacity: saving || loadingFile ? 0.6 : 1 }}
           >
-            {saving ? 'Saving…' : 'Save'}
+            {saving ? '保存中…' : '保存'}
           </button>
           <button
             disabled={saving || loadingFile}
             onClick={() => handleSave(true)}
             style={{ ...primaryBtnStyle(activeColor), opacity: saving || loadingFile ? 0.6 : 1 }}
           >
-            {saving ? 'Saving…' : 'Save & ↺'}
+            {saving ? '保存中…' : '保存并重启 ↺'}
           </button>
         </div>
       </div>

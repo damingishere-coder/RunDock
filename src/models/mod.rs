@@ -8,4 +8,5 @@ pub mod metric_sample;
 pub mod notification;
 pub mod process_info;
 pub mod process_status;
+pub mod project;
 pub mod tunnel;

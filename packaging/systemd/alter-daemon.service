@@ -1,6 +1,6 @@
 [Unit]
-Description=alter process manager daemon
-Documentation=https://github.com/thechandanbhagat/alter-pm
+Description=RunDock process manager daemon (alter CLI compatibility service)
+Documentation=https://github.com/damingishere-coder/RunDock
 After=network.target
 
 [Service]

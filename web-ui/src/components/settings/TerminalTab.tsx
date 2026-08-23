@@ -18,46 +18,46 @@ export default function TerminalTab({ settings, onUpdate }: Props) {
 
   return (
     <div>
-      <p style={sectionTitle}>KEYBOARD SHORTCUTS</p>
+      <p style={sectionTitle}>键盘快捷键</p>
       <div style={card}>
 
         <div style={rowStyle}>
           <div style={{ flex: 1, paddingRight: 24 }}>
-            <div style={labelStyle}>Split Pane</div>
-            <div style={descStyle}>Split the active terminal into two side-by-side panes</div>
+            <div style={labelStyle}>拆分窗格</div>
+            <div style={descStyle}>将当前终端拆分为左右并列的两个窗格</div>
           </div>
           <ShortcutInput value={s.splitPane} onChange={v => update('splitPane', v)} />
         </div>
 
         <div style={rowStyle}>
           <div style={{ flex: 1, paddingRight: 24 }}>
-            <div style={labelStyle}>Duplicate Tab</div>
-            <div style={descStyle}>Open a new tab using the same working directory as the active tab</div>
+            <div style={labelStyle}>复制标签页</div>
+            <div style={descStyle}>使用当前标签页的相同工作目录打开新标签页</div>
           </div>
           <ShortcutInput value={s.duplicateTab} onChange={v => update('duplicateTab', v)} />
         </div>
 
         <div style={lastRowStyle}>
           <div style={{ flex: 1, paddingRight: 24 }}>
-            <div style={labelStyle}>New Terminal</div>
-            <div style={descStyle}>Open a new empty terminal tab</div>
+            <div style={labelStyle}>新建终端</div>
+            <div style={descStyle}>打开空白终端标签页</div>
           </div>
           <ShortcutInput value={s.newTab} onChange={v => update('newTab', v)} />
         </div>
 
       </div>
 
-      <p style={{ ...sectionTitle, marginTop: 8 }}>SHORTCUT FORMAT</p>
+      <p style={{ ...sectionTitle, marginTop: 8 }}>快捷键格式</p>
       <div style={card}>
         <div style={{ fontSize: 12, color: 'var(--color-muted-foreground)', lineHeight: 1.7 }}>
-          Combine modifiers and a key with <code style={{ background: 'var(--color-muted)', padding: '1px 5px', borderRadius: 3 }}>+</code>
+          使用 <code style={{ background: 'var(--color-muted)', padding: '1px 5px', borderRadius: 3 }}>+</code> 连接修饰键和按键
           <br />
-          Modifiers: <code style={{ background: 'var(--color-muted)', padding: '1px 5px', borderRadius: 3 }}>ctrl</code>{' '}
+          修饰键：<code style={{ background: 'var(--color-muted)', padding: '1px 5px', borderRadius: 3 }}>ctrl</code>{' '}
           <code style={{ background: 'var(--color-muted)', padding: '1px 5px', borderRadius: 3 }}>shift</code>{' '}
           <code style={{ background: 'var(--color-muted)', padding: '1px 5px', borderRadius: 3 }}>alt</code>{' '}
           <code style={{ background: 'var(--color-muted)', padding: '1px 5px', borderRadius: 3 }}>meta</code>
           <br />
-          Examples: <code style={{ background: 'var(--color-muted)', padding: '1px 5px', borderRadius: 3 }}>ctrl+shift+t</code>{' '}
+          示例：<code style={{ background: 'var(--color-muted)', padding: '1px 5px', borderRadius: 3 }}>ctrl+shift+t</code>{' '}
           <code style={{ background: 'var(--color-muted)', padding: '1px 5px', borderRadius: 3 }}>alt+t</code>{' '}
           <code style={{ background: 'var(--color-muted)', padding: '1px 5px', borderRadius: 3 }}>ctrl+t</code>
         </div>
@@ -78,7 +78,7 @@ function ShortcutInput({ value, onChange }: { value: string; onChange: (v: strin
         fontFamily: '"Cascadia Code", "Fira Code", Consolas, monospace',
         fontSize: 12,
       }}
-      placeholder="e.g. ctrl+shift+t"
+      placeholder="例如：ctrl+shift+t"
       spellCheck={false}
     />
   )

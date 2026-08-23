@@ -222,18 +222,18 @@ export function AiPanel({ open, processId, processName, onClose }: AiPanelProps)
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 14px', borderBottom: '1px solid var(--color-border)', flexShrink: 0 }}>
           <Bot size={15} style={{ color: 'var(--color-primary)', flexShrink: 0 }} />
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-foreground)' }}>AI Assistant</div>
+            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-foreground)' }}>AI 助手</div>
             <div style={{ fontSize: 10, color: 'var(--color-muted-foreground)', marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {processName ? `Context: ${processName}` : (providerLabel ?? 'AI')}
+              {processName ? `上下文：${processName}` : (providerLabel ?? 'AI')}
               {providerLabel && processName ? ` · ${providerLabel}` : ''}
             </div>
           </div>
-          <button title="Clear chat" onClick={clearChat} style={iconBtn}
+          <button title="清空聊天" onClick={clearChat} style={iconBtn}
             onMouseEnter={e => { e.currentTarget.style.color = 'var(--color-foreground)' }}
             onMouseLeave={e => { e.currentTarget.style.color = 'var(--color-muted-foreground)' }}>
             <Trash2 size={13} />
           </button>
-          <button title="Close" onClick={onClose} style={iconBtn}
+          <button title="关闭" onClick={onClose} style={iconBtn}
             onMouseEnter={e => { e.currentTarget.style.color = 'var(--color-foreground)' }}
             onMouseLeave={e => { e.currentTarget.style.color = 'var(--color-muted-foreground)' }}>
             <X size={14} />
@@ -246,11 +246,11 @@ export function AiPanel({ open, processId, processName, onClose }: AiPanelProps)
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'var(--color-muted-foreground)', gap: 8, paddingBottom: 40 }}>
               <Bot size={28} style={{ opacity: 0.35 }} />
               <div style={{ fontSize: 12, textAlign: 'center', lineHeight: 1.5 }}>
-                Ask about your processes,<br />logs, crashes, or config.
+                可以询问进程、日志、<br />崩溃或配置相关问题。
               </div>
               {processName && (
                 <div style={{ fontSize: 11, marginTop: 4, padding: '4px 10px', background: 'var(--color-accent)', borderRadius: 12, color: 'var(--color-primary)', fontWeight: 500 }}>
-                  Process context: {processName}
+                  进程上下文：{processName}
                 </div>
               )}
             </div>
@@ -296,7 +296,7 @@ export function AiPanel({ open, processId, processName, onClose }: AiPanelProps)
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Ask anything… (Enter to send)"
+            placeholder="输入问题…（按 Enter 发送）"
             rows={1}
             disabled={streaming}
             style={{
@@ -315,7 +315,7 @@ export function AiPanel({ open, processId, processName, onClose }: AiPanelProps)
           <button
             onClick={sendMessage}
             disabled={!input.trim() || streaming}
-            title="Send (Enter)"
+            title="发送（Enter）"
             style={{
               width: 32, height: 32, flexShrink: 0, borderRadius: 6, border: 'none', cursor: 'pointer',
               background: (!input.trim() || streaming) ? 'var(--color-secondary)' : 'var(--color-primary)',

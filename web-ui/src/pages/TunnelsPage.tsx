@@ -52,7 +52,7 @@ function providerLabel(p: TunnelProvider): { name: string; color: string } {
   switch (p) {
     case 'cloudflare': return { name: 'Cloudflare', color: '#f48120' }
     case 'ngrok':      return { name: 'ngrok',      color: '#1f2d3d' }
-    case 'custom':     return { name: 'Custom',     color: 'var(--color-muted-foreground)' }
+    case 'custom':     return { name: '自定义',     color: 'var(--color-muted-foreground)' }
   }
 }
 
@@ -62,7 +62,7 @@ function CopyBtn({ text }: { text: string }) {
   return (
     <button
       onClick={() => { navigator.clipboard.writeText(text).catch(() => {}); setCopied(true); setTimeout(() => setCopied(false), 1800) }}
-      title="Copy URL"
+      title="复制 URL"
       style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: 3, color: copied ? 'var(--color-status-running)' : 'var(--color-muted-foreground)', display: 'flex', alignItems: 'center' }}
     >
       {copied ? <Check size={13} /> : <Copy size={13} />}
@@ -122,7 +122,7 @@ function TunnelRow({ tunnel, onStop, onRemove }: { tunnel: TunnelEntry; onStop: 
           <span style={{ fontSize: 12, color: 'var(--color-status-crashed)' }}>{tunnel.error}</span>
         ) : (
           <span style={{ fontSize: 12, color: 'var(--color-muted-foreground)', fontStyle: 'italic' }}>
-            {tunnel.status === 'starting' ? 'Waiting for URL…' : '—'}
+            {tunnel.status === 'starting' ? '等待 URL…' : '—'}
           </span>
         )}
       </div>
@@ -133,25 +133,25 @@ function TunnelRow({ tunnel, onStop, onRemove }: { tunnel: TunnelEntry; onStop: 
         fontSize: 11, color: statusColor(tunnel.status), flexShrink: 0,
       }}>
         <span style={{ width: 7, height: 7, borderRadius: '50%', background: statusColor(tunnel.status), display: 'inline-block' }} />
-        {tunnel.status}
+        {tunnel.status === 'active' ? '活动' : tunnel.status === 'starting' ? '启动中' : tunnel.status === 'failed' ? '失败' : '已停止'}
       </span>
 
       {/* Actions */}
       {isLive ? (
         <button
           onClick={onStop}
-          title="Stop tunnel"
+          title="停止隧道"
           style={{ background: 'transparent', border: '1px solid var(--color-border)', borderRadius: 5, padding: '4px 8px', cursor: 'pointer', color: 'var(--color-muted-foreground)', display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, flexShrink: 0 }}
         >
-          <Square size={11} /> Stop
+          <Square size={11} /> 停止
         </button>
       ) : (
         <button
           onClick={onRemove}
-          title="Remove"
+          title="移除"
           style={{ background: 'transparent', border: '1px solid var(--color-border)', borderRadius: 5, padding: '4px 8px', cursor: 'pointer', color: 'var(--color-status-crashed)', display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, flexShrink: 0 }}
         >
-          <Trash2 size={11} /> Remove
+          <Trash2 size={11} /> 移除
         </button>
       )}
     </div>
@@ -173,14 +173,14 @@ function CreateForm({ defaultProvider, onCreated, onCancel }: {
   async function submit(e: React.FormEvent) {
     e.preventDefault()
     const portNum = parseInt(port, 10)
-    if (!portNum || portNum < 1 || portNum > 65535) { setError('Enter a valid port (1–65535)'); return }
+    if (!portNum || portNum < 1 || portNum > 65535) { setError('请输入有效端口（1–65535）'); return }
     setBusy(true); setError(null)
     try {
       const res = await api.createTunnel({ port: portNum, process_name: procName || null, provider })
       if (res.error) { setError(res.error); return }
       onCreated()
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Failed to create tunnel')
+      setError(e instanceof Error ? e.message : '创建隧道失败')
     } finally {
       setBusy(false)
     }
@@ -189,11 +189,11 @@ function CreateForm({ defaultProvider, onCreated, onCancel }: {
   return (
     <form onSubmit={submit} style={{ ...card, marginBottom: 16 }}>
       <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', color: 'var(--color-muted-foreground)', textTransform: 'uppercase', marginBottom: 14, marginTop: 0 }}>
-        New Tunnel
+        新建隧道
       </p>
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
         <label style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: '0 0 120px' }}>
-          <span style={{ fontSize: 11, color: 'var(--color-muted-foreground)' }}>Port *</span>
+          <span style={{ fontSize: 11, color: 'var(--color-muted-foreground)' }}>端口 *</span>
           <input
             type="number" min={1} max={65535} placeholder="3000"
             value={port} onChange={e => setPort(e.target.value)}
@@ -203,7 +203,7 @@ function CreateForm({ defaultProvider, onCreated, onCancel }: {
         </label>
 
         <label style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: '0 0 160px' }}>
-          <span style={{ fontSize: 11, color: 'var(--color-muted-foreground)' }}>Process name (optional)</span>
+          <span style={{ fontSize: 11, color: 'var(--color-muted-foreground)' }}>进程名称（可选）</span>
           <input
             type="text" placeholder="my-app"
             value={procName} onChange={e => setProcName(e.target.value)}
@@ -212,7 +212,7 @@ function CreateForm({ defaultProvider, onCreated, onCancel }: {
         </label>
 
         <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          <span style={{ fontSize: 11, color: 'var(--color-muted-foreground)' }}>Provider</span>
+          <span style={{ fontSize: 11, color: 'var(--color-muted-foreground)' }}>提供商</span>
           <select
             value={provider}
             onChange={e => setProvider(e.target.value as TunnelProvider)}
@@ -220,16 +220,16 @@ function CreateForm({ defaultProvider, onCreated, onCancel }: {
           >
             <option value="cloudflare">Cloudflare</option>
             <option value="ngrok">ngrok</option>
-            <option value="custom">Custom</option>
+            <option value="custom">自定义</option>
           </select>
         </label>
 
         <div style={{ display: 'flex', gap: 8, paddingBottom: 1 }}>
           <button type="submit" disabled={busy} style={{ ...btnPrimary, opacity: busy ? 0.6 : 1 }}>
-            {busy ? 'Creating…' : 'Create'}
+            {busy ? '创建中…' : '创建'}
           </button>
           <button type="button" onClick={onCancel} style={{ padding: '7px 14px', fontSize: 13, background: 'transparent', border: '1px solid var(--color-border)', borderRadius: 6, cursor: 'pointer', color: 'var(--color-foreground)' }}>
-            Cancel
+            取消
           </button>
         </div>
       </div>
@@ -254,7 +254,7 @@ export default function TunnelsPage() {
       const data = await api.getTunnels()
       setTunnels(data.tunnels ?? [])
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Failed to load tunnels')
+      setError(e instanceof Error ? e.message : '加载隧道失败')
     } finally {
       setLoading(false)
     }
@@ -300,17 +300,17 @@ export default function TunnelsPage() {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <Globe size={18} style={{ color: 'var(--color-primary)' }} />
-          <h1 style={{ fontSize: 18, fontWeight: 700, margin: 0, color: 'var(--color-foreground)' }}>Tunnels</h1>
+          <h1 style={{ fontSize: 18, fontWeight: 700, margin: 0, color: 'var(--color-foreground)' }}>隧道</h1>
           {activeTunnels.length > 0 && (
             <span style={{ fontSize: 11, fontWeight: 600, background: 'var(--color-status-running)', color: '#fff', borderRadius: 10, padding: '1px 8px' }}>
-              {activeTunnels.length} active
+              {activeTunnels.length} 个活动
             </span>
           )}
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <button
             onClick={() => load()}
-            title="Refresh"
+            title="刷新"
             style={{ background: 'transparent', border: '1px solid var(--color-border)', borderRadius: 6, padding: '6px 10px', cursor: 'pointer', color: 'var(--color-muted-foreground)', display: 'flex', alignItems: 'center' }}
           >
             <RefreshCw size={13} />
@@ -320,15 +320,15 @@ export default function TunnelsPage() {
               onClick={() => setShowForm(true)}
               style={{ ...btnPrimary, display: 'flex', alignItems: 'center', gap: 6 }}
             >
-              <Plus size={14} /> New Tunnel
+              <Plus size={14} /> 新建隧道
             </button>
           )}
         </div>
       </div>
 
       <p style={{ fontSize: 12, color: 'var(--color-muted-foreground)', marginTop: 0, marginBottom: 20 }}>
-        Expose any local port publicly via Cloudflare, ngrok, or a custom tool.
-        Configure providers in <strong>Settings → Tunnels</strong>.
+        通过 Cloudflare、ngrok 或自定义工具将任意本地端口暴露到公网。
+        请在 <strong>设置 → 隧道</strong> 中配置提供商。
       </p>
 
       {/* Create form */}
@@ -347,13 +347,13 @@ export default function TunnelsPage() {
 
       {/* Loading skeleton */}
       {loading && !tunnels.length && (
-        <div style={{ ...card, color: 'var(--color-muted-foreground)', fontSize: 13 }}>Loading…</div>
+        <div style={{ ...card, color: 'var(--color-muted-foreground)', fontSize: 13 }}>加载中…</div>
       )}
 
       {/* Active tunnels */}
       {activeTunnels.length > 0 && (
         <>
-          <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', color: 'var(--color-muted-foreground)', textTransform: 'uppercase', marginBottom: 4 }}>Active</p>
+          <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', color: 'var(--color-muted-foreground)', textTransform: 'uppercase', marginBottom: 4 }}>活动中</p>
           <div style={card}>
             {activeTunnels.map(t => (
               <TunnelRow
@@ -370,7 +370,7 @@ export default function TunnelsPage() {
       {/* Inactive tunnels */}
       {inactiveTunnels.length > 0 && (
         <>
-          <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', color: 'var(--color-muted-foreground)', textTransform: 'uppercase', marginBottom: 4 }}>Stopped / Failed</p>
+          <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', color: 'var(--color-muted-foreground)', textTransform: 'uppercase', marginBottom: 4 }}>已停止 / 失败</p>
           <div style={card}>
             {inactiveTunnels.map(t => (
               <TunnelRow
@@ -389,10 +389,10 @@ export default function TunnelsPage() {
         <div style={{ ...card, textAlign: 'center', padding: '40px 20px' }}>
           <Globe size={28} style={{ color: 'var(--color-border)', marginBottom: 12 }} />
           <p style={{ fontSize: 14, color: 'var(--color-muted-foreground)', margin: '0 0 16px' }}>
-            No tunnels yet. Click <strong>New Tunnel</strong> to expose a local port publicly.
+            暂无隧道。点击<strong>新建隧道</strong>以将本地端口暴露到公网。
           </p>
           <button onClick={() => setShowForm(true)} style={btnPrimary}>
-            New Tunnel
+            新建隧道
           </button>
         </div>
       )}

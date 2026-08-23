@@ -126,7 +126,7 @@ export function CopyPath({ value }: { value: string }) {
         overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
         display: 'block',
       }} title={value}>{value}</code>
-      <button onClick={copy} title="Copy path" style={{
+      <button onClick={copy} title="复制路径" style={{
         padding: 4, background: 'transparent', border: 'none',
         cursor: 'pointer', color: copied ? 'var(--color-status-running)' : 'var(--color-muted-foreground)',
         display: 'flex', alignItems: 'center',

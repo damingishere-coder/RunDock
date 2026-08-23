@@ -1,4 +1,4 @@
-# release.ps1 — Build a release installer for alter
+# release.ps1 — Build a release installer for RunDock
 # Usage:  .\scripts\release.ps1 -Version 0.1.0
 # Requires: Rust (cargo), Inno Setup 6 installed at default path
 
@@ -15,7 +15,7 @@ $ISSFile   = Join-Path $Root "installer\alter-setup.iss"
 $DistDir   = Join-Path $Root "dist"
 $ISCC      = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
 
-Write-Host "==> alter release build v$Version" -ForegroundColor Cyan
+Write-Host "==> RunDock release build v$Version" -ForegroundColor Cyan
 
 # ── 1. Patch version in Inno Setup script ─────────────────────────────────────
 Write-Host "--> Patching Inno Setup version..."
@@ -38,7 +38,7 @@ New-Item -ItemType Directory -Force -Path $DistDir | Out-Null
 & $ISCC $ISSFile
 
 # ── 4. Compute SHA256 ─────────────────────────────────────────────────────────
-$InstallerFile = Get-ChildItem $DistDir -Filter "alter-$Version-*.exe" | Select-Object -First 1
+$InstallerFile = Get-ChildItem $DistDir -Filter "RunDock-$Version-*.exe" | Select-Object -First 1
 if (-not $InstallerFile) {
     Write-Error "Installer not found in $DistDir"
 }
@@ -46,9 +46,9 @@ $Hash = (Get-FileHash $InstallerFile.FullName -Algorithm SHA256).Hash.ToLower()
 
 # ── 5. Update WinGet installer manifest ───────────────────────────────────────
 Write-Host "--> Updating WinGet manifest SHA256..."
-$ManifestDir = Join-Path $Root "winget\manifests\t\thechandanbhagat\alter\$Version"
+$ManifestDir = Join-Path $Root "winget\manifests\d\damingishere-coder\RunDock\$Version"
 if (Test-Path $ManifestDir) {
-    $InstallerManifest = Join-Path $ManifestDir "thechandanbhagat.alter.installer.yaml"
+    $InstallerManifest = Join-Path $ManifestDir "damingishere-coder.RunDock.installer.yaml"
     $yaml = Get-Content $InstallerManifest -Raw
     $yaml = $yaml -replace 'InstallerSha256: <SHA256_HASH>', "InstallerSha256: $Hash"
     $yaml = $yaml -replace 'InstallerSha256: [a-f0-9]{64}', "InstallerSha256: $Hash"

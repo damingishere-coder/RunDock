@@ -125,7 +125,7 @@ async fn test_message(State(state): State<Arc<DaemonState>>) -> Result<Json<serd
     commands::send_message(
         &token,
         chat_id,
-        "✅ <b>alter-pm2</b> Telegram bot is configured and working!",
+        "✅ <b>RunDock</b> Telegram bot is configured and working!",
     )
     .await
     .map_err(|e| ApiError::internal(e.to_string()))?;

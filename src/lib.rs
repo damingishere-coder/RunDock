@@ -51,9 +51,7 @@ pub async fn run_cli(cli: Cli) -> anyhow::Result<()> {
 
         Commands::Logs(args) => cli::commands::logs::run(&client, args, json).await?,
 
-        Commands::Flush(r) => {
-            cli::commands::flush::run(&client, r.target.as_deref(), json).await?
-        }
+        Commands::Flush(r) => cli::commands::flush::run(&client, r.target.as_deref(), json).await?,
 
         Commands::Reset(r) => cli::commands::reset::run(&client, &r.target, json).await?,
 
@@ -65,6 +63,8 @@ pub async fn run_cli(cli: Cli) -> anyhow::Result<()> {
             cli::commands::daemon::run(&client, d.action, &cli.host, cli.port).await?
         }
 
+        Commands::Auth(a) => cli::commands::auth::run(&client, a.action, json).await?,
+
         Commands::Startup => cli::commands::startup::run_startup().await?,
 
         Commands::Unstartup => cli::commands::startup::run_unstartup().await?,
@@ -73,7 +73,9 @@ pub async fn run_cli(cli: Cli) -> anyhow::Result<()> {
             let url = format!("http://{}:{}/", cli.host, cli.port);
             println!("[alter] dashboard: {url}");
             #[cfg(target_os = "windows")]
-            let _ = std::process::Command::new("cmd").args(["/c", "start", &url]).spawn();
+            let _ = std::process::Command::new("cmd")
+                .args(["/c", "start", &url])
+                .spawn();
             #[cfg(target_os = "macos")]
             let _ = std::process::Command::new("open").arg(&url).spawn();
             #[cfg(target_os = "linux")]

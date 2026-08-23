@@ -6,6 +6,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
+use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct EcosystemConfig {
@@ -16,6 +17,10 @@ pub struct EcosystemConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
     pub name: String,
+    /// Stable logical project membership. Older state files omit this field;
+    /// in that case the process UUID is used as the effective project ID.
+    #[serde(default)]
+    pub project_id: Option<Uuid>,
     pub script: String,
     #[serde(default)]
     pub args: Vec<String>,
@@ -210,6 +215,7 @@ script = "node index.js"
         assert_eq!(app.instances, 1);
         assert!(app.autorestart);
         assert_eq!(app.namespace, "default");
+        assert_eq!(app.project_id, None);
     }
 
     // @group UnitTests > TOML : Env vars are captured as a map

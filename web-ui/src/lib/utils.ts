@@ -10,22 +10,37 @@ export function cn(...inputs: ClassValue[]) {
 
 // @group Utilities > Formatting
 export function formatUptime(secs: number): string {
-  if (secs < 60)    return `${secs}s`
-  if (secs < 3600)  return `${Math.floor(secs / 60)}m ${secs % 60}s`
-  if (secs < 86400) return `${Math.floor(secs / 3600)}h ${Math.floor((secs % 3600) / 60)}m`
-  return `${Math.floor(secs / 86400)}d ${Math.floor((secs % 86400) / 3600)}h`
+  if (secs < 60)    return `${secs}秒`
+  if (secs < 3600)  return `${Math.floor(secs / 60)}分 ${secs % 60}秒`
+  if (secs < 86400) return `${Math.floor(secs / 3600)}小时 ${Math.floor((secs % 3600) / 60)}分`
+  return `${Math.floor(secs / 86400)}天 ${Math.floor((secs % 86400) / 3600)}小时`
+}
+
+export const PROCESS_STATUS_LABELS: Record<ProcessStatus, string> = {
+  running: '运行中',
+  watching: '监视中',
+  stopped: '已停止',
+  crashed: '已崩溃',
+  errored: '错误',
+  starting: '启动中',
+  stopping: '停止中',
+  sleeping: '休眠中',
+}
+
+export function processStatusLabel(status: ProcessStatus): string {
+  return PROCESS_STATUS_LABELS[status] ?? status
 }
 
 export function formatNextRun(isoStr: string | null): string {
   if (!isoStr) return '-'
   const d = new Date(isoStr)
   const diffMs = d.getTime() - Date.now()
-  if (diffMs < 0) return 'now'
+  if (diffMs < 0) return '现在'
   const diffSecs = Math.floor(diffMs / 1000)
-  if (diffSecs < 60)    return `in ${diffSecs}s`
-  if (diffSecs < 3600)  return `in ${Math.floor(diffSecs / 60)}m`
-  if (diffSecs < 86400) return `in ${Math.floor(diffSecs / 3600)}h ${Math.floor((diffSecs % 3600) / 60)}m`
-  return d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+  if (diffSecs < 60)    return `${diffSecs}秒后`
+  if (diffSecs < 3600)  return `${Math.floor(diffSecs / 60)}分钟后`
+  if (diffSecs < 86400) return `${Math.floor(diffSecs / 3600)}小时 ${Math.floor((diffSecs % 3600) / 60)}分钟后`
+  return d.toLocaleString('zh-CN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 
 export function formatLastRun(p: ProcessInfo): string {
@@ -33,10 +48,10 @@ export function formatLastRun(p: ProcessInfo): string {
   if (!ts) return '-'
   const d = new Date(ts)
   const diffSecs = Math.floor((Date.now() - d.getTime()) / 1000)
-  if (diffSecs < 60)    return `${diffSecs}s ago`
-  if (diffSecs < 3600)  return `${Math.floor(diffSecs / 60)}m ago`
-  if (diffSecs < 86400) return `${Math.floor(diffSecs / 3600)}h ago`
-  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+  if (diffSecs < 60)    return `${diffSecs}秒前`
+  if (diffSecs < 3600)  return `${Math.floor(diffSecs / 60)}分钟前`
+  if (diffSecs < 86400) return `${Math.floor(diffSecs / 3600)}小时前`
+  return d.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 
 export const STATUS_COLORS: Record<ProcessStatus, string> = {

@@ -55,10 +55,10 @@ function ChannelFields({
       enabled: config.slack?.enabled ?? false,
       onToggle: (v: boolean) => setSlack({ enabled: v }),
       fields: [
-        { label: 'Webhook URL', type: 'url' as const, placeholder: 'https://hooks.slack.com/services/…',
+        { label: 'Webhook 地址', type: 'url' as const, placeholder: 'https://hooks.slack.com/services/…',
           value: config.slack?.webhook_url ?? '',
           onChange: (v: string) => setSlack({ webhook_url: v }) },
-        { label: 'Channel (optional)', type: 'text' as const, placeholder: '#alerts',
+        { label: '频道（可选）', type: 'text' as const, placeholder: '#alerts',
           value: config.slack?.channel ?? '',
           onChange: (v: string) => setSlack({ channel: v }) },
       ],
@@ -68,7 +68,7 @@ function ChannelFields({
       enabled: config.teams?.enabled ?? false,
       onToggle: (v: boolean) => setTeams({ enabled: v }),
       fields: [
-        { label: 'Webhook URL', type: 'url' as const, placeholder: 'https://outlook.office.com/webhook/…',
+        { label: 'Webhook 地址', type: 'url' as const, placeholder: 'https://outlook.office.com/webhook/…',
           value: config.teams?.webhook_url ?? '',
           onChange: (v: string) => setTeams({ webhook_url: v }) },
       ],
@@ -78,7 +78,7 @@ function ChannelFields({
       enabled: config.discord?.enabled ?? false,
       onToggle: (v: boolean) => setDiscord({ enabled: v }),
       fields: [
-        { label: 'Webhook URL', type: 'url' as const, placeholder: 'https://discord.com/api/webhooks/…',
+        { label: 'Webhook 地址', type: 'url' as const, placeholder: 'https://discord.com/api/webhooks/…',
           value: config.discord?.webhook_url ?? '',
           onChange: (v: string) => setDiscord({ webhook_url: v }) },
       ],
@@ -131,14 +131,14 @@ function EventPanels({
     <div style={{ display: 'flex', gap: 8 }}>
       <div style={{ flex: 1, borderRadius: 6, border: '1px solid rgba(99,102,241,0.35)', background: 'rgba(99,102,241,0.06)', padding: '8px 12px' }}>
         <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', color: '#818cf8', textTransform: 'uppercase', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 4 }}>
-          <span>⚙</span> Process
+          <span>⚙</span> 进程
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           {processEventKeys.map(key => (
             <label key={key} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, cursor: 'pointer' }}>
               <input type="checkbox" checked={!!config.events[key]} onChange={e => setEvents({ [key]: e.target.checked })}
                 style={{ accentColor: '#818cf8', width: 13, height: 13 }} />
-              {key.replace('on_', '')}
+              {{ crash: '崩溃', restart: '重启', start: '启动', stop: '停止' }[key.replace('on_', '') as 'crash' | 'restart' | 'start' | 'stop']}
             </label>
           ))}
         </div>
@@ -147,14 +147,14 @@ function EventPanels({
       {showCronEvents && (
         <div style={{ flex: 1, borderRadius: 6, border: '1px solid rgba(251,191,36,0.35)', background: 'rgba(251,191,36,0.06)', padding: '8px 12px' }}>
           <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', color: '#fbbf24', textTransform: 'uppercase', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 4 }}>
-            <span>⏰</span> Cron
+          <span>⏰</span> 定时任务
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {cronEventKeys.map(key => (
               <label key={key} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, cursor: 'pointer' }}>
                 <input type="checkbox" checked={!!config.events[key]} onChange={e => setEvents({ [key]: e.target.checked })}
                   style={{ accentColor: '#fbbf24', width: 13, height: 13 }} />
-                {key.replace('on_cron_', '')}
+                {{ run: '运行', fail: '失败' }[key.replace('on_cron_', '') as 'run' | 'fail']}
               </label>
             ))}
           </div>
@@ -215,7 +215,7 @@ export function ProcessNotifModal({ process, onClose }: { process: ProcessInfo; 
       <div style={{ background: 'var(--color-card)', border: '1px solid var(--color-border)', borderRadius: 8, width: 460, maxWidth: '94vw', boxShadow: '0 8px 32px rgba(0,0,0,0.3)', display: 'flex', flexDirection: 'column' }}>
         <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--color-border)', display: 'flex', alignItems: 'center', gap: 8 }}>
           <Bell size={14} style={{ color: '#a78bfa' }} />
-          <strong style={{ flex: 1, fontSize: 13 }}>Notify — {process.name}</strong>
+          <strong style={{ flex: 1, fontSize: 13 }}>通知 — {process.name}</strong>
           <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 16, color: 'var(--color-muted-foreground)' }}>×</button>
         </div>
         <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -225,13 +225,13 @@ export function ProcessNotifModal({ process, onClose }: { process: ProcessInfo; 
         </div>
         <div style={{ padding: '10px 16px', borderTop: '1px solid var(--color-border)', display: 'flex', gap: 8, alignItems: 'center' }}>
           <button onClick={handleSave} disabled={saving} style={modalPrimaryBtn}>
-            <Save size={12} />{saving ? 'Saving…' : 'Save'}
+            <Save size={12} />{saving ? '保存中…' : '保存'}
           </button>
           <button onClick={handleTest} disabled={testing} style={modalSecBtn}>
-            <Send size={12} />{testing ? '…' : 'Test'}
+            <Send size={12} />{testing ? '…' : '测试'}
           </button>
-          <button onClick={onClose} style={modalSecBtn}>Cancel</button>
-          {saved && <span style={{ fontSize: 12, color: 'var(--color-status-running)' }}>✓ Saved</span>}
+          <button onClick={onClose} style={modalSecBtn}>取消</button>
+          {saved && <span style={{ fontSize: 12, color: 'var(--color-status-running)' }}>✓ 已保存</span>}
         </div>
       </div>
     </div>
@@ -288,11 +288,11 @@ export function NsNotifModal({ ns, onClose }: { ns: string; onClose: () => void 
       <div style={{ background: 'var(--color-card)', border: '1px solid var(--color-border)', borderRadius: 8, width: 460, maxWidth: '94vw', boxShadow: '0 8px 32px rgba(0,0,0,0.3)' }}>
         <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--color-border)', display: 'flex', alignItems: 'center', gap: 8 }}>
           <Bell size={14} style={{ color: '#a78bfa' }} />
-          <strong style={{ flex: 1, fontSize: 13 }}>Namespace Notify — {ns}</strong>
+          <strong style={{ flex: 1, fontSize: 13 }}>命名空间通知 — {ns}</strong>
           <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 16, color: 'var(--color-muted-foreground)' }}>×</button>
         </div>
         {loading ? (
-          <div style={{ padding: 24, textAlign: 'center', color: 'var(--color-muted-foreground)', fontSize: 13 }}>Loading…</div>
+          <div style={{ padding: 24, textAlign: 'center', color: 'var(--color-muted-foreground)', fontSize: 13 }}>加载中…</div>
         ) : (
           <>
             <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -302,13 +302,13 @@ export function NsNotifModal({ ns, onClose }: { ns: string; onClose: () => void 
             </div>
             <div style={{ padding: '10px 16px', borderTop: '1px solid var(--color-border)', display: 'flex', gap: 8, alignItems: 'center' }}>
               <button onClick={handleSave} disabled={saving} style={modalPrimaryBtn}>
-                <Save size={12} />{saving ? 'Saving…' : 'Save'}
+                <Save size={12} />{saving ? '保存中…' : '保存'}
               </button>
               <button onClick={handleTest} disabled={testing} style={modalSecBtn}>
-                <Send size={12} />{testing ? '…' : 'Test'}
+                <Send size={12} />{testing ? '…' : '测试'}
               </button>
-              <button onClick={onClose} style={modalSecBtn}>Cancel</button>
-              {saved && <span style={{ fontSize: 12, color: 'var(--color-status-running)' }}>✓ Saved</span>}
+              <button onClick={onClose} style={modalSecBtn}>取消</button>
+              {saved && <span style={{ fontSize: 12, color: 'var(--color-status-running)' }}>✓ 已保存</span>}
             </div>
           </>
         )}

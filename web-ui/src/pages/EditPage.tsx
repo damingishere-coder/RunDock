@@ -80,7 +80,7 @@ export default function EditPage({ onDone }: Props) {
           .then(r => setEnvStatus({ exists: r.exists }))
           .catch(() => {})
       }
-    }).catch(() => setError('Failed to load process config'))
+    }).catch(() => setError('加载进程配置失败'))
   }, [id])
 
   // @group BusinessLogic > EnvFile : Load .env file content from process working directory
@@ -92,12 +92,12 @@ export default function EditPage({ onDone }: Props) {
       const result = await api.getEnvFile(id)
       if (result.exists) {
         setEnvStr(result.content.trimEnd())
-        setEnvFileStatus({ msg: 'Loaded from .env file', ok: true })
+        setEnvFileStatus({ msg: '已从 .env 文件加载', ok: true })
       } else {
-        setEnvFileStatus({ msg: '.env file not found in working directory', ok: false })
+        setEnvFileStatus({ msg: '工作目录中未找到 .env 文件', ok: false })
       }
     } catch {
-      setEnvFileStatus({ msg: 'Failed to read .env file', ok: false })
+      setEnvFileStatus({ msg: '读取 .env 文件失败', ok: false })
     } finally {
       setLoadingEnv(false)
     }
@@ -110,9 +110,9 @@ export default function EditPage({ onDone }: Props) {
     setEnvFileStatus(null)
     try {
       const result = await api.saveEnvFile(id, envStr)
-      setEnvFileStatus({ msg: `Saved to ${result.path}`, ok: true })
+      setEnvFileStatus({ msg: `已保存到 ${result.path}`, ok: true })
     } catch {
-      setEnvFileStatus({ msg: 'Failed to save .env file', ok: false })
+      setEnvFileStatus({ msg: '保存 .env 文件失败', ok: false })
     } finally {
       setSavingEnv(false)
     }
@@ -144,13 +144,13 @@ export default function EditPage({ onDone }: Props) {
       }
       onDone()
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Failed to update process')
+      setError(e instanceof Error ? e.message : '更新进程失败')
     } finally {
       setLoading(false)
     }
   }
 
-  if (!loaded && !error) return <div style={{ padding: 24, color: 'var(--color-muted-foreground)' }}>Loading…</div>
+  if (!loaded && !error) return <div style={{ padding: 24, color: 'var(--color-muted-foreground)' }}>加载中…</div>
 
   return (
     <div style={{ padding: '20px 24px' }}>
@@ -162,51 +162,51 @@ export default function EditPage({ onDone }: Props) {
         />
       )}
       <div style={{ marginBottom: 20, display: 'flex', alignItems: 'center', gap: 16 }}>
-        <h2 style={{ fontSize: 16, fontWeight: 600 }}>Edit Process</h2>
+        <h2 style={{ fontSize: 16, fontWeight: 600 }}>编辑进程</h2>
         <button onClick={onDone} style={{ fontSize: 12, background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--color-muted-foreground)' }}>
-          ← Back
+          ← 返回
         </button>
       </div>
 
       <FormCard onSubmit={handleSubmit}>
         <FormRow>
-          <FormField label="Command *">
+          <FormField label="命令 *">
             <input style={inputStyle} value={script} onChange={e => setScript(e.target.value)} required />
           </FormField>
-          <FormField label="Name">
+          <FormField label="名称">
             <input style={inputStyle} value={name} onChange={e => setName(e.target.value)} />
           </FormField>
         </FormRow>
         <FormRow>
           <FormField label={
             <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              Working Directory
+              工作目录
               {envStatus !== null && (
                 <span style={{
                   fontSize: 10, padding: '1px 6px', borderRadius: 4, fontWeight: 500,
                   background: envStatus.exists ? 'rgba(100,200,100,0.15)' : 'rgba(128,128,128,0.1)',
                   color: envStatus.exists ? 'var(--color-status-running, #4ade80)' : 'var(--color-muted-foreground)',
                 }}>
-                  {envStatus.exists ? '● .env found' : '○ no .env'}
+                  {envStatus.exists ? '● 已找到 .env' : '○ 没有 .env'}
                 </span>
               )}
             </span>
           }>
             <div style={{ display: 'flex', gap: 6 }}>
               <input style={{ ...inputStyle, flex: 1 }} value={cwd} onChange={e => handleCwdChange(e.target.value)} placeholder="C:\Users\me\app" />
-              <button type="button" onClick={() => setBrowseOpen(true)} title="Browse folders" style={browseBtnStyle}>
+              <button type="button" onClick={() => setBrowseOpen(true)} title="浏览文件夹" style={browseBtnStyle}>
                 <FolderOpen size={14} strokeWidth={1.75} />
               </button>
             </div>
           </FormField>
-          <FormField label="Args (space-separated)">
+          <FormField label="参数（用空格分隔）">
             <input style={inputStyle} value={argsStr} onChange={e => setArgsStr(e.target.value)} />
           </FormField>
         </FormRow>
 
         {/* ── Environment Variables — full-width .env textarea ── */}
         <div style={{ display: 'contents' }}>
-          <FormField label="Environment Variables">
+          <FormField label="环境变量">
             <textarea
               value={envStr}
               onChange={e => setEnvStr(e.target.value)}
@@ -228,21 +228,21 @@ export default function EditPage({ onDone }: Props) {
                 type="button"
                 onClick={handleLoadEnvFile}
                 disabled={loadingEnv}
-                title="Load content from .env file in the process working directory"
+                title="从进程工作目录中的 .env 文件加载内容"
                 style={envActionBtn}
               >
                 <FolderOpen size={12} />
-                {loadingEnv ? 'Loading…' : 'Load from .env'}
+                {loadingEnv ? '加载中…' : '从 .env 加载'}
               </button>
               <button
                 type="button"
                 onClick={handleSaveEnvFile}
                 disabled={savingEnv || !envStr.trim()}
-                title="Write current content to .env file in the process working directory"
+                title="将当前内容写入进程工作目录中的 .env 文件"
                 style={envActionBtn}
               >
                 <Save size={12} />
-                {savingEnv ? 'Saving…' : 'Save to .env'}
+                {savingEnv ? '保存中…' : '保存到 .env'}
               </button>
               <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, cursor: 'pointer', color: 'var(--color-muted-foreground)' }}>
                 <input
@@ -251,7 +251,7 @@ export default function EditPage({ onDone }: Props) {
                   onChange={e => setSaveToFile(e.target.checked)}
                   style={{ accentColor: 'var(--color-primary)', width: 13, height: 13 }}
                 />
-                Also write .env on save
+                保存时同时写入 .env
               </label>
               {envFileStatus && (
                 <span style={{ fontSize: 11, color: envFileStatus.ok ? 'var(--color-status-running)' : 'var(--color-destructive)' }}>
@@ -263,21 +263,21 @@ export default function EditPage({ onDone }: Props) {
         </div>
 
         <FormRow>
-          <FormField label="Namespace">
+          <FormField label="命名空间">
             <NamespaceInput style={inputStyle} value={namespace} onChange={setNamespace} />
           </FormField>
-          <FormField label="Max Restarts">
+          <FormField label="最大重启次数">
             <input style={inputStyle} type="number" value={maxRestarts} onChange={e => setMaxRestarts(parseInt(e.target.value) || 10)} />
           </FormField>
         </FormRow>
         <FormRow>
-          <FormField label={<>Cron Schedule <span style={{ color: 'var(--color-muted-foreground)', fontSize: 11 }}>(leave blank to disable)</span></>}>
+          <FormField label={<>定时任务计划 <span style={{ color: 'var(--color-muted-foreground)', fontSize: 11 }}>（留空以禁用）</span></>}>
             <input style={inputStyle} value={cron} onChange={e => setCron(e.target.value)} placeholder="0 * * * *" />
           </FormField>
           <FormField label="">
             <div style={{ display: 'flex', gap: 20, marginTop: 4 }}>
-              <CheckboxField label="Auto-restart on crash" checked={autorestart} onChange={setAutorestart} />
-              <CheckboxField label="Watch mode" checked={watch} onChange={setWatch} />
+              <CheckboxField label="崩溃后自动重启" checked={autorestart} onChange={setAutorestart} />
+              <CheckboxField label="监视模式" checked={watch} onChange={setWatch} />
             </div>
           </FormField>
         </FormRow>
@@ -293,9 +293,9 @@ export default function EditPage({ onDone }: Props) {
             >
               {notifyOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
               <Bell size={13} style={{ opacity: 0.6 }} />
-              <span style={{ fontSize: 13, fontWeight: 500 }}>Notification Override</span>
+              <span style={{ fontSize: 13, fontWeight: 500 }}>通知覆盖</span>
               <span style={{ fontSize: 11, color: 'var(--color-muted-foreground)', marginLeft: 4 }}>
-                (overrides global/namespace defaults for this process)
+                （覆盖此进程的全局/命名空间默认设置）
               </span>
               {notify && (
                 <button
@@ -303,7 +303,7 @@ export default function EditPage({ onDone }: Props) {
                   onClick={e => { e.stopPropagation(); setNotify(undefined) }}
                   style={{ ...envActionBtn, marginLeft: 'auto', color: 'var(--color-destructive)' }}
                 >
-                  Clear
+                  清除
                 </button>
               )}
             </div>
@@ -312,7 +312,7 @@ export default function EditPage({ onDone }: Props) {
               <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
                 {/* Events */}
                 <div>
-                  <span style={{ fontSize: 11, color: 'var(--color-muted-foreground)', display: 'block', marginBottom: 6 }}>Trigger Events</span>
+                  <span style={{ fontSize: 11, color: 'var(--color-muted-foreground)', display: 'block', marginBottom: 6 }}>触发事件</span>
                   <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
                     {(['on_crash', 'on_restart', 'on_start', 'on_stop'] as const).map(key => {
                       const ensureNotify = (): NotificationConfig => notify ?? {
@@ -329,7 +329,7 @@ export default function EditPage({ onDone }: Props) {
                             }}
                             style={{ accentColor: 'var(--color-primary)', width: 13, height: 13 }}
                           />
-                          {key.replace('on_', '')}
+                          {{ crash: '崩溃', restart: '重启', start: '启动', stop: '停止' }[key.replace('on_', '') as 'crash' | 'restart' | 'start' | 'stop']}
                         </label>
                       )
                     })}
@@ -348,7 +348,7 @@ export default function EditPage({ onDone }: Props) {
                       }}
                       style={{ accentColor: 'var(--color-primary)', width: 13, height: 13 }}
                     />
-                    <span style={{ color: 'var(--color-muted-foreground)' }}>Webhook URL</span>
+                    <span style={{ color: 'var(--color-muted-foreground)' }}>Webhook 地址</span>
                   </label>
                   <input
                     style={{ ...inputStyle, opacity: notify?.webhook?.enabled ? 1 : 0.5 }}
@@ -375,7 +375,7 @@ export default function EditPage({ onDone }: Props) {
                       }}
                       style={{ accentColor: 'var(--color-primary)', width: 13, height: 13 }}
                     />
-                    <span style={{ color: 'var(--color-muted-foreground)' }}>Slack Webhook URL</span>
+                    <span style={{ color: 'var(--color-muted-foreground)' }}>Slack Webhook 地址</span>
                   </label>
                   <input
                     style={{ ...inputStyle, opacity: notify?.slack?.enabled ? 1 : 0.5 }}
@@ -402,7 +402,7 @@ export default function EditPage({ onDone }: Props) {
                       }}
                       style={{ accentColor: 'var(--color-primary)', width: 13, height: 13 }}
                     />
-                    <span style={{ color: 'var(--color-muted-foreground)' }}>Teams Webhook URL</span>
+                    <span style={{ color: 'var(--color-muted-foreground)' }}>Teams Webhook 地址</span>
                   </label>
                   <input
                     style={{ ...inputStyle, opacity: notify?.teams?.enabled ? 1 : 0.5 }}
@@ -423,7 +423,7 @@ export default function EditPage({ onDone }: Props) {
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 8 }}>
           <button type="submit" disabled={loading} style={primaryBtnStyle}>
-            {loading ? 'Saving…' : '💾 Save & Apply'}
+            {loading ? '保存中…' : '💾 保存并应用'}
           </button>
           {error && <span style={{ fontSize: 12, color: 'var(--color-destructive)' }}>{error}</span>}
         </div>

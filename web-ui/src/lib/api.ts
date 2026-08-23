@@ -1,6 +1,6 @@
 // @group APIEndpoints : All fetch calls to the alter daemon REST API
 
-import type { CronRun, DaemonHealth, EnvFileEntry, GitInfo, GitPullResult, LogAlertOverride, LogAlertStore, LogLine, LogStatsBucket, MetricSample, NotificationConfig, NotificationsStore, ProcessInfo, ScriptInfo, StartProcessBody, TunnelEntry, TunnelProvider, TunnelSettings, UpdateInfo } from '@/types'
+import type { CronRun, DaemonHealth, EnvFileEntry, GitInfo, GitPullResult, LogAlertOverride, LogAlertStore, LogLine, LogStatsBucket, MetricSample, NotificationConfig, NotificationsStore, ProcessInfo, ProjectActionResponse, ProjectInfo, ProjectPatch, ScriptInfo, StartProcessBody, TunnelEntry, TunnelProvider, TunnelSettings, UpdateInfo } from '@/types'
 import { clearSessionToken, getSessionToken } from '@/lib/auth'
 import { getActiveServer, serverBaseUrl } from '@/lib/servers'
 
@@ -79,7 +79,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (res.status === 401) {
     clearSessionToken()
     window.location.reload()
-    throw new Error('Session expired')
+    throw new Error('会话已过期')
   }
   if (!res.ok) {
     const data = await res.json().catch(() => ({}))
@@ -101,6 +101,28 @@ export const api = {
 
   getProcess: (id: string): Promise<ProcessInfo> =>
     request(`/processes/${id}`),
+
+  // @group APIEndpoints > Projects : Logical project aggregation and lifecycle
+  getProjects: (): Promise<{ projects: ProjectInfo[] }> =>
+    request('/projects'),
+
+  getProject: (id: string): Promise<ProjectInfo> =>
+    request(`/projects/${id}`),
+
+  updateProject: (id: string, body: ProjectPatch): Promise<ProjectInfo> =>
+    request(`/projects/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+
+  startProject: (id: string): Promise<ProjectActionResponse> =>
+    request(`/projects/${id}/start`, { method: 'POST' }),
+
+  stopProject: (id: string): Promise<ProjectActionResponse> =>
+    request(`/projects/${id}/stop`, { method: 'POST' }),
+
+  restartProject: (id: string): Promise<ProjectActionResponse> =>
+    request(`/projects/${id}/restart`, { method: 'POST' }),
+
+  assignProcessProject: (processId: string, projectId: string): Promise<ProcessInfo> =>
+    request(`/processes/${processId}/project`, { method: 'PATCH', body: JSON.stringify({ project_id: projectId }) }),
 
   startProcess: (body: StartProcessBody): Promise<ProcessInfo> =>
     request('/processes', { method: 'POST', body: JSON.stringify(body) }),
@@ -360,7 +382,7 @@ export const api = {
         onDone()
       } catch (e: unknown) {
         if ((e as Error)?.name !== 'AbortError') {
-          onError((e as Error)?.message ?? 'Connection error')
+          onError((e as Error)?.message ?? '连接错误')
         }
       }
     })()
@@ -373,7 +395,10 @@ export const api = {
     passkeys_count: number
     pin_configured: boolean
     lock_timeout_mins: number | null
-  }> => fetch(`${getBase()}/auth/status`).then(r => r.json()),
+  }> => fetch(`${getBase()}/auth/status`).then(async response => {
+    if (!response.ok) throw new Error(`HTTP ${response.status}`)
+    return response.json()
+  }),
 
   // @group APIEndpoints > Auth : First-time password setup
   authSetup: (password: string): Promise<{ session_token: string; expires_at: string }> =>
@@ -394,6 +419,10 @@ export const api = {
   // @group APIEndpoints > Auth : Change password (requires current password)
   authChangePassword: (currentPassword: string, newPassword: string): Promise<{ success: boolean }> =>
     request('/auth/change-password', { method: 'POST', body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }) }),
+
+  // @group APIEndpoints > Auth : Disable browser password/PIN/lock settings
+  authRemovePassword: (): Promise<{ success: boolean }> =>
+    request('/auth/password', { method: 'DELETE' }),
 
   // @group APIEndpoints > Auth : Set or update PIN (4 or 6 digits)
   authSetPin: (pin: string): Promise<{ success: boolean }> =>

@@ -1,6 +1,6 @@
-# alter — Release Workflow
+# RunDock — Release Workflow
 # Triggers on version tags (v*) → builds release binary → creates Inno Setup installer → publishes GitHub release
-# https://github.com/thechandanbhagat/alter-pm
+# https://github.com/damingishere-coder/RunDock
 
 name: Release
 
@@ -71,7 +71,7 @@ jobs:
       - name: Upload binary artifact
         uses: actions/upload-artifact@v4
         with:
-          name: alter-windows-x64
+          name: rundock-windows-x64
           path: target/release/alter.exe
 
   # ─────────────────────────────────────────────────────────────────────────────
@@ -89,7 +89,7 @@ jobs:
       - name: Download binary
         uses: actions/download-artifact@v4
         with:
-          name: alter-windows-x64
+          name: rundock-windows-x64
           path: target/release
 
       - name: Extract version from tag
@@ -129,7 +129,7 @@ jobs:
       - name: Upload installer artifact
         uses: actions/upload-artifact@v4
         with:
-          name: alter-installer
+          name: rundock-installer
           path: dist/*.exe
 
       - name: Save hash for manifest step
@@ -158,7 +158,7 @@ jobs:
       - name: Download installer
         uses: actions/download-artifact@v4
         with:
-          name: alter-installer
+          name: rundock-installer
           path: dist/
 
       - name: Generate release notes
@@ -170,14 +170,9 @@ jobs:
 
           cat >> $GITHUB_OUTPUT << EOF
           BODY<<ENDBODY
-          ## alter v${VERSION}
+          ## RunDock v${VERSION}
 
-          ### Install via WinGet
-          \`\`\`powershell
-          winget install thechandanbhagat.alter
-          \`\`\`
-
-          ### Manual Install
+          ### Windows installer
           Download \`${INSTALLER}\` below, run it, and follow the wizard.
           \`alter.exe\` will be added to your PATH automatically.
 
@@ -187,14 +182,14 @@ jobs:
           \`\`\`
 
           ### What's New
-          See [CHANGELOG](https://github.com/thechandanbhagat/alter-pm/blob/main/docs/CHANGELOG.md) for details.
+          See [CHANGELOG](https://github.com/damingishere-coder/RunDock/blob/main/docs/CHANGELOG.md) for details.
           ENDBODY
           EOF
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          name: alter v${{ needs.package-installer.outputs.version }}
+          name: RunDock v${{ needs.package-installer.outputs.version }}
           body: ${{ steps.notes.outputs.BODY }}
           files: dist/*.exe
           draft: false

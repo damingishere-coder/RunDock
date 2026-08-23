@@ -1,6 +1,6 @@
-# alter — Linux Release Workflow
+# RunDock — Linux Release Workflow (compatible alter CLI packages)
 # Triggers on version tags (v*) → builds Linux binaries → packages .deb → publishes APT repo on GitHub Pages
-# https://github.com/thechandanbhagat/alter-pm
+# https://github.com/damingishere-coder/RunDock
 
 name: Release (Linux)
 
@@ -259,13 +259,13 @@ jobs:
         run: |
           cd gh-pages/apt
           apt-ftparchive \
-            -o APT::FTPArchive::Release::Origin=alter \
-            -o APT::FTPArchive::Release::Label=alter \
+            -o APT::FTPArchive::Release::Origin=RunDock \
+            -o APT::FTPArchive::Release::Label=RunDock \
             -o APT::FTPArchive::Release::Suite=stable \
             -o APT::FTPArchive::Release::Codename=stable \
             -o APT::FTPArchive::Release::Architectures="amd64 arm64" \
             -o APT::FTPArchive::Release::Components=main \
-            -o APT::FTPArchive::Release::Description="alter process manager APT repository" \
+            -o APT::FTPArchive::Release::Description="RunDock process manager APT repository" \
             release dists/stable > dists/stable/Release
 
       - name: Sign Release (optional — requires APT_GPG_KEY secret)

@@ -1,6 +1,6 @@
 // @group BusinessLogic : Processes list view — stats strip, namespace pills, table + card grid
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Play, Square, RotateCcw, ScrollText, Pencil, Trash2, FileKey, Bell, Copy, SquareTerminal,
@@ -11,7 +11,10 @@ import { useDialog } from '@/hooks/useDialog'
 import { Dialog } from '@/components/Dialog'
 import { EnvFilePanel } from '@/components/EnvFilePanel'
 import { ProcessNotifModal, NsNotifModal } from '@/components/NotifModal'
-import { formatLastRun, formatNextRun, formatUptime, formatBytes, formatCpu, statusColor } from '@/lib/utils'
+import { WebPortButton } from '@/components/WebPortButton'
+import { formatLastRun, formatNextRun, formatUptime, formatBytes, formatCpu, processStatusLabel, statusColor } from '@/lib/utils'
+import { getActiveServer, type RemoteServer } from '@/lib/servers'
+import { listeningPortsByManagedPid, type PortScanEntry } from '@/lib/processWeb'
 import type { AppSettings } from '@/lib/settings'
 import type { ProcessInfo } from '@/types'
 
@@ -93,26 +96,25 @@ export default function ProcessesPage({ processes, reload, settings, namespaceFi
   }), [baseProcesses])
 
 
-  // @group BusinessLogic > Ports : Raw port data from API
-  interface RawPortEntry { pid: number | null; port: number; state: string; ancestor_pids?: number[] }
-  const [portData, setPortData] = useState<RawPortEntry[]>([])
-  const loadPorts = () => { api.getPorts().then(data => setPortData(data.ports ?? [])).catch(() => {}) }
-  useEffect(() => { loadPorts() }, [])
+  // @group BusinessLogic > Ports : Refresh while apps are active so a newly
+  // started dev server gets its web button as soon as it begins listening.
+  const [portData, setPortData] = useState<PortScanEntry[]>([])
+  const loadPorts = useCallback(() => {
+    api.getPorts().then(data => setPortData(data.ports ?? [])).catch(() => {})
+  }, [])
+  const hasActiveProcesses = processes.some(p =>
+    p.status === 'starting' || p.status === 'running' || p.status === 'watching'
+  )
+  useEffect(() => {
+    loadPorts()
+    if (!hasActiveProcesses) return
+    const timer = window.setInterval(loadPorts, 5_000)
+    return () => window.clearInterval(timer)
+  }, [hasActiveProcesses, loadPorts])
 
   const portMap = useMemo(() => {
     const managedPids = new Set(displayedProcesses.map(p => p.pid).filter((pid): pid is number => pid != null))
-    const map = new Map<number, number[]>()
-    for (const entry of portData) {
-      if (!entry.pid || entry.pid <= 0) continue
-      if (entry.state !== 'LISTENING' && entry.state !== '') continue
-      const allPids = [entry.pid, ...(entry.ancestor_pids ?? [])]
-      const rootPid = allPids.find(pid => managedPids.has(pid)) ?? entry.pid
-      const arr = map.get(rootPid) ?? []
-      if (!arr.includes(entry.port)) arr.push(entry.port)
-      map.set(rootPid, arr)
-    }
-    map.forEach((v, k) => map.set(k, v.sort((a, b) => a - b)))
-    return map
+    return listeningPortsByManagedPid(portData, managedPids)
   }, [portData, displayedProcesses])
 
   // @group BusinessLogic > Namespace groups : For table view section headers + card ns headers
@@ -145,7 +147,7 @@ export default function ProcessesPage({ processes, reload, settings, namespaceFi
   async function restartAll(ns: string) { await api.restartNamespace(ns).catch(() => {}); setTimeout(reload, 400) }
   async function stopAll(ns: string) {
     const targets = (groups.get(ns) ?? []).filter(p => p.status === 'running' || p.status === 'watching')
-    const ok = await confirm(`Stop all in "${ns}"?`, `${targets.length} running process${targets.length !== 1 ? 'es' : ''} will be stopped.`)
+    const ok = await confirm(`停止“${ns}”中的全部进程？`, `将停止 ${targets.length} 个运行中的进程。`)
     if (!ok) return
     await api.stopNamespace(ns).catch(() => {})
     setTimeout(reload, 400)
@@ -164,6 +166,7 @@ export default function ProcessesPage({ processes, reload, settings, namespaceFi
     onOpenEnv: setEnvModalProcess,
     onOpenNotif: setNotifProcess,
     onOpenTerminal: onOpenTerminal ?? (() => {}),
+    server: getActiveServer(),
     visibleRowActions: settings.visibleRowActions,
   }
 
@@ -188,12 +191,12 @@ export default function ProcessesPage({ processes, reload, settings, namespaceFi
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 {namespaceFilter && (
-                  <button onClick={() => navigate('/processes')} style={smallBtnStyle}>← All</button>
+                  <button onClick={() => navigate('/processes')} style={smallBtnStyle}>← 全部</button>
                 )}
                 <h2 style={{ fontSize: 15, fontWeight: 700, letterSpacing: '-0.2px' }}>
                   {namespaceFilter
                     ? <><span style={{ color: 'var(--color-muted-foreground)', fontWeight: 400 }}>ns / </span>{namespaceFilter}</>
-                    : 'Processes'}
+                    : '进程'}
                 </h2>
                 <span style={{ fontSize: 11, color: 'var(--color-muted-foreground)', background: 'var(--color-muted)', padding: '1px 7px', borderRadius: 8 }}>
                   {stats.total}
@@ -202,16 +205,16 @@ export default function ProcessesPage({ processes, reload, settings, namespaceFi
               <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                 {/* View toggle */}
                 <div style={{ display: 'flex', border: '1px solid var(--color-border)', borderRadius: 6, overflow: 'hidden' }}>
-                  <button onClick={() => setView('table')} title="Table view"
+                  <button onClick={() => setView('table')} title="表格视图"
                     style={{ padding: '5px 9px', background: viewMode === 'table' ? 'var(--color-primary)' : 'transparent', border: 'none', cursor: 'pointer', color: viewMode === 'table' ? '#fff' : 'var(--color-muted-foreground)', display: 'flex', alignItems: 'center', transition: 'all 0.12s' }}>
                     <List size={13} />
                   </button>
-                  <button onClick={() => setView('cards')} title="Card view"
+                  <button onClick={() => setView('cards')} title="卡片视图"
                     style={{ padding: '5px 9px', background: viewMode === 'cards' ? 'var(--color-primary)' : 'transparent', border: 'none', cursor: 'pointer', color: viewMode === 'cards' ? '#fff' : 'var(--color-muted-foreground)', display: 'flex', alignItems: 'center', transition: 'all 0.12s' }}>
                     <LayoutGrid size={13} />
                   </button>
                 </div>
-                <button onClick={() => { reload(); loadPorts() }} style={smallBtnStyle}>↻ Refresh</button>
+                <button onClick={() => { reload(); loadPorts() }} style={smallBtnStyle}>↻ 刷新</button>
               </div>
             </div>
 
@@ -224,7 +227,7 @@ export default function ProcessesPage({ processes, reload, settings, namespaceFi
                 <input
                   value={search}
                   onChange={e => setSearch(e.target.value)}
-                  placeholder="Search by name or script…"
+                  placeholder="按名称或脚本搜索…"
                   style={{
                     width: '100%', padding: '6px 10px 6px 28px', fontSize: 12, boxSizing: 'border-box',
                     background: 'var(--color-secondary)', border: '1px solid var(--color-border)',
@@ -233,7 +236,7 @@ export default function ProcessesPage({ processes, reload, settings, namespaceFi
                 />
               </div>
               {hasActiveFilter && (
-                <button onClick={clearFilters} style={{ ...smallBtnStyle, padding: '5px 10px', fontSize: 11, color: 'var(--color-muted-foreground)' }}>✕ Clear filters</button>
+                <button onClick={clearFilters} style={{ ...smallBtnStyle, padding: '5px 10px', fontSize: 11, color: 'var(--color-muted-foreground)' }}>✕ 清除筛选</button>
               )}
             </div>
           </div>
@@ -241,7 +244,7 @@ export default function ProcessesPage({ processes, reload, settings, namespaceFi
           {/* ── Content ── */}
           {displayedProcesses.length === 0 ? (
             <div style={{ padding: 32, color: 'var(--color-muted-foreground)' }}>
-              {namespaceFilter ? `No processes in namespace "${namespaceFilter}".` : hasActiveFilter ? 'No processes match your filters.' : 'No processes registered.'}
+              {namespaceFilter ? `命名空间“${namespaceFilter}”中没有进程。` : hasActiveFilter ? '没有符合筛选条件的进程。' : '尚未注册进程。'}
             </div>
           ) : viewMode === 'cards' ? (
             /* Card grid view */
@@ -260,10 +263,10 @@ export default function ProcessesPage({ processes, reload, settings, namespaceFi
                         <span style={{ fontSize: 11, color: 'var(--color-muted-foreground)', background: 'var(--color-muted)', padding: '1px 6px', borderRadius: 8 }}>{procs.length}</span>
                         <div style={{ flex: 1, height: 1, background: 'var(--color-border)' }} />
                         <span onClick={e => e.stopPropagation()} style={{ display: 'flex', gap: 4 }}>
-                          {!allActive  && <NsBtn label="▶ Start"   onClick={() => startAll(ns)} />}
-                          {hasActive   && <NsBtn label="↺ Restart" onClick={() => restartAll(ns)} />}
-                          {!allInactive && <NsBtn label="■ Stop"   onClick={() => stopAll(ns)} danger />}
-                          <button onClick={() => setNotifNs(ns)} title="Namespace notifications"
+                          {!allActive  && <NsBtn label="▶ 启动"   onClick={() => startAll(ns)} />}
+                          {hasActive   && <NsBtn label="↺ 重启" onClick={() => restartAll(ns)} />}
+                          {!allInactive && <NsBtn label="■ 停止"   onClick={() => stopAll(ns)} danger />}
+                          <button onClick={() => setNotifNs(ns)} title="命名空间通知"
                             style={{ padding: '2px 5px', background: 'transparent', border: '1px solid var(--color-border)', borderRadius: 4, cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
                             <Bell size={11} style={{ color: '#a78bfa' }} />
                           </button>
@@ -294,17 +297,17 @@ export default function ProcessesPage({ processes, reload, settings, namespaceFi
                 <thead>
                   <tr style={{ background: 'var(--color-card)', borderBottom: '1px solid var(--color-border)' }}>
                     <Th>ID</Th>
-                    <SortTh col="name"     active={sortCol} dir={sortDir} onSort={handleSort}>Name</SortTh>
-                    <SortTh col="status"   active={sortCol} dir={sortDir} onSort={handleSort}>Status</SortTh>
+                    <SortTh col="name"     active={sortCol} dir={sortDir} onSort={handleSort}>名称</SortTh>
+                    <SortTh col="status"   active={sortCol} dir={sortDir} onSort={handleSort}>状态</SortTh>
                     <Th>PID</Th>
-                    <SortTh col="uptime"   active={sortCol} dir={sortDir} onSort={handleSort}>Uptime</SortTh>
+                    <SortTh col="uptime"   active={sortCol} dir={sortDir} onSort={handleSort}>运行时长</SortTh>
                     <SortTh col="cpu"      active={sortCol} dir={sortDir} onSort={handleSort}>CPU</SortTh>
-                    <SortTh col="memory"   active={sortCol} dir={sortDir} onSort={handleSort}>Mem</SortTh>
-                    <SortTh col="restarts" active={sortCol} dir={sortDir} onSort={handleSort}>Restarts</SortTh>
-                    <Th>Mode</Th>
-                    <Th>Next Run</Th>
-                    <Th>Last Run</Th>
-                    <Th>Actions</Th>
+                    <SortTh col="memory"   active={sortCol} dir={sortDir} onSort={handleSort}>内存</SortTh>
+                    <SortTh col="restarts" active={sortCol} dir={sortDir} onSort={handleSort}>重启次数</SortTh>
+                    <Th>模式</Th>
+                    <Th>下次运行</Th>
+                    <Th>上次运行</Th>
+                    <Th>操作</Th>
                   </tr>
                 </thead>
                 <tbody>
@@ -321,12 +324,12 @@ export default function ProcessesPage({ processes, reload, settings, namespaceFi
                           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                             <span style={{ fontSize: 10, color: 'var(--color-muted-foreground)' }}>{isCollapsed ? '▶' : '▼'}</span>
                             <span style={{ fontWeight: 600, fontSize: 12 }}>{ns}</span>
-                            <span style={{ fontSize: 11, color: 'var(--color-muted-foreground)' }}>{procs.length} process{procs.length !== 1 ? 'es' : ''}</span>
+                            <span style={{ fontSize: 11, color: 'var(--color-muted-foreground)' }}>{procs.length} 个进程</span>
                             <span onClick={e => e.stopPropagation()} style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
-                              {!allActive  && <NsBtn label="▶ Start All"   onClick={() => startAll(ns)} />}
-                              {hasActive   && <NsBtn label="↺ Restart All" onClick={() => restartAll(ns)} />}
-                              {!allInactive && <NsBtn label="■ Stop All"   onClick={() => stopAll(ns)} danger />}
-                              <button onClick={() => setNotifNs(ns)} title="Namespace notifications"
+                              {!allActive  && <NsBtn label="▶ 全部启动"   onClick={() => startAll(ns)} />}
+                              {hasActive   && <NsBtn label="↺ 全部重启" onClick={() => restartAll(ns)} />}
+                              {!allInactive && <NsBtn label="■ 全部停止"   onClick={() => stopAll(ns)} danger />}
+                              <button onClick={() => setNotifNs(ns)} title="命名空间通知"
                                 style={{ padding: '2px 5px', background: 'transparent', border: '1px solid var(--color-border)', borderRadius: 4, cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
                                 <Bell size={11} style={{ color: '#a78bfa' }} />
                               </button>
@@ -366,7 +369,7 @@ export default function ProcessesPage({ processes, reload, settings, namespaceFi
 }
 
 // @group BusinessLogic > ProcessCard : Card view — colored border, mini resource bars, actions
-function ProcessCard({ p, reload, confirmDelete, onConfirm, onDanger, onOpenDetail, onEdit, onOpenEnv, onOpenNotif, onOpenTerminal, ports, visibleRowActions }: RowProps) {
+function ProcessCard({ p, reload, confirmDelete, onConfirm, onDanger, onOpenDetail, onEdit, onOpenEnv, onOpenNotif, onOpenTerminal, ports, server, visibleRowActions }: RowProps) {
   const navigate = useNavigate()
   const isActive = p.status === 'running' || p.status === 'sleeping' || p.status === 'watching'
   const color    = statusColor(p.status)
@@ -376,7 +379,7 @@ function ProcessCard({ p, reload, confirmDelete, onConfirm, onDanger, onOpenDeta
   const memPct = Math.min(((p.memory_bytes ?? 0) / (512 * 1024 * 1024)) * 100, 100)
 
   async function doStop() {
-    const ok = await onConfirm(`Stop "${p.name}"?`, 'The process will be stopped. You can restart it later.')
+    const ok = await onConfirm(`停止“${p.name}”？`, '进程将停止，之后可以重新启动。')
     if (!ok) return
     await api.stopProcess(p.id).catch(() => {})
     setTimeout(reload, 300)
@@ -385,7 +388,7 @@ function ProcessCard({ p, reload, confirmDelete, onConfirm, onDanger, onOpenDeta
   async function doRestart() { await api.restartProcess(p.id).catch(() => {}); reload() }
   async function doDelete() {
     if (confirmDelete) {
-      const ok = await onDanger(`Delete "${p.name}"?`, 'This will stop and permanently remove the process.', 'Delete')
+      const ok = await onDanger(`删除“${p.name}”？`, '这将停止并永久删除该进程。', '删除')
       if (!ok) return
     }
     await api.deleteProcess(p.id).catch(() => {})
@@ -433,7 +436,7 @@ function ProcessCard({ p, reload, confirmDelete, onConfirm, onDanger, onOpenDeta
           fontSize: 10, fontWeight: 700, whiteSpace: 'nowrap', flexShrink: 0,
           padding: '2px 8px', borderRadius: 10,
           background: color + '22', color,
-        }}>● {p.status}</span>
+        }}>● {processStatusLabel(p.status)}</span>
       </div>
 
       {/* Badges: namespace + mode */}
@@ -443,10 +446,10 @@ function ProcessCard({ p, reload, confirmDelete, onConfirm, onDanger, onOpenDeta
         </span>
         {p.cron && (
           <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 8, background: 'rgba(79,156,249,0.15)', color: 'var(--color-status-sleeping)' }}
-            title={p.cron}>cron</span>
+            title={p.cron}>定时任务</span>
         )}
         {p.watch && !p.cron && (
-          <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 8, background: 'rgba(250,204,21,0.15)', color: '#fbbf24' }}>watch</span>
+          <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 8, background: 'rgba(250,204,21,0.15)', color: '#fbbf24' }}>监视</span>
         )}
       </div>
 
@@ -454,7 +457,7 @@ function ProcessCard({ p, reload, confirmDelete, onConfirm, onDanger, onOpenDeta
       {isActive && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
           <MiniBar label="CPU" value={cpuPct} color="#60a5fa" text={formatCpu(p.cpu_percent ?? 0)} />
-          <MiniBar label="Mem" value={memPct} color="#a78bfa" text={formatBytes(p.memory_bytes ?? 0)} />
+          <MiniBar label="内存" value={memPct} color="#a78bfa" text={formatBytes(p.memory_bytes ?? 0)} />
         </div>
       )}
 
@@ -484,23 +487,24 @@ function ProcessCard({ p, reload, confirmDelete, onConfirm, onDanger, onOpenDeta
       {/* Action buttons — primary always visible, secondary split by visibleRowActions setting */}
       {(() => {
         const secondary = [
-          { key: 'logs',     label: 'Logs',     icon: ScrollText,    onClick: () => navigate(`/processes/${p.id}`),                   color: '#60a5fa' },
-          { key: 'edit',     label: 'Edit',     icon: Pencil,        onClick: () => onEdit(p),                                        color: '#34d399' },
-          { key: 'terminal', label: 'Terminal', icon: SquareTerminal, onClick: () => p.cwd && onOpenTerminal(p.cwd, p.name),           color: '#22d3ee', disabled: !p.cwd },
+          { key: 'logs',     label: '日志',     icon: ScrollText,    onClick: () => navigate(`/processes/${p.id}`),                   color: '#60a5fa' },
+          { key: 'edit',     label: '编辑',     icon: Pencil,        onClick: () => onEdit(p),                                        color: '#34d399' },
+          { key: 'terminal', label: '终端', icon: SquareTerminal, onClick: () => p.cwd && onOpenTerminal(p.cwd, p.name),           color: '#22d3ee', disabled: !p.cwd },
           { key: 'env',      label: '.env',     icon: FileKey,       onClick: () => onOpenEnv(p),                                     color: '#fbbf24' },
-          { key: 'enable',   label: isDisabled ? 'Enable' : 'Disable', icon: isDisabled ? Power : PowerOff, onClick: doToggleEnabled, color: isDisabled ? '#4ade80' : 'var(--color-muted-foreground)' },
-          { key: 'notify',   label: 'Notify',   icon: Bell,          onClick: () => onOpenNotif(p),                                   color: '#a78bfa', badge: hasNotify ? '●' : undefined },
-          { key: 'clone',    label: 'Clone',    icon: Copy,          onClick: doClone,                                                color: '#94a3b8' },
-          { key: 'delete',   label: 'Delete',   icon: Trash2,        onClick: doDelete,                                               danger: true },
+          { key: 'enable',   label: isDisabled ? '启用' : '停用', icon: isDisabled ? Power : PowerOff, onClick: doToggleEnabled, color: isDisabled ? '#4ade80' : 'var(--color-muted-foreground)' },
+          { key: 'notify',   label: '通知',   icon: Bell,          onClick: () => onOpenNotif(p),                                   color: '#a78bfa', badge: hasNotify ? '●' : undefined },
+          { key: 'clone',    label: '克隆',    icon: Copy,          onClick: doClone,                                                color: '#94a3b8' },
+          { key: 'delete',   label: '删除',   icon: Trash2,        onClick: doDelete,                                               danger: true },
         ]
         const inline   = secondary.filter(a => visibleRowActions.includes(a.key))
         const overflow = secondary.filter(a => !visibleRowActions.includes(a.key))
         return (
           <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', paddingTop: 2, borderTop: '1px solid var(--color-border)' }}>
             {isActive
-              ? <><ActionBtn label="Restart" icon={RotateCcw} onClick={doRestart} color="#fb923c" /><ActionBtn label="Stop" icon={Square} onClick={doStop} color="#f87171" /></>
-              : <ActionBtn label="Start" icon={Play} onClick={isDisabled ? undefined : doStart} color={isDisabled ? 'var(--color-muted-foreground)' : '#4ade80'} disabled={isDisabled} title={isDisabled ? 'Process is disabled — enable it first' : 'Start'} />
+              ? <><ActionBtn label="重启" icon={RotateCcw} onClick={doRestart} color="#fb923c" /><ActionBtn label="停止" icon={Square} onClick={doStop} color="#f87171" /></>
+              : <ActionBtn label="启动" icon={Play} onClick={isDisabled ? undefined : doStart} color={isDisabled ? 'var(--color-muted-foreground)' : '#4ade80'} disabled={isDisabled} title={isDisabled ? '进程已停用，请先启用' : '启动'} />
             }
+            <WebPortButton ports={ports} server={server} />
             {inline.map(a => <ActionBtn key={a.key} label={a.label} icon={a.icon} onClick={a.onClick} color={a.color} danger={a.danger} badge={a.badge} />)}
             <RowOverflowMenu actions={overflow} />
           </div>
@@ -523,20 +527,21 @@ interface RowProps {
   onOpenNotif: (p: ProcessInfo) => void
   onOpenTerminal: (cwd: string, name?: string) => void
   ports: number[]
+  server: RemoteServer
   visibleRowActions: string[]
 }
 
-function ProcessRow({ p, reload, confirmDelete, onConfirm, onDanger, onOpenDetail, onEdit, onOpenEnv, onOpenNotif, onOpenTerminal, ports, visibleRowActions }: RowProps) {
+function ProcessRow({ p, reload, confirmDelete, onConfirm, onDanger, onOpenDetail, onEdit, onOpenEnv, onOpenNotif, onOpenTerminal, ports, server, visibleRowActions }: RowProps) {
   const navigate = useNavigate()
   const isActive  = p.status === 'running' || p.status === 'sleeping' || p.status === 'watching'
   const hasNotify = !!p.notify?.webhook?.enabled || !!p.notify?.slack?.enabled || !!p.notify?.teams?.enabled || !!p.notify?.discord?.enabled
 
   const modeCell = p.cron
-    ? <span style={{ display: 'inline-block', padding: '1px 7px', borderRadius: 4, fontSize: 11, fontWeight: 600, background: 'rgba(79,156,249,0.15)', color: 'var(--color-status-sleeping)', cursor: 'default' }} title={p.cron}>cron</span>
-    : p.watch ? 'watch' : '-'
+    ? <span style={{ display: 'inline-block', padding: '1px 7px', borderRadius: 4, fontSize: 11, fontWeight: 600, background: 'rgba(79,156,249,0.15)', color: 'var(--color-status-sleeping)', cursor: 'default' }} title={p.cron}>定时任务</span>
+    : p.watch ? '监视' : '-'
 
   async function doStop() {
-    const ok = await onConfirm(`Stop "${p.name}"?`, 'The process will be stopped. You can restart it later.')
+    const ok = await onConfirm(`停止“${p.name}”？`, '进程将停止，之后可以重新启动。')
     if (!ok) return
     await api.stopProcess(p.id).catch(() => {})
     setTimeout(reload, 300)
@@ -545,7 +550,7 @@ function ProcessRow({ p, reload, confirmDelete, onConfirm, onDanger, onOpenDetai
   async function doRestart() { await api.restartProcess(p.id).catch(() => {}); reload() }
   async function doDelete() {
     if (confirmDelete) {
-      const ok = await onDanger(`Delete "${p.name}"?`, 'This will stop and permanently remove the process.', 'Delete')
+      const ok = await onDanger(`删除“${p.name}”？`, '这将停止并永久删除该进程。', '删除')
       if (!ok) return
     }
     await api.deleteProcess(p.id).catch(() => {})
@@ -578,7 +583,7 @@ function ProcessRow({ p, reload, confirmDelete, onConfirm, onDanger, onOpenDetai
       </Td>
       <Td>
         <span style={{ color: statusColor(p.status), display: 'flex', alignItems: 'center', gap: 4, fontSize: 12 }}>
-          ● {p.status}
+          ● {processStatusLabel(p.status)}
         </span>
       </Td>
       <Td style={{ whiteSpace: 'normal', verticalAlign: 'top' }}>
@@ -587,7 +592,7 @@ function ProcessRow({ p, reload, confirmDelete, onConfirm, onDanger, onOpenDetai
           {ports.length > 0 ? (
             <div style={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
               {ports.slice(0, 5).map(port => (
-                <span key={port} title={`Port ${port}`} style={{
+                <span key={port} title={`端口 ${port}`} style={{
                   fontSize: 9, fontWeight: 700, lineHeight: '14px', padding: '1px 4px', borderRadius: 3,
                   background: 'color-mix(in srgb, var(--color-primary) 18%, transparent)', color: 'var(--color-primary)', cursor: 'default',
                 }}>:{port}</span>
@@ -597,7 +602,7 @@ function ProcessRow({ p, reload, confirmDelete, onConfirm, onDanger, onOpenDetai
               )}
             </div>
           ) : (isActive && p.pid != null) ? (
-            <span title="No listening TCP/UDP ports found" style={{ fontSize: 9, color: 'var(--color-muted-foreground)', opacity: 0.5, cursor: 'default', fontStyle: 'italic' }}>no ports</span>
+            <span title="未找到监听中的 TCP 端口" style={{ fontSize: 9, color: 'var(--color-muted-foreground)', opacity: 0.5, cursor: 'default', fontStyle: 'italic' }}>无端口</span>
           ) : null}
         </div>
       </Td>
@@ -611,23 +616,24 @@ function ProcessRow({ p, reload, confirmDelete, onConfirm, onDanger, onOpenDetai
       <Td>
         {(() => {
           const secondary = [
-            { key: 'logs',     label: 'Logs',     icon: ScrollText,    onClick: () => navigate(`/processes/${p.id}`),                   color: '#60a5fa' },
-            { key: 'edit',     label: 'Edit',     icon: Pencil,        onClick: () => onEdit(p),                                        color: '#34d399' },
-            { key: 'terminal', label: 'Terminal', icon: SquareTerminal, onClick: () => p.cwd && onOpenTerminal(p.cwd, p.name),           color: '#22d3ee', disabled: !p.cwd },
+            { key: 'logs',     label: '日志',     icon: ScrollText,    onClick: () => navigate(`/processes/${p.id}`),                   color: '#60a5fa' },
+            { key: 'edit',     label: '编辑',     icon: Pencil,        onClick: () => onEdit(p),                                        color: '#34d399' },
+            { key: 'terminal', label: '终端', icon: SquareTerminal, onClick: () => p.cwd && onOpenTerminal(p.cwd, p.name),           color: '#22d3ee', disabled: !p.cwd },
             { key: 'env',      label: '.env',     icon: FileKey,       onClick: () => onOpenEnv(p),                                     color: '#fbbf24' },
-            { key: 'enable',   label: isDisabled ? 'Enable' : 'Disable', icon: isDisabled ? Power : PowerOff, onClick: doToggleEnabled, color: isDisabled ? '#4ade80' : 'var(--color-muted-foreground)' },
-            { key: 'notify',   label: 'Notify',   icon: Bell,          onClick: () => onOpenNotif(p),                                   color: '#a78bfa', badge: hasNotify ? '●' : undefined },
-            { key: 'clone',    label: 'Clone',    icon: Copy,          onClick: doClone,                                                color: '#94a3b8' },
-            { key: 'delete',   label: 'Delete',   icon: Trash2,        onClick: doDelete,                                               danger: true },
+            { key: 'enable',   label: isDisabled ? '启用' : '停用', icon: isDisabled ? Power : PowerOff, onClick: doToggleEnabled, color: isDisabled ? '#4ade80' : 'var(--color-muted-foreground)' },
+            { key: 'notify',   label: '通知',   icon: Bell,          onClick: () => onOpenNotif(p),                                   color: '#a78bfa', badge: hasNotify ? '●' : undefined },
+            { key: 'clone',    label: '克隆',    icon: Copy,          onClick: doClone,                                                color: '#94a3b8' },
+            { key: 'delete',   label: '删除',   icon: Trash2,        onClick: doDelete,                                               danger: true },
           ]
           const inline   = secondary.filter(a => visibleRowActions.includes(a.key))
           const overflow = secondary.filter(a => !visibleRowActions.includes(a.key))
           return (
             <div style={{ display: 'flex', gap: 3, flexWrap: 'nowrap' }}>
               {isActive
-                ? <><ActionBtn label="Restart" icon={RotateCcw} onClick={doRestart} color="#fb923c" /><ActionBtn label="Stop" icon={Square} onClick={doStop} color="#f87171" /></>
-                : <ActionBtn label="Start" icon={Play} onClick={isDisabled ? undefined : doStart} color={isDisabled ? 'var(--color-muted-foreground)' : '#4ade80'} disabled={isDisabled} title={isDisabled ? 'Process is disabled — enable it first' : 'Start'} />
+                ? <><ActionBtn label="重启" icon={RotateCcw} onClick={doRestart} color="#fb923c" /><ActionBtn label="停止" icon={Square} onClick={doStop} color="#f87171" /></>
+                : <ActionBtn label="启动" icon={Play} onClick={isDisabled ? undefined : doStart} color={isDisabled ? 'var(--color-muted-foreground)' : '#4ade80'} disabled={isDisabled} title={isDisabled ? '进程已停用，请先启用' : '启动'} />
               }
+              <WebPortButton ports={ports} server={server} />
               {inline.map(a => <ActionBtn key={a.key} label={a.label} icon={a.icon} onClick={a.onClick} color={a.color} danger={a.danger} badge={a.badge} />)}
               <RowOverflowMenu actions={overflow} />
             </div>
@@ -703,7 +709,7 @@ function RowOverflowMenu({ actions }: { actions: { label: string; icon: React.El
   return (
     <div ref={ref} style={{ position: 'relative' }}>
       <button
-        title="More actions"
+        title="更多操作"
         onClick={() => setOpen(v => !v)}
         style={{
           position: 'relative', padding: 0, width: 26, height: 26,
@@ -756,19 +762,19 @@ function ActionBtn({ label, icon: Icon, onClick, danger, color, badge, disabled,
   label: string; icon: React.ElementType; onClick?: () => void; danger?: boolean; color?: string; badge?: string; disabled?: boolean; title?: string
 }) {
   const iconColor = disabled ? 'var(--color-muted-foreground)' : danger ? 'var(--color-destructive)' : (color ?? 'var(--color-muted-foreground)')
-  return (
-    <button title={title ?? label} onClick={disabled ? undefined : onClick} disabled={disabled} style={{
-      position: 'relative', padding: 0, width: 26, height: 26,
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      background: disabled ? 'color-mix(in srgb, var(--color-secondary) 60%, transparent)' : 'var(--color-secondary)',
-      border: '1px solid var(--color-border)',
-      borderRadius: 4, cursor: disabled ? 'not-allowed' : 'pointer', flexShrink: 0, color: iconColor,
-      opacity: disabled ? 0.45 : 1,
-    }}>
+  const style: React.CSSProperties = {
+    position: 'relative', padding: 0, width: 26, height: 26,
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    background: disabled ? 'color-mix(in srgb, var(--color-secondary) 60%, transparent)' : 'var(--color-secondary)',
+    border: '1px solid var(--color-border)', textDecoration: 'none',
+    borderRadius: 4, cursor: disabled ? 'not-allowed' : 'pointer', flexShrink: 0, color: iconColor,
+    opacity: disabled ? 0.45 : 1,
+  }
+  const content = <>
       <Icon size={13} strokeWidth={1.75} />
       {badge && <span style={{ position: 'absolute', top: -3, right: -3, fontSize: 8, color: iconColor, lineHeight: 1 }}>{badge}</span>}
-    </button>
-  )
+    </>
+  return <button title={title ?? label} onClick={disabled ? undefined : onClick} disabled={disabled} style={style}>{content}</button>
 }
 
 function NsBtn({ label, onClick, danger }: { label: string; onClick: () => void; danger?: boolean }) {

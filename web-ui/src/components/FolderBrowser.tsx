@@ -82,7 +82,7 @@ export function FolderBrowser({ initialPath = '', onSelect, onClose }: Props) {
         {/* Header */}
         <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--color-border)', display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
           <span style={{ fontSize: 18 }}>📁</span>
-          <span style={{ fontWeight: 600, fontSize: 14, flex: 1 }}>Browse Folder</span>
+          <span style={{ fontWeight: 600, fontSize: 14, flex: 1 }}>浏览文件夹</span>
           <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 20, lineHeight: 1, color: 'var(--color-muted-foreground)', padding: '0 2px' }}>×</button>
         </div>
 
@@ -91,10 +91,10 @@ export function FolderBrowser({ initialPath = '', onSelect, onClose }: Props) {
           {/* Drives button (Windows root) */}
           <button
             onClick={() => navigate('')}
-            title="Show drives"
+            title="显示驱动器"
             style={crumbBtnStyle}
           >
-            ⊞ Drives
+            ⊞ 驱动器
           </button>
           {crumbs.map((c, i) => (
             <span key={i} style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
@@ -129,10 +129,10 @@ export function FolderBrowser({ initialPath = '', onSelect, onClose }: Props) {
 
           {/* Empty folder */}
           {!loading && result && !result.error && result.entries.length === 0 && result.parent === null && (
-            <div style={{ padding: '20px 16px', color: 'var(--color-muted-foreground)', fontSize: 12, textAlign: 'center' }}>No items found</div>
+            <div style={{ padding: '20px 16px', color: 'var(--color-muted-foreground)', fontSize: 12, textAlign: 'center' }}>未找到项目</div>
           )}
           {!loading && result && !result.error && result.entries.length === 0 && result.parent !== null && (
-            <div style={{ padding: '12px 16px', color: 'var(--color-muted-foreground)', fontSize: 12 }}>Empty folder</div>
+            <div style={{ padding: '12px 16px', color: 'var(--color-muted-foreground)', fontSize: 12 }}>文件夹为空</div>
           )}
 
           {/* Entries */}
@@ -152,16 +152,16 @@ export function FolderBrowser({ initialPath = '', onSelect, onClose }: Props) {
         {/* Footer: current path + actions */}
         <div style={{ padding: '10px 16px', borderTop: '1px solid var(--color-border)', background: 'var(--color-muted)', display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
           <code style={{ flex: 1, fontSize: 11, color: 'var(--color-muted-foreground)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
-            {currentPath || '— select a folder —'}
+            {currentPath || '— 请选择文件夹 —'}
           </code>
           <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-            <button onClick={onClose} style={cancelBtnStyle}>Cancel</button>
+            <button onClick={onClose} style={cancelBtnStyle}>取消</button>
             <button
               disabled={!canSelect}
               onClick={() => { onSelect(currentPath); onClose() }}
               style={{ ...selectBtnStyle, opacity: canSelect ? 1 : 0.45, cursor: canSelect ? 'pointer' : 'default' }}
             >
-              Select Folder
+              选择文件夹
             </button>
           </div>
         </div>

@@ -21,7 +21,7 @@ pub async fn run_startup() -> Result<()> {
     {
         let unit = format!(
 r#"[Unit]
-Description=alter process manager daemon
+Description=RunDock process manager daemon (alter CLI compatibility service)
 After=network.target
 
 [Service]

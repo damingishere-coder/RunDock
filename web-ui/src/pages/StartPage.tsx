@@ -105,7 +105,7 @@ export default function StartPage({ onDone, settings }: Props) {
   }
 
   function switchEnvTab(name: string) {
-    if (envDirty && !window.confirm('Unsaved changes. Discard and switch?')) return
+    if (envDirty && !window.confirm('有未保存的更改，是否放弃并切换？')) return
     setActiveEnvTab(name)
     loadEnvFile(name)
   }
@@ -142,7 +142,7 @@ export default function StartPage({ onDone, settings }: Props) {
       })
       onDone()
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Failed to start process')
+      setError(e instanceof Error ? e.message : '启动进程失败')
     } finally {
       setLoading(false)
     }
@@ -163,16 +163,16 @@ export default function StartPage({ onDone, settings }: Props) {
           />
         )}
         <div style={{ marginBottom: 20 }}>
-          <h2 style={{ fontSize: 16, fontWeight: 600 }}>Start New Process</h2>
+          <h2 style={{ fontSize: 16, fontWeight: 600 }}>启动新进程</h2>
         </div>
 
         <FormCard onSubmit={handleSubmit}>
           <FormRow>
-            <FormField label="Command *">
+            <FormField label="命令 *">
               <input style={inputStyle} value={script} onChange={e => setScript(e.target.value)}
                 placeholder="node app.js" required />
             </FormField>
-            <FormField label="Name">
+            <FormField label="名称">
               <input style={inputStyle} value={name} onChange={e => setName(e.target.value)}
                 placeholder="my-app" />
             </FormField>
@@ -180,19 +180,19 @@ export default function StartPage({ onDone, settings }: Props) {
           <FormRow>
             <FormField label={
               <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                Working Directory
+                工作目录
                 {envStatus !== null && (
                   <span style={{
                     fontSize: 10, padding: '1px 6px', borderRadius: 4, fontWeight: 500,
                     background: envStatus.exists ? 'rgba(100,200,100,0.15)' : 'rgba(128,128,128,0.1)',
                     color: envStatus.exists ? 'var(--color-status-running, #4ade80)' : 'var(--color-muted-foreground)',
                   }}>
-                    {envStatus.exists ? `● .env found` : '○ no .env'}
+                    {envStatus.exists ? `● 已找到 .env` : '○ 没有 .env'}
                   </span>
                 )}
                 {envFiles.length > 1 && (
                   <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 4, background: 'rgba(96,165,250,0.13)', color: '#60a5fa', fontWeight: 500 }}>
-                    {envFiles.length} env files
+                    {envFiles.length} 个环境文件
                   </span>
                 )}
               </span>
@@ -200,21 +200,21 @@ export default function StartPage({ onDone, settings }: Props) {
               <div style={{ display: 'flex', gap: 6 }}>
                 <input style={{ ...inputStyle, flex: 1 }} value={cwd} onChange={e => handleCwdChange(e.target.value)}
                   placeholder="C:\Users\me\app" />
-                <button type="button" onClick={() => setBrowseOpen(true)} title="Browse folders" style={browseBtnStyle}>
+                <button type="button" onClick={() => setBrowseOpen(true)} title="浏览文件夹" style={browseBtnStyle}>
                   <FolderOpen size={14} strokeWidth={1.75} />
                 </button>
               </div>
             </FormField>
-            <FormField label="Namespace">
+            <FormField label="命名空间">
               <NamespaceInput style={inputStyle} value={namespace} onChange={setNamespace} placeholder="default" />
             </FormField>
           </FormRow>
           <FormRow>
-            <FormField label="Args (space-separated)">
+            <FormField label="参数（用空格分隔）">
               <input style={inputStyle} value={args} onChange={e => setArgs(e.target.value)}
                 placeholder="--port 3000 --env prod" />
             </FormField>
-            <FormField label="Env Vars (KEY=VAL, comma-separated)">
+            <FormField label="环境变量（KEY=VAL，用逗号分隔）">
               <input style={inputStyle} value={env} onChange={e => setEnv(e.target.value)}
                 placeholder="NODE_ENV=production,PORT=3000" />
             </FormField>
@@ -222,18 +222,18 @@ export default function StartPage({ onDone, settings }: Props) {
           <FormRow>
             <FormField label="">
               <div style={{ display: 'flex', gap: 20, marginTop: 4 }}>
-                <CheckboxField label="Auto-restart on crash" checked={autorestart} onChange={setAutorestart} />
-                <CheckboxField label="Watch mode" checked={watch} onChange={setWatch} />
+                <CheckboxField label="崩溃后自动重启" checked={autorestart} onChange={setAutorestart} />
+                <CheckboxField label="监视模式" checked={watch} onChange={setWatch} />
               </div>
             </FormField>
-            <FormField label={<>Cron Schedule <span style={{ color: 'var(--color-muted-foreground)', fontSize: 11 }}>(e.g. "0 * * * *" — leave blank for normal)</span></>}>
+            <FormField label={<>定时任务计划 <span style={{ color: 'var(--color-muted-foreground)', fontSize: 11 }}>（例如“0 * * * *” — 留空则按普通进程运行）</span></>}>
               <input style={inputStyle} value={cron} onChange={e => setCron(e.target.value)}
                 placeholder="0 * * * *" />
             </FormField>
           </FormRow>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 8 }}>
             <button type="submit" disabled={loading} style={primaryBtnStyle}>
-              {loading ? 'Starting…' : '▶ Start'}
+              {loading ? '启动中…' : '▶ 启动'}
             </button>
             {error && <span style={{ fontSize: 12, color: 'var(--color-destructive)' }}>{error}</span>}
           </div>
@@ -252,8 +252,8 @@ export default function StartPage({ onDone, settings }: Props) {
           <div style={{ padding: '10px 14px 0', borderBottom: '1px solid var(--color-border)', flexShrink: 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, paddingBottom: 8 }}>
               <span style={{ fontSize: 13 }}>🔑</span>
-              <span style={{ fontWeight: 600, fontSize: 12, flex: 1 }}>Env Files</span>
-              <span style={{ fontSize: 11, color: 'var(--color-muted-foreground)' }}>preview only</span>
+              <span style={{ fontWeight: 600, fontSize: 12, flex: 1 }}>环境文件</span>
+              <span style={{ fontSize: 11, color: 'var(--color-muted-foreground)' }}>仅预览</span>
             </div>
 
             {/* Tabs */}
@@ -281,7 +281,7 @@ export default function StartPage({ onDone, settings }: Props) {
           {/* Editor area */}
           <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', padding: '8px 12px', gap: 6 }}>
             {envLoadingFile ? (
-              <div style={{ color: 'var(--color-muted-foreground)', fontSize: 13, padding: 20, textAlign: 'center' }}>Loading…</div>
+              <div style={{ color: 'var(--color-muted-foreground)', fontSize: 13, padding: 20, textAlign: 'center' }}>加载中…</div>
             ) : (
               <>
                 <div style={{
@@ -317,7 +317,7 @@ export default function StartPage({ onDone, settings }: Props) {
           {/* Footer */}
           <div style={{ padding: '8px 12px', borderTop: '1px solid var(--color-border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
             <span style={{ fontSize: 11, color: 'var(--color-muted-foreground)' }}>
-              {envDirty ? <span style={{ color: activeColor }}>● Unsaved</span> : envSaved ? '✓ Saved' : `${activeEnvTab}`}
+              {envDirty ? <span style={{ color: activeColor }}>● 未保存</span> : envSaved ? '✓ 已保存' : `${activeEnvTab}`}
             </span>
             <button
               disabled={envSaving || envLoadingFile || !envDirty}
@@ -328,7 +328,7 @@ export default function StartPage({ onDone, settings }: Props) {
                 opacity: envSaving || envLoadingFile || !envDirty ? 0.5 : 1,
               }}
             >
-              {envSaving ? 'Saving…' : 'Save'}
+              {envSaving ? '保存中…' : '保存'}
             </button>
           </div>
         </div>

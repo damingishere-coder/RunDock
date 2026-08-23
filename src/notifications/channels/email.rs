@@ -24,10 +24,10 @@ pub async fn send(config: &NotificationConfig, event: &NotificationEvent) -> Res
     let email = Message::builder()
         .from(from.parse().context("invalid from address")?)
         .to(to.parse().context("invalid to address")?)
-        .subject(format!("[alter-pm2] {}", event.title()))
+        .subject(format!("[RunDock] {}", event.title()))
         .header(ContentType::TEXT_PLAIN)
         .body(format!(
-            "{}\n\n---\nSeverity: {}\nSource: alter-pm2",
+            "{}\n\n---\nSeverity: {}\nSource: RunDock",
             event.body(),
             event.severity()
         ))

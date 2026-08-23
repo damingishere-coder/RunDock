@@ -53,6 +53,11 @@ pub struct ManagedProcess {
     pub health_status: Option<HealthCheckStatus>,
     /// Handle to the running health check task — aborted on process stop
     pub health_check_handle: Option<tokio::task::JoinHandle<()>>,
+    /// Desired lifecycle state set by explicit user actions. Restart/watch
+    /// events must not respawn a process after a manual stop.
+    pub desired_running: bool,
+    /// Monotonic spawn generation used to discard stale exit/restart events.
+    pub generation: u64,
     /// Cached git branch from the process cwd — populated at creation time
     pub git_branch: Option<String>,
     // @group BusinessLogic > LogStats : Rolling 5-minute log volume buckets (stdout + stderr counts)
@@ -86,6 +91,8 @@ impl ManagedProcess {
             memory_bytes: None,
             health_status: None,
             health_check_handle: None,
+            desired_running: false,
+            generation: 0,
             log_stats: Arc::new(Mutex::new(LogStatsState::new())),
             git_branch,
         }
@@ -102,6 +109,7 @@ impl ManagedProcess {
         ProcessInfo {
             id: self.id,
             name: self.config.name.clone(),
+            project_id: self.config.project_id,
             script: self.config.script.clone(),
             args: self.config.args.clone(),
             cwd: self.config.cwd.clone(),

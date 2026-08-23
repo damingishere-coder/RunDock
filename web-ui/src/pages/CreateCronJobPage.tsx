@@ -111,7 +111,7 @@ export default function CreateCronJobPage({ onDone, settings }: Props) {
 
   // @group BusinessLogic > Save : POST /api/v1/scripts to save code to daemon disk
   const handleSave = useCallback(async () => {
-    if (!code.trim()) { setSaveError('Write some code first.'); return }
+    if (!code.trim()) { setSaveError('请先编写代码。'); return }
     const name = scriptName.trim() || 'script'
     setSaveError('')
     setIsSaving(true)
@@ -119,7 +119,7 @@ export default function CreateCronJobPage({ onDone, settings }: Props) {
       const res = await api.saveScript({ name, language: effectiveInterpreter, content: code })
       setSavedName(res.name)
     } catch (e: unknown) {
-      setSaveError(e instanceof Error ? e.message : 'Failed to save script')
+      setSaveError(e instanceof Error ? e.message : '保存脚本失败')
     } finally {
       setIsSaving(false)
     }
@@ -130,7 +130,7 @@ export default function CreateCronJobPage({ onDone, settings }: Props) {
     // Auto-save first if needed
     let name = savedName
     if (!name) {
-      if (!code.trim()) { setSaveError('Write some code first.'); return }
+      if (!code.trim()) { setSaveError('请先编写代码。'); return }
       setSaveError('')
       setIsSaving(true)
       try {
@@ -142,7 +142,7 @@ export default function CreateCronJobPage({ onDone, settings }: Props) {
         name = res.name
         setSavedName(res.name)
       } catch (e: unknown) {
-        setSaveError(e instanceof Error ? e.message : 'Failed to save script')
+        setSaveError(e instanceof Error ? e.message : '保存脚本失败')
         setIsSaving(false)
         return
       } finally {
@@ -184,9 +184,9 @@ export default function CreateCronJobPage({ onDone, settings }: Props) {
   // @group BusinessLogic > Submit : Create the cron job process using saved script path
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!effectiveInterpreter) { setSubmitError('Select or enter an interpreter.'); return }
-    if (!savedName) { setSubmitError('Save the script first before creating the cron job.'); return }
-    if (!cron.trim()) { setSubmitError('Cron schedule is required.'); return }
+    if (!effectiveInterpreter) { setSubmitError('请选择或输入解释器。'); return }
+    if (!savedName) { setSubmitError('请先保存脚本，再创建定时任务。'); return }
+    if (!cron.trim()) { setSubmitError('必须填写定时任务计划。'); return }
     setSubmitError('')
     setLoading(true)
     try {
@@ -206,7 +206,7 @@ export default function CreateCronJobPage({ onDone, settings }: Props) {
       })
       onDone()
     } catch (err: unknown) {
-      setSubmitError(err instanceof Error ? err.message : 'Failed to create cron job')
+      setSubmitError(err instanceof Error ? err.message : '创建定时任务失败')
     } finally {
       setLoading(false)
     }
@@ -235,12 +235,12 @@ export default function CreateCronJobPage({ onDone, settings }: Props) {
         flexShrink: 0,
       }}>
         <div>
-          <h2 style={{ fontSize: 15, fontWeight: 600 }}>New Cron Job</h2>
+          <h2 style={{ fontSize: 15, fontWeight: 600 }}>新建定时任务</h2>
           <p style={{ fontSize: 12, color: 'var(--color-muted-foreground)', marginTop: 2 }}>
-            Write and test your script, then schedule it.
+            编写并测试脚本，然后设置运行计划。
           </p>
         </div>
-        <button type="button" onClick={onDone} style={cancelBtn}>✕ Cancel</button>
+        <button type="button" onClick={onDone} style={cancelBtn}>✕ 取消</button>
       </div>
 
       {/* Split panel */}
@@ -261,7 +261,7 @@ export default function CreateCronJobPage({ onDone, settings }: Props) {
           }}>
             {/* Interpreter */}
             <div style={{ flex: '0 0 auto' }}>
-              <label style={fieldLabel}>Interpreter</label>
+              <label style={fieldLabel}>解释器</label>
               <select
                 value={interpreter}
                 onChange={e => { setInterpreter(e.target.value); setSavedName(null) }}
@@ -276,7 +276,7 @@ export default function CreateCronJobPage({ onDone, settings }: Props) {
             {/* Custom interpreter input */}
             {interpreter === '__custom__' && (
               <div style={{ flex: '1 1 140px' }}>
-                <label style={fieldLabel}>Interpreter path</label>
+                <label style={fieldLabel}>解释器路径</label>
                 <input
                   style={{ ...inputStyle, fontSize: 12 }}
                   value={customInterpreter}
@@ -288,7 +288,7 @@ export default function CreateCronJobPage({ onDone, settings }: Props) {
 
             {/* Script name */}
             <div style={{ flex: '1 1 120px' }}>
-              <label style={fieldLabel}>Script name</label>
+              <label style={fieldLabel}>脚本名称</label>
               <input
                 style={{ ...inputStyle, fontSize: 12 }}
                 value={scriptName}
@@ -310,7 +310,7 @@ export default function CreateCronJobPage({ onDone, settings }: Props) {
                   opacity: !code.trim() ? 0.5 : 1,
                 }}
               >
-                {isSaving ? 'Saving…' : savedName ? '✓ Saved' : '💾 Save'}
+                {isSaving ? '保存中…' : savedName ? '✓ 已保存' : '💾 保存'}
               </button>
             </div>
 
@@ -327,7 +327,7 @@ export default function CreateCronJobPage({ onDone, settings }: Props) {
                   opacity: !code.trim() ? 0.5 : 1,
                 }}
               >
-                {isRunning ? '⏳ Running…' : '▶ Run'}
+                {isRunning ? '⏳ 运行中…' : '▶ 运行'}
               </button>
             </div>
 
@@ -366,36 +366,36 @@ export default function CreateCronJobPage({ onDone, settings }: Props) {
 
             {/* Cron schedule */}
             <div>
-              <label style={fieldLabel}>Cron Schedule *</label>
+              <label style={fieldLabel}>定时任务计划 *</label>
               <CronExpressionInput value={cron} onChange={setCron} />
             </div>
 
             {/* Job name */}
             <div>
-              <label style={fieldLabel}>Job Name</label>
+              <label style={fieldLabel}>任务名称</label>
               <input
                 style={inputStyle}
                 value={jobName}
                 onChange={e => setJobName(e.target.value)}
-                placeholder={savedName ?? 'auto from script name'}
+                placeholder={savedName ?? '自动使用脚本名称'}
               />
             </div>
 
             {/* Working directory */}
             <div>
-              <label style={fieldLabel}>Working Directory</label>
+              <label style={fieldLabel}>工作目录</label>
               <input
                 style={inputStyle}
                 value={cwd}
                 onChange={e => setCwd(e.target.value)}
-                placeholder="Leave blank to use scripts folder"
+                placeholder="留空则使用脚本文件夹"
               />
             </div>
 
             {/* Extra args */}
             <div>
               <label style={fieldLabel}>
-                {interpreter === 'dotnet' ? 'dotnet subcommand + args' : 'Extra Arguments'}
+                {interpreter === 'dotnet' ? 'dotnet 子命令 + 参数' : '额外参数'}
               </label>
               <input
                 style={inputStyle}
@@ -407,7 +407,7 @@ export default function CreateCronJobPage({ onDone, settings }: Props) {
 
             {/* Env vars */}
             <div>
-              <label style={fieldLabel}>Env Vars  <span style={{ fontWeight: 400 }}>(KEY=VAL, comma-sep)</span></label>
+              <label style={fieldLabel}>环境变量 <span style={{ fontWeight: 400 }}>（KEY=VAL，用逗号分隔）</span></label>
               <input
                 style={inputStyle}
                 value={envStr}
@@ -418,7 +418,7 @@ export default function CreateCronJobPage({ onDone, settings }: Props) {
 
             {/* Namespace */}
             <div>
-              <label style={fieldLabel}>Namespace</label>
+              <label style={fieldLabel}>命名空间</label>
               <NamespaceInput style={inputStyle} value={namespace} onChange={setNamespace} placeholder="default" />
             </div>
 
@@ -430,7 +430,7 @@ export default function CreateCronJobPage({ onDone, settings }: Props) {
                   border: '1px solid rgba(234,179,8,0.3)', borderRadius: 5,
                   fontSize: 12, color: '#eab308',
                 }}>
-                  ⚠ Save the script first (left panel) before creating the cron job.
+                  ⚠ 创建定时任务前，请先保存脚本（左侧面板）。
                 </div>
               )}
               <button
@@ -442,7 +442,7 @@ export default function CreateCronJobPage({ onDone, settings }: Props) {
                   width: '100%', justifyContent: 'center',
                 }}
               >
-                {loading ? 'Creating…' : '⏱ Create Cron Job'}
+                {loading ? '创建中…' : '⏱ 创建定时任务'}
               </button>
               {submitError && (
                 <span style={{ fontSize: 12, color: 'var(--color-destructive)' }}>{submitError}</span>

@@ -57,7 +57,7 @@ export default function GeneralTab({ settings, onUpdate }: Props) {
       setUpdateInfo(info)
       if (info.error) setUpdateError(info.error)
     } catch (e: unknown) {
-      setUpdateError(e instanceof Error ? e.message : 'Check failed')
+      setUpdateError(e instanceof Error ? e.message : '检查失败')
     } finally {
       setUpdateChecking(false)
     }
@@ -84,18 +84,18 @@ export default function GeneralTab({ settings, onUpdate }: Props) {
 
   return (
     <>
-      <p style={sectionTitle}>Polling &amp; Refresh</p>
+      <p style={sectionTitle}>轮询与刷新</p>
       <div style={card}>
         <SettingRow
-          label="Auto-refresh"
-          description="Automatically poll the daemon for process updates."
+          label="自动刷新"
+          description="自动轮询守护进程以获取进程更新。"
           control={
             <Toggle checked={settings.autoRefresh} onChange={v => onUpdate({ autoRefresh: v })} />
           }
         />
         <SettingRow
-          label="Process refresh interval"
-          description="How often the process list is refreshed."
+          label="进程刷新间隔"
+          description="进程列表的刷新频率。"
           control={
             <select
               value={settings.processRefreshInterval}
@@ -110,8 +110,8 @@ export default function GeneralTab({ settings, onUpdate }: Props) {
           }
         />
         <SettingRow
-          label="Health check interval"
-          description="How often the daemon status in the sidebar is polled."
+          label="健康检查间隔"
+          description="侧边栏守护进程状态的轮询频率。"
           isLast
           control={
             <select
@@ -127,18 +127,18 @@ export default function GeneralTab({ settings, onUpdate }: Props) {
         />
       </div>
 
-      <p style={sectionTitle}>Behaviour</p>
+      <p style={sectionTitle}>行为</p>
       <div style={card}>
         <SettingRow
-          label="Confirm before delete"
-          description="Show a confirmation dialog when deleting a process."
+          label="删除前确认"
+          description="删除进程时显示确认对话框。"
           control={
             <Toggle checked={settings.confirmBeforeDelete} onChange={v => onUpdate({ confirmBeforeDelete: v })} />
           }
         />
         <SettingRow
-          label="Confirm before shutdown"
-          description="Show a confirmation dialog when shutting down the daemon."
+          label="关闭前确认"
+          description="关闭守护进程时显示确认对话框。"
           isLast
           control={
             <Toggle checked={settings.confirmBeforeShutdown} onChange={v => onUpdate({ confirmBeforeShutdown: v })} />
@@ -146,11 +146,11 @@ export default function GeneralTab({ settings, onUpdate }: Props) {
         />
       </div>
 
-      <p style={sectionTitle}>Log Viewer</p>
+      <p style={sectionTitle}>日志查看器</p>
       <div style={card}>
         <SettingRow
-          label="Default tail lines"
-          description="Number of log lines to fetch when opening a process log view."
+          label="默认日志行数"
+          description="打开进程日志视图时获取的日志行数。"
           isLast
           control={
             <select
@@ -166,11 +166,11 @@ export default function GeneralTab({ settings, onUpdate }: Props) {
         />
       </div>
 
-      <p style={sectionTitle}>Process Defaults</p>
+      <p style={sectionTitle}>进程默认值</p>
       <div style={card}>
         <SettingRow
-          label="Default namespace"
-          description="Pre-filled namespace when creating new processes or cron jobs."
+          label="默认命名空间"
+          description="创建新进程或定时任务时预填的命名空间。"
           isLast
           control={
             <NamespaceInput
@@ -183,26 +183,26 @@ export default function GeneralTab({ settings, onUpdate }: Props) {
         />
       </div>
 
-      <p style={sectionTitle}>Storage</p>
+      <p style={sectionTitle}>存储</p>
       <div style={card}>
         <SettingRow
-          label="Data directory"
-          description="Root folder where alter stores state, PID, and daemon logs."
-          control={sysPaths ? <CopyPath value={sysPaths.data_dir} /> : <span style={{ fontSize: 11, color: 'var(--color-muted-foreground)' }}>loading…</span>}
+          label="数据目录"
+          description="RunDock 存储状态、PID 和守护进程日志的根目录。"
+          control={sysPaths ? <CopyPath value={sysPaths.data_dir} /> : <span style={{ fontSize: 11, color: 'var(--color-muted-foreground)' }}>加载中…</span>}
         />
         <SettingRow
-          label="Log directory"
-          description={<>Where process stdout/stderr logs are written. Override with <code style={{ fontSize: 10, fontFamily: 'monospace' }}>ALTER_LOG_DIR</code> env var.</>}
+          label="日志目录"
+          description={<>进程标准输出/错误输出日志的写入目录。可通过 <code style={{ fontSize: 10, fontFamily: 'monospace' }}>ALTER_LOG_DIR</code> 环境变量覆盖。</>}
           isLast
-          control={sysPaths ? <CopyPath value={sysPaths.log_dir} /> : <span style={{ fontSize: 11, color: 'var(--color-muted-foreground)' }}>loading…</span>}
+          control={sysPaths ? <CopyPath value={sysPaths.log_dir} /> : <span style={{ fontSize: 11, color: 'var(--color-muted-foreground)' }}>加载中…</span>}
         />
       </div>
 
-      <p style={sectionTitle}>Connection</p>
+      <p style={sectionTitle}>连接</p>
       <div style={card}>
         <SettingRow
-          label="Daemon URL"
-          description="Base URL of the alter daemon. Change if running remotely."
+          label="守护进程 URL"
+          description="RunDock 守护进程的基础 URL。远程运行时可修改。"
           isLast
           control={
             <input
@@ -216,11 +216,11 @@ export default function GeneralTab({ settings, onUpdate }: Props) {
         />
       </div>
 
-      <p style={sectionTitle}>Daemon</p>
+      <p style={sectionTitle}>守护进程</p>
       <div style={card}>
         <SettingRow
-          label="Restart daemon"
-          description="Restarts the alter daemon. Your running processes keep running — only the HTTP server briefly restarts."
+          label="重启守护进程"
+          description="重启 RunDock 守护进程。正在运行的进程会继续运行，只有 HTTP 服务会短暂重启。"
           isLast
           control={
             <button
@@ -239,29 +239,29 @@ export default function GeneralTab({ settings, onUpdate }: Props) {
               }}
             >
               {restarting
-                ? <><Loader size={12} style={{ animation: 'spin 1s linear infinite' }} /> Restarting…</>
-                : restartStatus === 'done' ? <><Check size={12} /> Back online</>
-                : restartStatus === 'error' ? 'Failed to connect'
-                : <><RotateCcw size={12} /> Restart daemon</>}
+                ? <><Loader size={12} style={{ animation: 'spin 1s linear infinite' }} /> 重启中…</>
+                : restartStatus === 'done' ? <><Check size={12} /> 已恢复连接</>
+                : restartStatus === 'error' ? '连接失败'
+                : <><RotateCcw size={12} /> 重启守护进程</>}
             </button>
           }
         />
       </div>
 
-      <p style={sectionTitle}>Updates</p>
+      <p style={sectionTitle}>更新</p>
       <div style={card}>
         <div style={{ ...rowStyle, borderBottom: updateInfo && !updateInfo.up_to_date ? '1px solid var(--color-border)' : 'none', paddingBottom: updateInfo && !updateInfo.up_to_date ? 10 : 0 }}>
           <div style={{ flex: 1, paddingRight: 24 }}>
-            <div style={labelStyle}>Application version</div>
+            <div style={labelStyle}>应用版本</div>
             <div style={descStyle}>
-              Current: <code style={{ fontFamily: 'monospace', fontSize: 11 }}>{updateInfo?.current ?? '…'}</code>
+              当前版本：<code style={{ fontFamily: 'monospace', fontSize: 11 }}>{updateInfo?.current ?? '…'}</code>
               {updateInfo && !updateInfo.up_to_date && (
                 <span style={{ marginLeft: 8, color: '#f97316', fontWeight: 600 }}>
-                  → v{updateInfo.latest} available
+                  → v{updateInfo.latest} 可用
                 </span>
               )}
               {updateInfo?.up_to_date && (
-                <span style={{ marginLeft: 8, color: 'var(--color-status-running)' }}>✓ up to date</span>
+                <span style={{ marginLeft: 8, color: 'var(--color-status-running)' }}>✓ 已是最新版本</span>
               )}
             </div>
             {updateError && <div style={{ ...descStyle, color: 'var(--color-destructive)', marginTop: 4 }}>{updateError}</div>}
@@ -280,8 +280,8 @@ export default function GeneralTab({ settings, onUpdate }: Props) {
             }}
           >
             {updateChecking
-              ? <><Loader size={12} style={{ animation: 'spin 1s linear infinite' }} /> Checking…</>
-              : <><RefreshCw size={12} /> Check for updates</>}
+              ? <><Loader size={12} style={{ animation: 'spin 1s linear infinite' }} /> 检查中…</>
+              : <><RefreshCw size={12} /> 检查更新</>}
           </button>
         </div>
 
@@ -290,16 +290,16 @@ export default function GeneralTab({ settings, onUpdate }: Props) {
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 10 }}>
               <div>
                 <div style={{ fontSize: 13, fontWeight: 600, color: '#f97316' }}>
-                  v{updateInfo.latest} is available
+                  v{updateInfo.latest} 可用
                 </div>
                 {updateInfo.published_at && (
                   <div style={descStyle}>
-                    Released {new Date(updateInfo.published_at).toLocaleDateString()}
+                    发布于 {new Date(updateInfo.published_at).toLocaleDateString('zh-CN')}
                   </div>
                 )}
                 {!updateInfo.download_url && (
                   <div style={{ ...descStyle, color: 'var(--color-destructive)', marginTop: 2 }}>
-                    No asset found for this platform — update manually from GitHub.
+                    找不到适用于此平台的文件 — 请从 GitHub 手动更新。
                   </div>
                 )}
               </div>
@@ -321,12 +321,12 @@ export default function GeneralTab({ settings, onUpdate }: Props) {
                   }}
                 >
                   {updateStatus === 'updating'
-                    ? <><Loader size={12} style={{ animation: 'spin 1s linear infinite' }} /> Downloading…</>
-                    : updateStatus === 'done' ? <><Check size={12} /> {updateInfo.is_installer ? 'Installer launched' : 'Reloading…'}</>
-                    : updateStatus === 'error' ? 'Failed — retry?'
+                    ? <><Loader size={12} style={{ animation: 'spin 1s linear infinite' }} /> 下载中…</>
+                    : updateStatus === 'done' ? <><Check size={12} /> {updateInfo.is_installer ? '安装程序已启动' : '重新加载中…'}</>
+                    : updateStatus === 'error' ? '失败 — 重试？'
                     : updateInfo.is_installer
-                      ? <><ArrowDownToLine size={12} /> Download &amp; Install</>
-                      : <><ArrowDownToLine size={12} /> Update Now</>}
+                      ? <><ArrowDownToLine size={12} /> 下载并安装</>
+                      : <><ArrowDownToLine size={12} /> 立即更新</>}
                 </button>
               )}
             </div>
@@ -342,7 +342,7 @@ export default function GeneralTab({ settings, onUpdate }: Props) {
                   }}
                 >
                   {releaseNotesOpen ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-                  Release notes
+                  发布说明
                 </button>
                 {releaseNotesOpen && (
                   <pre style={{
@@ -364,11 +364,11 @@ export default function GeneralTab({ settings, onUpdate }: Props) {
 
       {import.meta.env.DEV && (
         <>
-          <p style={sectionTitle}>Developer</p>
+          <p style={sectionTitle}>开发者</p>
           <div style={card}>
             <SettingRow
-              label="React Query Devtools"
-              description="Show the query inspector panel to debug API cache state."
+              label="React Query 开发工具"
+              description="显示查询检查器面板以调试 API 缓存状态。"
               isLast
               control={
                 <Toggle
@@ -382,8 +382,8 @@ export default function GeneralTab({ settings, onUpdate }: Props) {
       )}
 
       <p style={{ fontSize: 11, color: 'var(--color-muted-foreground)', textAlign: 'center', marginTop: 8 }}>
-        Settings are stored in the daemon data directory and persist across sessions.
-        {' '}Changes take effect immediately.
+        设置存储在守护进程数据目录中，并会在会话之间保留。
+        {' '}更改会立即生效。
       </p>
     </>
   )

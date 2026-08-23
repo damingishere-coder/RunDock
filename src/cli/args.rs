@@ -6,7 +6,7 @@ use clap::{Args, Parser, Subcommand};
 #[command(
     name = "alter",
     version,
-    about = "A fast, cross-platform process manager",
+    about = "RunDock project manager (compatible alter CLI)",
     long_about = None,
 )]
 pub struct Cli {
@@ -61,6 +61,8 @@ pub enum Commands {
     Resurrect,
     /// Manage the daemon process
     Daemon(DaemonArgs),
+    /// Manage web dashboard authentication
+    Auth(AuthArgs),
     /// Generate OS startup configuration
     Startup,
     /// Remove OS startup configuration
@@ -159,4 +161,32 @@ pub enum DaemonAction {
     Status,
     /// Tail daemon's own log
     Logs,
+}
+
+#[derive(Args, Debug)]
+pub struct AuthArgs {
+    #[command(subcommand)]
+    pub action: AuthAction,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum AuthAction {
+    /// Disable the dashboard password and browser lock settings
+    Disable,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_auth_disable_command() {
+        let cli = Cli::try_parse_from(["alter", "auth", "disable"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Auth(AuthArgs {
+                action: AuthAction::Disable
+            }))
+        ));
+    }
 }

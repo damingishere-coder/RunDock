@@ -109,6 +109,7 @@ async fn test_notification(
     let proc = ProcessInfo {
         id: Uuid::new_v4(),
         name: "test-process".to_string(),
+        project_id: None,
         script: "test.js".to_string(),
         args: vec![],
         cwd: None,

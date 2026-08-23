@@ -4,6 +4,7 @@ use crate::api::error::ApiError;
 use crate::config::ecosystem::AppConfig;
 use crate::daemon::state::DaemonState;
 use crate::models::api_types::StartRequest;
+use crate::models::project::AssignProjectRequest;
 use axum::{
     extract::{Path, State},
     http::StatusCode,
@@ -31,6 +32,7 @@ pub fn router(state: Arc<DaemonState>) -> Router {
         .route("/{id}/logs/stats", get(get_log_stats))
         .route("/{id}/cron/history", get(get_cron_history))
         .route("/{id}/enabled", patch(set_process_enabled))
+        .route("/{id}/project", patch(assign_process_project))
         .route("/{id}/clone", post(clone_process))
         .route("/{id}/envfiles", get(list_envfiles))
         .route("/{id}/envfile", get(get_envfile).put(put_envfile))
@@ -73,6 +75,7 @@ async fn start_process(
 
     let config = AppConfig {
         name,
+        project_id: req.project_id,
         script: req.script,
         args: req.args.unwrap_or_default(),
         cwd: req.cwd,
@@ -104,7 +107,17 @@ async fn start_process(
         enabled: true,
     };
 
-    let info = state.manager.start(config).await.map_err(ApiError::from)?;
+    let mut info = state.manager.start(config).await.map_err(ApiError::from)?;
+    let project_id = info.project_id.unwrap_or(info.id);
+    if info.project_id.is_none() {
+        info = state
+            .manager
+            .assign_project(info.id, project_id)
+            .await
+            .map_err(ApiError::from)?;
+    }
+    state.projects.write().await.ensure(project_id, &info.name);
+    state.save_projects().await.map_err(ApiError::from)?;
     let s = state.clone(); tokio::spawn(async move { if let Err(e) = s.save_to_disk().await { tracing::warn!("auto-save failed: {e}"); } });
     Ok((StatusCode::CREATED, Json(json!(info))))
 }
@@ -147,7 +160,11 @@ async fn start_stopped_process(
     Path(id_str): Path<String>,
 ) -> Result<Json<Value>, ApiError> {
     let id = resolve(&state, &id_str).await?;
-    let info = state.manager.restart(id).await.map_err(ApiError::from)?;
+    let info = state
+        .manager
+        .start_existing(id)
+        .await
+        .map_err(ApiError::from)?;
     let s = state.clone(); tokio::spawn(async move { if let Err(e) = s.save_to_disk().await { tracing::warn!("auto-save failed: {e}"); } });
     Ok(Json(json!(info)))
 }
@@ -185,6 +202,29 @@ async fn set_process_enabled(
         .ok_or_else(|| ApiError::bad_request("missing 'enabled' boolean field"))?;
     let info = state.manager.set_enabled(id, enabled).await.map_err(ApiError::from)?;
     let s = state.clone(); tokio::spawn(async move { if let Err(e) = s.save_to_disk().await { tracing::warn!("auto-save failed: {e}"); } });
+    Ok(Json(json!(info)))
+}
+
+// @group APIEndpoints > Project : PATCH /processes/:id/project — metadata-only assignment
+async fn assign_process_project(
+    State(state): State<Arc<DaemonState>>,
+    Path(id_str): Path<String>,
+    Json(body): Json<AssignProjectRequest>,
+) -> Result<Json<Value>, ApiError> {
+    let id = resolve(&state, &id_str).await?;
+    let before = state.manager.get(id).await.map_err(ApiError::from)?;
+    let info = state
+        .manager
+        .assign_project(id, body.project_id)
+        .await
+        .map_err(ApiError::from)?;
+    state
+        .projects
+        .write()
+        .await
+        .ensure(body.project_id, &before.name);
+    state.save_projects().await.map_err(ApiError::from)?;
+    state.save_to_disk().await.map_err(ApiError::from)?;
     Ok(Json(json!(info)))
 }
 
@@ -297,6 +337,7 @@ async fn update_process(
 
     let config = AppConfig {
         name,
+        project_id: req.project_id.or(existing.project_id),
         script: req.script,
         args: req.args.unwrap_or_default(),
         cwd: req.cwd,
@@ -606,6 +647,7 @@ async fn clone_process(
 
     let clone_config = AppConfig {
         name: clone_name,
+        project_id: src_config.project_id,
         script: src_config.script,
         args: src_config.args,
         cwd: src_config.cwd,

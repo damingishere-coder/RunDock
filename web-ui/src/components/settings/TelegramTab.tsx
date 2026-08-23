@@ -65,7 +65,7 @@ export default function TelegramTab() {
       if (tgToken) { setTgTokenSet(true); setTgBotInfo(null) }
       setTimeout(() => setTgSaved(false), 2000)
     } catch (err: unknown) {
-      setTgError((err as Error)?.message ?? 'Failed to save Telegram config')
+      setTgError((err as Error)?.message ?? '保存 Telegram 配置失败')
     } finally {
       setTgSaving(false)
     }
@@ -82,7 +82,7 @@ export default function TelegramTab() {
       setTgBotInfo(info)
       if (info.ok) { setTgTokenSet(true); setTgToken(''); setTgChangingToken(false) }
     } catch (err: unknown) {
-      setTgBotInfo({ ok: false, username: null, first_name: null, error: (err as Error)?.message ?? 'Request failed' })
+      setTgBotInfo({ ok: false, username: null, first_name: null, error: (err as Error)?.message ?? '请求失败' })
     } finally {
       setTgValidating(false)
     }
@@ -93,9 +93,9 @@ export default function TelegramTab() {
     setTgTestResult(null)
     try {
       await api.testTelegram()
-      setTgTestResult('✅ Test message sent!')
+      setTgTestResult('✅ 测试消息已发送！')
     } catch (err: unknown) {
-      setTgTestResult(`❌ ${(err as Error)?.message ?? 'Failed to send test message'}`)
+      setTgTestResult(`❌ ${(err as Error)?.message ?? '发送测试消息失败'}`)
     } finally {
       setTgTesting(false)
       setTimeout(() => setTgTestResult(null), 4000)
@@ -104,24 +104,24 @@ export default function TelegramTab() {
 
   return (
     <>
-      <p style={sectionTitle}>Telegram Bot</p>
+      <p style={sectionTitle}>Telegram 机器人</p>
       <div style={card}>
         <SettingRow
-          label="Enable Telegram Bot"
-          description="Allow controlling processes and receiving alerts via Telegram"
+          label="启用 Telegram 机器人"
+          description="允许通过 Telegram 控制进程并接收告警"
           isLast
           control={<Toggle checked={tgEnabled} onChange={v => setTgEnabled(v)} />}
         />
       </div>
 
-      <p style={sectionTitle}>Bot Token</p>
+      <p style={sectionTitle}>机器人令牌</p>
       <div style={card}>
         <SettingRow
-          label="Bot Token"
+          label="机器人令牌"
           description={
             tgTokenSet && !tgChangingToken
-              ? 'Token is saved — click Change to replace it'
-              : 'Get your token from @BotFather on Telegram'
+              ? '令牌已保存，点击“更换”进行替换'
+              : '从 Telegram 上的 @BotFather 获取令牌'
           }
           isLast
           control={
@@ -145,14 +145,14 @@ export default function TelegramTab() {
                     border: '1px solid var(--color-border)', borderRadius: 5, cursor: 'pointer',
                   }}
                 >
-                  Change
+                  更换
                 </button>
               </div>
             ) : (
               <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                 <input
                   type="password"
-                  placeholder="Paste new bot token…"
+                  placeholder="粘贴新的机器人令牌…"
                   value={tgToken}
                   onChange={e => { setTgToken(e.target.value); setTgBotInfo(null) }}
                   style={{ ...inputStyle, width: 240, fontSize: 12 }}
@@ -169,7 +169,7 @@ export default function TelegramTab() {
                     opacity: (tgValidating || !tgToken) ? 0.5 : 1,
                   }}
                 >
-                  {tgValidating ? 'Checking…' : 'Validate'}
+                  {tgValidating ? '检查中…' : '验证'}
                 </button>
                 {tgTokenSet && (
                   <button
@@ -181,7 +181,7 @@ export default function TelegramTab() {
                       border: '1px solid var(--color-border)', borderRadius: 5, cursor: 'pointer',
                     }}
                   >
-                    Cancel
+                    取消
                   </button>
                 )}
               </div>
@@ -196,17 +196,17 @@ export default function TelegramTab() {
             border: `1px solid ${tgBotInfo.ok ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)'}`,
           }}>
             {tgBotInfo.ok
-              ? `✅ Connected as @${tgBotInfo.username ?? tgBotInfo.first_name}`
-              : `❌ ${tgBotInfo.error ?? 'Invalid token'}`}
+              ? `✅ 已连接为 @${tgBotInfo.username ?? tgBotInfo.first_name}`
+              : `❌ ${tgBotInfo.error ?? '令牌无效'}`}
           </div>
         )}
       </div>
 
-      <p style={sectionTitle}>Allowed Chat IDs</p>
+      <p style={sectionTitle}>允许的聊天 ID</p>
       <div style={card}>
         <SettingRow
-          label="Allowed Chat IDs"
-          description="Only these Telegram user/group IDs can send commands. One ID per line. Find your ID by messaging @userinfobot."
+          label="允许的聊天 ID"
+          description="只有这些 Telegram 用户/群组 ID 可以发送命令。每行一个 ID。向 @userinfobot 发送消息即可获取你的 ID。"
           isLast
           control={
             <textarea
@@ -226,14 +226,14 @@ export default function TelegramTab() {
         />
       </div>
 
-      <p style={sectionTitle}>Notifications</p>
+      <p style={sectionTitle}>通知</p>
       <div style={card}>
-        <SettingRow label="Notify on crash" description="Send a message when a process crashes" control={<Toggle checked={tgNotifyCrash} onChange={setTgNotifyCrash} />} />
-        <SettingRow label="Notify on start" description="Send a message when a process starts" control={<Toggle checked={tgNotifyStart} onChange={setTgNotifyStart} />} />
-        <SettingRow label="Notify on stop" description="Send a message when a process is stopped" control={<Toggle checked={tgNotifyStop} onChange={setTgNotifyStop} />} />
+        <SettingRow label="崩溃时通知" description="进程崩溃时发送消息" control={<Toggle checked={tgNotifyCrash} onChange={setTgNotifyCrash} />} />
+        <SettingRow label="启动时通知" description="进程启动时发送消息" control={<Toggle checked={tgNotifyStart} onChange={setTgNotifyStart} />} />
+        <SettingRow label="停止时通知" description="进程停止时发送消息" control={<Toggle checked={tgNotifyStop} onChange={setTgNotifyStop} />} />
         <SettingRow
-          label="Notify on restart"
-          description="Send a message when a process is automatically restarted"
+          label="重启时通知"
+          description="进程自动重启时发送消息"
           isLast
           control={<Toggle checked={tgNotifyRestart} onChange={setTgNotifyRestart} />}
         />
@@ -250,7 +250,7 @@ export default function TelegramTab() {
             opacity: tgSaving ? 0.6 : 1, transition: 'background 0.2s',
           }}
         >
-          {tgSaved ? 'Saved!' : tgSaving ? 'Saving…' : 'Save'}
+          {tgSaved ? '已保存！' : tgSaving ? '保存中…' : '保存'}
         </button>
         <button
           type="button"
@@ -263,7 +263,7 @@ export default function TelegramTab() {
             opacity: (tgTesting || !tgTokenSet || parseChatIds().length === 0) ? 0.5 : 1,
           }}
         >
-          {tgTesting ? 'Sending…' : 'Send Test Message'}
+          {tgTesting ? '发送中…' : '发送测试消息'}
         </button>
         {tgTestResult && (
           <span style={{ fontSize: 12, color: tgTestResult.startsWith('✅') ? 'var(--color-status-running)' : 'var(--color-status-errored)' }}>
@@ -276,17 +276,17 @@ export default function TelegramTab() {
       )}
 
       <div style={{ ...card, marginTop: 20, background: 'rgba(var(--color-primary-rgb, 99,102,241),0.05)', borderColor: 'rgba(var(--color-primary-rgb, 99,102,241),0.2)' }}>
-        <p style={{ ...sectionTitle, color: 'var(--color-primary)', marginBottom: 8 }}>Setup Guide</p>
+        <p style={{ ...sectionTitle, color: 'var(--color-primary)', marginBottom: 8 }}>设置指南</p>
         <ol style={{ fontSize: 12, color: 'var(--color-muted-foreground)', paddingLeft: 20, margin: 0, lineHeight: 1.8 }}>
-          <li>Message <strong>@BotFather</strong> on Telegram → <code>/newbot</code> → copy the token above</li>
-          <li>Click <strong>Validate</strong> to confirm the token works</li>
-          <li>Message your bot, then message <strong>@userinfobot</strong> to get your Chat ID</li>
-          <li>Add your Chat ID to the Allowed Chat IDs list</li>
-          <li>Enable the bot and save</li>
-          <li>Send <strong>/help</strong> to your bot to see available commands</li>
+          <li>在 Telegram 向 <strong>@BotFather</strong> 发送消息 → <code>/newbot</code> → 复制上面的令牌</li>
+          <li>点击<strong>验证</strong>确认令牌有效</li>
+          <li>向你的机器人发送消息，再向 <strong>@userinfobot</strong> 发送消息以获取聊天 ID</li>
+          <li>将聊天 ID 添加到“允许的聊天 ID”列表</li>
+          <li>启用机器人并保存</li>
+          <li>向机器人发送 <strong>/help</strong> 查看可用命令</li>
         </ol>
         <p style={{ fontSize: 12, color: 'var(--color-muted-foreground)', marginTop: 12, marginBottom: 0 }}>
-          <strong>Commands:</strong> /list · /start &lt;name&gt; · /stop &lt;name&gt; · /restart &lt;name&gt; · /logs &lt;name&gt; [lines] · /status &lt;name&gt; · /ping · /help
+          <strong>命令：</strong> /list · /start &lt;name&gt; · /stop &lt;name&gt; · /restart &lt;name&gt; · /logs &lt;name&gt; [lines] · /status &lt;name&gt; · /ping · /help
         </p>
       </div>
     </>

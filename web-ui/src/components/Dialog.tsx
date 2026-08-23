@@ -59,8 +59,8 @@ export function Dialog({
     ? 'var(--color-destructive)'
     : 'var(--color-primary)'
 
-  const defaultConfirmLabel = isAlert ? 'OK' : isDanger ? 'Delete' : 'Confirm'
-  const defaultCancelLabel = 'Cancel'
+  const defaultConfirmLabel = isAlert ? '确定' : isDanger ? '删除' : '确认'
+  const defaultCancelLabel = '取消'
 
   return createPortal(
     // @group BusinessLogic > Overlay : Dark backdrop

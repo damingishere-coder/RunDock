@@ -33,14 +33,14 @@ fn semver_gt(a: &str, b: &str) -> bool {
 
 // @group Utilities > Platform : Returns the asset filename for the current OS/arch
 // Asset naming matches GitHub release conventions:
-//   Windows x64 : alter-{version}-windows-x64-setup.exe
+//   Windows x64 : RunDock-{version}-windows-x64-setup.exe
 //   Linux  x64  : alter_{version}_amd64.deb
 //   Linux  arm64: alter_{version}_arm64.deb
 //   macOS  x64  : alter-{version}-macos-x64.tar.gz
 //   macOS  arm64: alter-{version}-macos-arm64.tar.gz
 fn platform_asset_name(version: &str) -> Option<String> {
     let name = match (std::env::consts::OS, std::env::consts::ARCH) {
-        ("windows", "x86_64") => format!("alter-{version}-windows-x64-setup.exe"),
+        ("windows", "x86_64") => format!("RunDock-{version}-windows-x64-setup.exe"),
         ("linux",   "x86_64") => format!("alter_{version}_amd64.deb"),
         ("linux",   "aarch64")=> format!("alter_{version}_arm64.deb"),
         ("macos",   "x86_64") => format!("alter-{version}-macos-x64.tar.gz"),
@@ -66,7 +66,7 @@ async fn check_update() -> Json<Value> {
     let current = env!("CARGO_PKG_VERSION");
 
     let client = match reqwest::Client::builder()
-        .user_agent("alter-pm2")
+        .user_agent("RunDock/1.0")
         .timeout(std::time::Duration::from_secs(10))
         .build()
     {
@@ -81,7 +81,7 @@ async fn check_update() -> Json<Value> {
     };
 
     let resp = match client
-        .get("https://api.github.com/repos/thechandanbhagat/alter-pm/releases/latest")
+        .get("https://api.github.com/repos/damingishere-coder/RunDock/releases/latest")
         .send()
         .await
     {
@@ -224,7 +224,7 @@ async fn apply_update(
 // @group Utilities > Update : Stream-download a URL to a local file
 async fn download_binary(url: &str, dest: &std::path::Path) -> anyhow::Result<()> {
     let client = reqwest::Client::builder()
-        .user_agent("alter-pm2")
+        .user_agent("RunDock/1.0")
         .timeout(std::time::Duration::from_secs(120))
         .build()?;
 

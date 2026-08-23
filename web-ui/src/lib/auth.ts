@@ -109,12 +109,12 @@ export async function registerPasskey(
   passkeyName: string,
 ): Promise<void> {
   if (!window.PublicKeyCredential) {
-    throw new Error('WebAuthn is not supported in this browser')
+    throw new Error('此浏览器不支持 WebAuthn')
   }
   const serverOptions = await startFn()
   const creationOptions = prepareCreationOptions(serverOptions)
   const credential = await navigator.credentials.create({ publicKey: creationOptions }) as PublicKeyCredential | null
-  if (!credential) throw new Error('Passkey creation was cancelled')
+  if (!credential) throw new Error('已取消创建通行密钥')
   const serialized = serializeRegistrationCredential(credential)
   await finishFn(serialized, passkeyName)
 }
@@ -125,12 +125,12 @@ export async function loginWithPasskey(
   finishFn: (cred: object) => Promise<{ session_token: string; expires_at: string }>,
 ): Promise<string> {
   if (!window.PublicKeyCredential) {
-    throw new Error('WebAuthn is not supported in this browser')
+    throw new Error('此浏览器不支持 WebAuthn')
   }
   const serverOptions = await startFn()
   const requestOptions = prepareRequestOptions(serverOptions)
   const assertion = await navigator.credentials.get({ publicKey: requestOptions }) as PublicKeyCredential | null
-  if (!assertion) throw new Error('Passkey authentication was cancelled')
+  if (!assertion) throw new Error('已取消通行密钥认证')
   const serialized = serializeAssertionCredential(assertion)
   const result = await finishFn(serialized)
   return result.session_token

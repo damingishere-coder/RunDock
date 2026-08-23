@@ -1,8 +1,13 @@
 /target
-Cargo.lock
 .env.build
+.env
+.env.*
+!.env.example
 *.pdb
 *.exe
+*.log
+.DS_Store
+Thumbs.db
 
 
 excluded/
@@ -11,6 +16,7 @@ excluded/
 # Web UI build artifacts
 web-ui/dist/
 web-ui/node_modules/
+/dist/
 
 *-cwd
 no/

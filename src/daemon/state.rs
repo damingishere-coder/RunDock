@@ -4,11 +4,11 @@ use crate::config::auth_config::AuthConfig;
 use crate::config::daemon_config::DaemonConfig;
 use crate::config::ecosystem::AppConfig;
 use crate::config::notification_store::NotificationsStore;
+use crate::config::project_store::ProjectStore;
 use crate::config::telegram_config::TelegramConfig;
 use crate::models::cron_run::CronRun;
-use crate::models::process_info::ProcessInfo;
 use crate::models::tunnel::TunnelSettings;
-use crate::process::manager::ProcessManager;
+use crate::process::manager::{ManagedProcessSnapshot, ProcessManager};
 use crate::terminal::TerminalManager;
 use crate::tunnel::TunnelManager;
 use anyhow::Result;
@@ -54,6 +54,9 @@ pub struct DaemonState {
     pub config: DaemonConfig,
     pub started_at: DateTime<Utc>,
     pub notifications: Arc<RwLock<NotificationsStore>>,
+    /// User-facing logical project metadata, persisted independently from
+    /// process runtime state so editing it never restarts a process.
+    pub projects: Arc<RwLock<ProjectStore>>,
     /// Ephemeral GitHub Device Flow auth state — cleared after successful login or expiry
     pub ai_device_auth: Arc<tokio::sync::Mutex<Option<crate::models::ai::DeviceAuthState>>>,
 
@@ -78,6 +81,7 @@ pub struct DaemonState {
 impl DaemonState {
     pub fn new(config: DaemonConfig) -> Self {
         let notifications = Arc::new(RwLock::new(crate::config::notification_store::load()));
+        let projects = Arc::new(RwLock::new(crate::config::project_store::load()));
 
         let auth_cfg = crate::config::auth_config::load();
 
@@ -89,6 +93,7 @@ impl DaemonState {
             config,
             started_at: Utc::now(),
             notifications,
+            projects,
             ai_device_auth: Arc::new(tokio::sync::Mutex::new(None)),
             sessions: Arc::new(DashMap::new()),
             auth: Arc::new(RwLock::new(auth_cfg)),
@@ -99,23 +104,20 @@ impl DaemonState {
         }
     }
 
+    pub async fn save_projects(&self) -> Result<()> {
+        let store = self.projects.read().await.clone();
+        tokio::task::spawn_blocking(move || crate::config::project_store::save(&store)).await??;
+        Ok(())
+    }
+
     // @group DatabaseOperations : Serialize current process list to JSON file
     pub async fn save_to_disk(&self) -> Result<()> {
-        let processes = self.manager.list().await;
-        let apps = processes
+        let apps = self
+            .manager
+            .snapshot()
+            .await
             .into_iter()
-            .map(|p| SavedApp {
-                id: p.id,
-                config: build_app_config(&p),
-                restart_count: p.restart_count,
-                autorestart_on_restore: p.autorestart,
-                cron_run_history: p.cron_run_history,
-                last_pid: p.pid,
-                // Cron scheduler was active if the job was Sleeping at save time.
-                // Stopped = user manually stopped it; don't re-arm on next daemon start.
-                cron_was_active: p.cron.is_some()
-                    && !matches!(p.status, crate::models::process_status::ProcessStatus::Stopped),
-            })
+            .map(saved_app_from_snapshot)
             .collect();
 
         let saved = SavedState {
@@ -163,6 +165,36 @@ impl DaemonState {
         use crate::process::manager::{is_pid_alive, kill_orphan_pid};
 
         for app in saved.apps {
+            // Disabled entries must never come back merely because their old
+            // PID survived the daemon restart. Keep the real running state if
+            // the verified kill fails so the UI can report and retry it.
+            if !app.config.enabled {
+                if let Some(pid) = app.last_pid {
+                    if is_pid_alive(pid) {
+                        match kill_orphan_pid(pid).await {
+                            Ok(()) => tracing::info!(
+                                "stopped disabled process '{}' (PID {}) during restore",
+                                app.config.name,
+                                pid
+                            ),
+                            Err(error) => {
+                                tracing::warn!(
+                                    "failed to stop disabled process '{}' (PID {}) during restore: {error}",
+                                    app.config.name,
+                                    pid
+                                );
+                                self.manager
+                                    .register_running_adopted(app.id, app.config, pid)
+                                    .await;
+                                continue;
+                            }
+                        }
+                    }
+                }
+                self.manager.register_stopped(app.id, app.config).await;
+                continue;
+            }
+
             if app.config.cron.is_some() {
                 // Kill any stale PID first (cron jobs are idempotent)
                 if let Some(pid) = app.last_pid {
@@ -171,7 +203,13 @@ impl DaemonState {
                             "killing stale cron process '{}' (PID {}) before re-registering",
                             app.config.name, pid
                         );
-                        kill_orphan_pid(pid);
+                        if let Err(error) = kill_orphan_pid(pid).await {
+                            tracing::warn!(
+                                "failed to stop stale cron process '{}' (PID {}): {error}",
+                                app.config.name,
+                                pid
+                            );
+                        }
                     }
                 }
                 if app.cron_was_active {
@@ -216,38 +254,109 @@ impl DaemonState {
     }
 }
 
-fn build_app_config(info: &ProcessInfo) -> AppConfig {
-    use crate::config::ecosystem::AppConfig;
-    AppConfig {
-        name: info.name.clone(),
-        script: info.script.clone(),
-        args: info.args.clone(),
-        cwd: info.cwd.clone(),
-        instances: 1,
-        autorestart: info.autorestart,
-        max_restarts: info.max_restarts,
-        restart_delay_ms: 1000,
-        namespace: info.namespace.clone(),
-        watch: info.watch,
-        watch_paths: vec![],
-        watch_ignore: vec![],
-        env: info.env.clone(),
-        log_file: None,
-        error_file: None,
-        max_log_size_mb: 10,
-        cron: info.cron.clone(),
-        cron_last_run: None,
-        cron_next_run: info.cron_next_run,
-        notify: info.notify.clone(),
-        log_alert: info.log_alert.clone(),
-        env_file: None,
-        health_check_url: None,
-        health_check_interval_secs: 30,
-        health_check_timeout_secs: 5,
-        health_check_retries: 3,
-        pre_start: None,
-        post_start: None,
-        pre_stop: None,
-        enabled: info.enabled,
+fn saved_app_from_snapshot(snapshot: ManagedProcessSnapshot) -> SavedApp {
+    let info = snapshot.info;
+    SavedApp {
+        id: info.id,
+        config: snapshot.config,
+        restart_count: info.restart_count,
+        autorestart_on_restore: info.autorestart,
+        cron_run_history: info.cron_run_history,
+        last_pid: info.pid,
+        // Cron scheduler was active if the job was Sleeping at save time.
+        // Stopped = user manually stopped it; don't re-arm on next daemon start.
+        cron_was_active: info.cron.is_some()
+            && !matches!(
+                info.status,
+                crate::models::process_status::ProcessStatus::Stopped
+            ),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::process_status::ProcessStatus;
+    use std::collections::HashMap;
+
+    #[tokio::test]
+    async fn saved_state_preserves_complete_app_config() {
+        let notifications = Arc::new(RwLock::new(NotificationsStore::default()));
+        let manager = ProcessManager::new(notifications);
+        let id = Uuid::new_v4();
+        let project_id = Uuid::new_v4();
+        let config = AppConfig {
+            name: "full-config".to_string(),
+            project_id: Some(project_id),
+            script: "server.exe".to_string(),
+            args: vec!["--serve".to_string()],
+            cwd: Some("C:\\work".to_string()),
+            instances: 3,
+            autorestart: false,
+            max_restarts: 7,
+            restart_delay_ms: 2_500,
+            watch: true,
+            watch_paths: vec!["src".to_string()],
+            watch_ignore: vec!["target".to_string()],
+            env: HashMap::from([("MODE".to_string(), "test".to_string())]),
+            namespace: "tests".to_string(),
+            log_file: Some("app.log".to_string()),
+            error_file: Some("error.log".to_string()),
+            max_log_size_mb: 42,
+            cron: None,
+            cron_last_run: None,
+            cron_next_run: None,
+            notify: None,
+            log_alert: None,
+            env_file: Some(".env.local".to_string()),
+            health_check_url: Some("http://127.0.0.1:8080/health".to_string()),
+            health_check_interval_secs: 11,
+            health_check_timeout_secs: 4,
+            health_check_retries: 5,
+            pre_start: Some("prepare".to_string()),
+            post_start: Some("announce".to_string()),
+            pre_stop: Some("cleanup".to_string()),
+            enabled: false,
+        };
+
+        manager.register_stopped(id, config).await;
+        let saved = SavedState {
+            saved_at: Some(Utc::now()),
+            apps: manager
+                .snapshot()
+                .await
+                .into_iter()
+                .map(saved_app_from_snapshot)
+                .collect(),
+        };
+        let decoded: SavedState =
+            serde_json::from_str(&serde_json::to_string(&saved).unwrap()).unwrap();
+        let restored = &decoded.apps[0].config;
+
+        assert_eq!(restored.project_id, Some(project_id));
+        assert_eq!(restored.instances, 3);
+        assert_eq!(restored.restart_delay_ms, 2_500);
+        assert_eq!(restored.watch_paths, ["src"]);
+        assert_eq!(restored.watch_ignore, ["target"]);
+        assert_eq!(restored.log_file.as_deref(), Some("app.log"));
+        assert_eq!(restored.error_file.as_deref(), Some("error.log"));
+        assert_eq!(restored.env_file.as_deref(), Some(".env.local"));
+        assert_eq!(
+            restored.health_check_url.as_deref(),
+            Some("http://127.0.0.1:8080/health")
+        );
+        assert_eq!(restored.health_check_interval_secs, 11);
+        assert_eq!(restored.health_check_timeout_secs, 4);
+        assert_eq!(restored.health_check_retries, 5);
+        assert_eq!(restored.pre_start.as_deref(), Some("prepare"));
+        assert_eq!(restored.post_start.as_deref(), Some("announce"));
+        assert_eq!(restored.pre_stop.as_deref(), Some("cleanup"));
+        assert!(!restored.enabled);
+        assert_eq!(decoded.apps[0].id, id);
+        assert_eq!(decoded.apps[0].restart_count, 0);
+        assert_eq!(decoded.apps[0].last_pid, None);
+        assert_eq!(decoded.apps[0].autorestart_on_restore, false);
+        assert_eq!(decoded.apps[0].cron_was_active, false);
+        assert_eq!(ProcessStatus::Stopped, manager.get(id).await.unwrap().status);
     }
 }

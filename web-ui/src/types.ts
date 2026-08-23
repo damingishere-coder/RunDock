@@ -64,6 +64,7 @@ export interface CronRun {
 
 export interface ProcessInfo {
   id: string
+  project_id: string | null
   name: string
   script: string
   args: string[]
@@ -121,6 +122,7 @@ export interface ScriptInfo {
 export interface StartProcessBody {
   script: string
   name?: string
+  project_id?: string
   cwd?: string
   args?: string[]
   env?: Record<string, string>
@@ -132,6 +134,58 @@ export interface StartProcessBody {
   watch_paths?: string[]
   cron?: string
   notify?: NotificationConfig
+}
+
+export type ProjectKind = 'managed' | 'desktop'
+export type ProjectStatus = 'desktop' | 'running' | 'partial' | 'stopped' | 'errored' | 'disabled'
+
+export interface ProjectMemberInfo {
+  id: string
+  name: string
+  status: ProcessStatus
+  pid: number | null
+  enabled: boolean
+}
+
+export interface ProjectInfo {
+  id: string
+  kind: ProjectKind
+  display_name: string
+  note: string
+  category: string
+  web_port: number | null
+  launch_uri: string | null
+  enabled: boolean
+  status: ProjectStatus
+  process_count: number
+  active_process_count: number
+  cpu_percent: number
+  memory_bytes: number
+  members: ProjectMemberInfo[]
+}
+
+export interface ProjectPatch {
+  kind?: ProjectKind
+  display_name?: string
+  note?: string
+  category?: string
+  web_port?: number
+  launch_uri?: string
+  enabled?: boolean
+}
+
+export interface ProjectActionMemberResult {
+  process_id: string
+  name: string
+  success: boolean
+  error: string | null
+}
+
+export interface ProjectActionResponse {
+  project_id: string
+  action: 'start' | 'stop' | 'restart'
+  success: boolean
+  results: ProjectActionMemberResult[]
 }
 
 // @group Types > EnvFiles : Env file descriptor from the API

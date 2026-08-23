@@ -28,31 +28,31 @@ export default function LogAlertsTab() {
 
   return (
     <>
-      <p style={sectionTitle}>Global Settings</p>
+      <p style={sectionTitle}>全局设置</p>
       <div style={card}>
         <SettingRow
-          label="Enable log alerts"
-          description="Fire a notification when stderr lines in a check interval exceed the threshold"
+          label="启用日志告警"
+          description="检查间隔内的 stderr 行数超过阈值时发送通知"
           control={<Toggle checked={laEnabled} onChange={setLaEnabled} />}
         />
         <SettingRow
-          label="Check interval"
-          description="How often the daemon scans for log spikes"
+          label="检查间隔"
+          description="守护进程扫描日志突增的频率"
           control={
             <select value={laCheckInterval} onChange={e => setLaCheckInterval(Number(e.target.value))} style={{ ...inputStyle, width: 140 }}>
-              <option value={1}>1 minute</option>
-              <option value={2}>2 minutes</option>
-              <option value={5}>5 minutes</option>
-              <option value={10}>10 minutes</option>
-              <option value={15}>15 minutes</option>
-              <option value={30}>30 minutes</option>
-              <option value={60}>1 hour</option>
+              <option value={1}>1 分钟</option>
+              <option value={2}>2 分钟</option>
+              <option value={5}>5 分钟</option>
+              <option value={10}>10 分钟</option>
+              <option value={15}>15 分钟</option>
+              <option value={30}>30 分钟</option>
+              <option value={60}>1 小时</option>
             </select>
           }
         />
         <SettingRow
-          label="Stderr threshold"
-          description="Alert when this many stderr lines appear within one check interval"
+          label="Stderr 阈值"
+          description="单个检查间隔内出现此数量的 stderr 行时告警"
           control={
             <input
               type="number" min={1} max={10000} value={laThreshold}
@@ -62,24 +62,24 @@ export default function LogAlertsTab() {
           }
         />
         <SettingRow
-          label="Cooldown"
-          description="Minimum time between repeated alerts for the same process"
+          label="冷却时间"
+          description="同一进程重复告警之间的最短时间"
           isLast
           control={
             <select value={laCooldown} onChange={e => setLaCooldown(Number(e.target.value))} style={{ ...inputStyle, width: 140 }}>
-              <option value={5}>5 minutes</option>
-              <option value={10}>10 minutes</option>
-              <option value={15}>15 minutes</option>
-              <option value={30}>30 minutes</option>
-              <option value={60}>1 hour</option>
+              <option value={5}>5 分钟</option>
+              <option value={10}>10 分钟</option>
+              <option value={15}>15 分钟</option>
+              <option value={30}>30 分钟</option>
+              <option value={60}>1 小时</option>
             </select>
           }
         />
       </div>
 
-      <p style={sectionTitle}>Namespace Overrides</p>
+      <p style={sectionTitle}>命名空间覆盖</p>
       <p style={{ fontSize: 12, color: 'var(--color-muted-foreground)', marginTop: -8, marginBottom: 12 }}>
-        Override global settings for specific namespaces. Leave a field blank to inherit the global value.
+        为指定命名空间覆盖全局设置。字段留空则继承全局值。
       </p>
 
       {Object.keys(laNsOverrides).length > 0 && (
@@ -88,7 +88,7 @@ export default function LogAlertsTab() {
             <div key={ns} style={{ ...card, padding: '12px 16px', marginBottom: 0, display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center' }}>
               <span style={{ fontSize: 13, fontWeight: 600, minWidth: 120, color: 'var(--color-foreground)' }}>📁 {ns}</span>
               <label style={{ fontSize: 12, color: 'var(--color-muted-foreground)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                Enabled
+                启用
                 <select
                   value={ov.enabled === true ? 'yes' : ov.enabled === false ? 'no' : 'inherit'}
                   onChange={e => {
@@ -97,16 +97,16 @@ export default function LogAlertsTab() {
                   }}
                   style={{ ...inputStyle, width: 100, padding: '3px 6px' }}
                 >
-                  <option value="inherit">Inherit</option>
-                  <option value="yes">Yes</option>
-                  <option value="no">No</option>
+                  <option value="inherit">继承</option>
+                  <option value="yes">是</option>
+                  <option value="no">否</option>
                 </select>
               </label>
               <label style={{ fontSize: 12, color: 'var(--color-muted-foreground)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                Threshold
+                阈值
                 <input
                   type="number" min={1} max={10000}
-                  placeholder="Inherit"
+                  placeholder="继承"
                   value={ov.stderr_threshold ?? ''}
                   onChange={e => {
                     const v = e.target.value === '' ? undefined : Math.max(1, Number(e.target.value))
@@ -116,7 +116,7 @@ export default function LogAlertsTab() {
                 />
               </label>
               <label style={{ fontSize: 12, color: 'var(--color-muted-foreground)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                Cooldown
+                冷却时间
                 <select
                   value={ov.cooldown_mins ?? ''}
                   onChange={e => {
@@ -125,16 +125,16 @@ export default function LogAlertsTab() {
                   }}
                   style={{ ...inputStyle, width: 120, padding: '3px 6px' }}
                 >
-                  <option value="">Inherit</option>
-                  <option value={5}>5 min</option>
-                  <option value={10}>10 min</option>
-                  <option value={15}>15 min</option>
-                  <option value={30}>30 min</option>
-                  <option value={60}>1 hour</option>
+                  <option value="">继承</option>
+                  <option value={5}>5 分钟</option>
+                  <option value={10}>10 分钟</option>
+                  <option value={15}>15 分钟</option>
+                  <option value={30}>30 分钟</option>
+                  <option value={60}>1 小时</option>
                 </select>
               </label>
               <label style={{ fontSize: 12, color: 'var(--color-muted-foreground)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                Check interval
+                检查间隔
                 <select
                   value={ov.check_interval_mins ?? ''}
                   onChange={e => {
@@ -143,18 +143,18 @@ export default function LogAlertsTab() {
                   }}
                   style={{ ...inputStyle, width: 120, padding: '3px 6px' }}
                 >
-                  <option value="">Inherit</option>
-                  <option value={1}>1 minute</option>
-                  <option value={2}>2 minutes</option>
-                  <option value={5}>5 minutes</option>
-                  <option value={10}>10 minutes</option>
-                  <option value={15}>15 minutes</option>
+                  <option value="">继承</option>
+                  <option value={1}>1 分钟</option>
+                  <option value={2}>2 分钟</option>
+                  <option value={5}>5 分钟</option>
+                  <option value={10}>10 分钟</option>
+                  <option value={15}>15 分钟</option>
                 </select>
               </label>
               <button
                 onClick={() => setLaNsOverrides(prev => { const next = { ...prev }; delete next[ns]; return next })}
                 style={{ marginLeft: 'auto', fontSize: 12, padding: '3px 10px', background: 'transparent', border: '1px solid var(--color-border)', borderRadius: 5, cursor: 'pointer', color: 'var(--color-status-crashed)' }}
-              >Remove</button>
+              >移除</button>
             </div>
           ))}
         </div>
@@ -162,7 +162,7 @@ export default function LogAlertsTab() {
 
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 16 }}>
         <NamespaceInput
-          placeholder="Namespace name"
+          placeholder="命名空间名称"
           value={laNsNew}
           onChange={setLaNsNew}
           style={{ ...inputStyle, width: 180 }}
@@ -176,13 +176,13 @@ export default function LogAlertsTab() {
             setLaNsNew('')
           }}
           style={{ padding: '6px 14px', fontSize: 13, background: 'var(--color-secondary)', border: '1px solid var(--color-border)', borderRadius: 6, cursor: 'pointer', color: 'var(--color-foreground)' }}
-        >+ Add namespace</button>
+        >+ 添加命名空间</button>
       </div>
 
       <div style={{ ...card, background: 'rgba(var(--color-primary-rgb,99,102,241),0.05)', borderColor: 'rgba(var(--color-primary-rgb,99,102,241),0.2)', marginBottom: 16 }}>
         <p style={{ fontSize: 12, color: 'var(--color-muted-foreground)', margin: 0, lineHeight: 1.7 }}>
-          Alerts are sent through your configured <strong>Webhook / Slack / Teams</strong> and <strong>Telegram</strong> channels.
-          Process-level overrides can be set via the API (<code>log_alert</code> field on a process).
+          告警会通过你配置的 <strong>Webhook / Slack / Teams</strong> 和 <strong>Telegram</strong> 渠道发送。
+          可通过 API 为进程设置级别覆盖（进程上的 <code>log_alert</code> 字段）。
         </p>
       </div>
 
@@ -198,7 +198,7 @@ export default function LogAlertsTab() {
               setLaSaved(true)
               setTimeout(() => setLaSaved(false), 2500)
             } catch (e: unknown) {
-              setLaError(e instanceof Error ? e.message : 'Save failed')
+              setLaError(e instanceof Error ? e.message : '保存失败')
             } finally {
               setLaSaving(false)
             }
@@ -211,7 +211,7 @@ export default function LogAlertsTab() {
             opacity: laSaving ? 0.6 : 1, transition: 'background 0.2s',
           }}
         >
-          {laSaved ? 'Saved!' : laSaving ? 'Saving…' : 'Save'}
+          {laSaved ? '已保存！' : laSaving ? '保存中…' : '保存'}
         </button>
         {laError && <span style={{ fontSize: 12, color: 'var(--color-status-crashed)' }}>{laError}</span>}
       </div>

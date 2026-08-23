@@ -163,7 +163,7 @@ function ProcessCard({
             background: errRate > 20 ? 'var(--color-destructive)' : '#f97316',
             color: '#fff', borderRadius: 10,
           }}>
-            {errRate}% err
+            {errRate}% 错误
           </span>
         )}
       </div>
@@ -180,17 +180,17 @@ function ProcessCard({
       {/* Stats row */}
       <div style={{ display: 'flex', gap: 12, fontSize: 11 }}>
         <span style={{ color: 'var(--color-status-running)', fontWeight: 600 }}>
-          {fmtCount(totalOut)} stdout
+          {fmtCount(totalOut)} 标准输出
         </span>
         <span style={{ color: 'var(--color-muted-foreground)' }}>·</span>
         <span style={{ color: totalErr > 0 ? 'var(--color-status-crashed)' : 'var(--color-muted-foreground)', fontWeight: totalErr > 0 ? 600 : 400 }}>
-          {fmtCount(totalErr)} stderr
+          {fmtCount(totalErr)} 错误输出
         </span>
         {peak > 0 && (
           <>
             <span style={{ color: 'var(--color-muted-foreground)' }}>·</span>
             <span style={{ color: 'var(--color-muted-foreground)' }}>
-              peak {fmtCount(peak)} @ {fmtTime(peakBucket?.window_start)}
+              峰值 {fmtCount(peak)} @ {fmtTime(peakBucket?.window_start)}
             </span>
           </>
         )}
@@ -312,11 +312,11 @@ export default function LogVolumePage({ processes }: Props) {
       {/* ── Page header ── */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
         <div>
-          <h1 style={{ fontSize: 20, fontWeight: 700, margin: 0 }}>Log Volume</h1>
+          <h1 style={{ fontSize: 20, fontWeight: 700, margin: 0 }}>日志量</h1>
           <p style={{ fontSize: 12, color: 'var(--color-muted-foreground)', margin: '4px 0 0' }}>
-            5-minute stdout / stderr buckets — today · {withData} of {totalProcesses} processes
+            5 分钟标准输出 / 错误输出统计 — 今天 · {withData} / {totalProcesses} 个进程
             {lastRefresh && (
-              <span> · refreshed {fmtTime(lastRefresh.toISOString())}</span>
+              <span> · 更新于 {fmtTime(lastRefresh.toISOString())}</span>
             )}
           </p>
         </div>
@@ -325,11 +325,11 @@ export default function LogVolumePage({ processes }: Props) {
           <div style={{ display: 'flex', gap: 12, fontSize: 11, color: 'var(--color-muted-foreground)' }}>
             <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
               <span style={{ width: 8, height: 8, borderRadius: 2, background: 'var(--color-status-running)', display: 'inline-block' }} />
-              stdout
+              标准输出（stdout）
             </span>
             <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
               <span style={{ width: 8, height: 8, borderRadius: 2, background: 'var(--color-status-crashed)', display: 'inline-block' }} />
-              stderr
+              错误输出（stderr）
             </span>
           </div>
 
@@ -342,7 +342,7 @@ export default function LogVolumePage({ processes }: Props) {
                 color: scaleMode === mode ? '#fff' : 'var(--color-foreground)',
                 border: 'none', cursor: 'pointer',
               }}>
-                {mode === 'local' ? 'Self-scaled' : 'Global scale'}
+                {mode === 'local' ? '按进程缩放' : '统一缩放'}
               </button>
             ))}
           </div>
@@ -360,7 +360,7 @@ export default function LogVolumePage({ processes }: Props) {
             }}
           >
             <RefreshCw size={13} style={loading ? { animation: 'spin 1s linear infinite' } : {}} />
-            Refresh
+            刷新
           </button>
         </div>
       </div>
@@ -368,15 +368,15 @@ export default function LogVolumePage({ processes }: Props) {
       {/* ── Summary stat cards ── */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 20 }}>
         {[
-          { label: 'Total stdout', value: fmtCount(totals.stdout), sub: 'lines today', color: 'var(--color-status-running)' },
-          { label: 'Total stderr', value: fmtCount(totals.stderr), sub: 'lines today', color: 'var(--color-status-crashed)' },
+          { label: '标准输出总量', value: fmtCount(totals.stdout), sub: '今日日志行数', color: 'var(--color-status-running)' },
+          { label: '错误输出总量', value: fmtCount(totals.stderr), sub: '今日日志行数', color: 'var(--color-status-crashed)' },
           {
-            label: 'Error rate', value: totals.stdout + totals.stderr > 0
+            label: '错误率', value: totals.stdout + totals.stderr > 0
               ? `${Math.round(totals.stderr / (totals.stdout + totals.stderr) * 100)}%`
               : '—',
-            sub: 'of all log lines', color: 'var(--color-foreground)',
+            sub: '占全部日志行数', color: 'var(--color-foreground)',
           },
-          { label: 'Active loggers', value: String(withData), sub: `of ${totalProcesses} processes`, color: 'var(--color-foreground)' },
+          { label: '有日志的进程', value: String(withData), sub: `共 ${totalProcesses} 个进程`, color: 'var(--color-foreground)' },
         ].map(card => (
           <div key={card.label} style={{
             border: '1px solid var(--color-border)', borderRadius: 8,
@@ -398,9 +398,9 @@ export default function LogVolumePage({ processes }: Props) {
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
               <BarChart2 size={14} style={{ color: 'var(--color-primary)' }} />
-              <span style={{ fontSize: 13, fontWeight: 600 }}>Aggregate — all processes</span>
+              <span style={{ fontSize: 13, fontWeight: 600 }}>汇总 — 全部进程</span>
               <span style={{ fontSize: 11, color: 'var(--color-muted-foreground)', marginLeft: 'auto' }}>
-                {fmtCount(totals.stdout + totals.stderr)} total lines
+                {fmtCount(totals.stdout + totals.stderr)} 行日志总量
               </span>
             </div>
             <LogBarChart buckets={aggregateBuckets} maxCount={aggregateMax} height={90} />
@@ -419,7 +419,7 @@ export default function LogVolumePage({ processes }: Props) {
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
               <TrendingUp size={14} style={{ color: 'var(--color-primary)' }} />
-              <span style={{ fontSize: 13, fontWeight: 600 }}>Top by volume</span>
+              <span style={{ fontSize: 13, fontWeight: 600 }}>日志量排名</span>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {topProcesses.map(({ process, total }, rank) => {
@@ -453,7 +453,7 @@ export default function LogVolumePage({ processes }: Props) {
           <input
             value={nsFilter}
             onChange={e => setNsFilter(e.target.value)}
-            placeholder="Filter namespace…"
+            placeholder="筛选命名空间…"
             style={{
               width: '100%', padding: '6px 10px 6px 28px', fontSize: 12,
               background: 'var(--color-card)', border: '1px solid var(--color-border)',
@@ -467,7 +467,7 @@ export default function LogVolumePage({ processes }: Props) {
           <input
             value={nameFilter}
             onChange={e => setNameFilter(e.target.value)}
-            placeholder="Filter process name…"
+            placeholder="筛选进程名称…"
             style={{
               width: '100%', padding: '6px 10px 6px 28px', fontSize: 12,
               background: 'var(--color-card)', border: '1px solid var(--color-border)',
@@ -482,7 +482,7 @@ export default function LogVolumePage({ processes }: Props) {
             border: '1px solid var(--color-border)', borderRadius: 6,
             color: 'var(--color-muted-foreground)', cursor: 'pointer',
           }}>
-            Clear
+            清除
           </button>
         )}
       </div>
@@ -490,18 +490,18 @@ export default function LogVolumePage({ processes }: Props) {
       {/* ── Loading / empty states ── */}
       {loading && (
         <div style={{ textAlign: 'center', padding: 60, color: 'var(--color-muted-foreground)', fontSize: 13 }}>
-          Loading log stats…
+          加载日志统计中…
         </div>
       )}
 
       {!loading && byNamespace.length === 0 && (
         <div style={{ textAlign: 'center', padding: 60, color: 'var(--color-muted-foreground)' }}>
           <div style={{ fontSize: 32, marginBottom: 8 }}>📊</div>
-          <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 4 }}>No log data yet</div>
+          <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 4 }}>暂无日志数据</div>
           <div style={{ fontSize: 12 }}>
             {nsFilter || nameFilter
-              ? 'No processes match the current filter.'
-              : 'Processes haven\'t written any logs today, or no processes are running.'}
+              ? '没有符合当前筛选条件的进程。'
+              : '进程今天尚未写入日志，或当前没有运行中的进程。'}
           </div>
         </div>
       )}

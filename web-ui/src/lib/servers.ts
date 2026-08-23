@@ -27,7 +27,7 @@ const ACTIVE_KEY = 'alter_active_server'
 // @group Configuration > Server : Built-in local server — always present, cannot be removed
 export const LOCAL_SERVER: RemoteServer = {
   id: LOCAL_ID,
-  name: 'Local',
+  name: '本地',
   host: '127.0.0.1',
   port: 2999,
   connectionType: 'direct',

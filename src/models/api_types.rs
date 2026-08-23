@@ -2,11 +2,13 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use uuid::Uuid;
 
 // @group Types > Request : Start a new process
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StartRequest {
     pub name: Option<String>,
+    pub project_id: Option<Uuid>,
     pub script: String,
     pub args: Option<Vec<String>>,
     pub cwd: Option<String>,

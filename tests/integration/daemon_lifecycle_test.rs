@@ -11,6 +11,7 @@ mod tests {
     fn test_config() -> AppConfig {
         AppConfig {
             name: "test-app".to_string(),
+            project_id: None,
             script: "echo".to_string(),
             args: vec!["hello from alter".to_string()],
             cwd: None,
@@ -22,9 +23,24 @@ mod tests {
             watch_paths: vec![],
             watch_ignore: vec![],
             env: HashMap::new(),
+            namespace: "test".to_string(),
             log_file: None,
             error_file: None,
             max_log_size_mb: 10,
+            cron: None,
+            cron_last_run: None,
+            cron_next_run: None,
+            notify: None,
+            log_alert: None,
+            env_file: None,
+            health_check_url: None,
+            health_check_interval_secs: 30,
+            health_check_timeout_secs: 5,
+            health_check_retries: 3,
+            pre_start: None,
+            post_start: None,
+            pre_stop: None,
+            enabled: true,
         }
     }
 

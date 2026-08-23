@@ -21,14 +21,14 @@ interface Props {
 type TabId = 'general' | 'ui' | 'security' | 'ai' | 'telegram' | 'log-alerts' | 'tunnels' | 'terminal'
 
 const TABS: { id: TabId; label: string }[] = [
-  { id: 'general',    label: 'General'    },
-  { id: 'ui',         label: 'UI'         },
-  { id: 'security',   label: 'Security'   },
+  { id: 'general',    label: '常规'    },
+  { id: 'ui',         label: '界面'         },
+  { id: 'security',   label: '安全'   },
   { id: 'ai',         label: 'AI'         },
   { id: 'telegram',   label: 'Telegram'   },
-  { id: 'log-alerts', label: 'Log Alerts' },
-  { id: 'tunnels',    label: 'Tunnels'    },
-  { id: 'terminal',   label: 'Terminal'   },
+  { id: 'log-alerts', label: '日志告警' },
+  { id: 'tunnels',    label: '隧道'    },
+  { id: 'terminal',   label: '终端'   },
 ]
 
 // @group BusinessLogic > SettingsPage : Main settings page — tab bar + active tab routing
@@ -58,7 +58,7 @@ export default function SettingsPage({ settings, onUpdate, onReset }: Props) {
 
       {/* Header */}
       <div style={{ marginBottom: 20, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
-        <h2 style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>Settings</h2>
+        <h2 style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>设置</h2>
         {activeTab === 'general' && !isDefault && (
           <button
             type="button"
@@ -71,7 +71,7 @@ export default function SettingsPage({ settings, onUpdate, onReset }: Props) {
               color: 'var(--color-destructive)',
             }}
           >
-            Reset to defaults
+           恢复默认设置
           </button>
         )}
       </div>

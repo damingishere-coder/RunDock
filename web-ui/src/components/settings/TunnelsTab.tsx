@@ -84,7 +84,7 @@ export default function TunnelsTab() {
     }
 
     es.onerror = () => {
-      setTnInstallLines(prev => ({ ...prev, [provider]: [...prev[provider], 'Connection error — install may still be running.'] }))
+      setTnInstallLines(prev => ({ ...prev, [provider]: [...prev[provider], '连接错误，安装可能仍在运行。'] }))
       setTnInstallDone(prev => ({ ...prev, [provider]: false }))
       setTnInstalling(null)
       es.close()
@@ -110,7 +110,7 @@ export default function TunnelsTab() {
             disabled={tnTesting === provider || tnInstalling === provider}
             style={btnStyle(false, tnTesting === provider)}
           >
-            {tnTesting === provider ? 'Testing…' : 'Test'}
+            {tnTesting === provider ? '测试中…' : '测试'}
           </button>
           {hasInstall && (
             <button
@@ -118,7 +118,7 @@ export default function TunnelsTab() {
               disabled={tnInstalling === provider || tnTesting === provider}
               style={btnStyle(true, tnInstalling === provider)}
             >
-              {tnInstalling === provider ? 'Installing…' : 'Install'}
+              {tnInstalling === provider ? '安装中…' : '安装'}
             </button>
           )}
         </div>
@@ -140,7 +140,7 @@ export default function TunnelsTab() {
                 <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#28c840', display: 'inline-block' }} />
               </div>
               <span style={{ fontSize: 10, color: '#666', fontFamily: 'monospace' }}>
-                {tnInstalling === provider ? 'Installing…' : done === true ? 'Done' : 'Failed'}
+                {tnInstalling === provider ? '安装中…' : done === true ? '完成' : '失败'}
               </span>
             </div>
             {/* Terminal body */}
@@ -159,7 +159,7 @@ export default function TunnelsTab() {
               }}
             >
               {lines.length === 0 ? (
-                <span style={{ color: '#555' }}>Waiting for output…</span>
+                <span style={{ color: '#555' }}>等待输出…</span>
               ) : (
                 lines.map((line, i) => <div key={i}>{line}</div>)
               )}
@@ -171,7 +171,7 @@ export default function TunnelsTab() {
             {done !== null && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6, fontSize: 12, color: done ? 'var(--color-status-running)' : 'var(--color-status-crashed)' }}>
                 {done ? <CheckCircle size={13} /> : <XCircle size={13} />}
-                {done ? 'Installed successfully' : 'Installation failed'}
+                {done ? '安装成功' : '安装失败'}
               </div>
             )}
           </div>
@@ -183,11 +183,11 @@ export default function TunnelsTab() {
 
   return (
     <>
-      <p style={sectionTitle}>Tunnel Provider</p>
+      <p style={sectionTitle}>隧道提供商</p>
       <div style={card}>
         <SettingRow
-          label="Default provider"
-          description="Which tool to use when creating tunnels from the Tunnels page or Port Finder."
+          label="默认提供商"
+          description="从“隧道”页面或“端口查找”创建隧道时使用的工具。"
           isLast
           control={
             <select
@@ -197,7 +197,7 @@ export default function TunnelsTab() {
             >
               <option value="cloudflare">Cloudflare</option>
               <option value="ngrok">ngrok</option>
-              <option value="custom">Custom</option>
+              <option value="custom">自定义</option>
             </select>
           }
         />
@@ -206,13 +206,13 @@ export default function TunnelsTab() {
       <p style={sectionTitle}>Cloudflare</p>
       <div style={card}>
         <SettingRow
-          label="Quick tunnels"
-          description={<>No account needed. Uses <code>cloudflared tunnel --url</code> — generates a random <code>trycloudflare.com</code> URL each time.</>}
+          label="快速隧道"
+          description={<>无需账户。使用 <code>cloudflared tunnel --url</code>，每次都会生成随机的 <code>trycloudflare.com</code> URL。</>}
           control={null}
         />
         <SettingRow
-          label="Named tunnel token"
-          description="Optional. Paste a Cloudflare Tunnel token for a stable hostname on your own domain. Leave empty for quick tunnels."
+          label="命名隧道令牌"
+          description="可选。粘贴 Cloudflare 隧道令牌，以便在自己的域名上使用稳定主机名。快速隧道可留空。"
           control={
             <input
               type="password"
@@ -224,8 +224,8 @@ export default function TunnelsTab() {
           }
         />
         <SettingRow
-          label="Binary"
-          description={<>Auto-install via <code>winget</code> (Windows) or <code>brew</code> (macOS), or download from <code>developers.cloudflare.com/cloudflared</code></>}
+          label="二进制文件"
+          description={<>可通过 <code>winget</code>（Windows）或 <code>brew</code>（macOS）自动安装，也可从 <code>developers.cloudflare.com/cloudflared</code> 下载。</>}
           isLast
           control={<ProviderTestInstall provider="cloudflare" hasInstall />}
         />
@@ -234,8 +234,8 @@ export default function TunnelsTab() {
       <p style={sectionTitle}>ngrok</p>
       <div style={card}>
         <SettingRow
-          label="Auth token"
-          description={<>Optional for free URLs. Get yours at <code>dashboard.ngrok.com/get-started/your-authtoken</code></>}
+          label="身份验证令牌"
+          description={<>免费 URL 可选。可在 <code>dashboard.ngrok.com/get-started/your-authtoken</code> 获取。</>}
           control={
             <input
               type="password"
@@ -247,18 +247,18 @@ export default function TunnelsTab() {
           }
         />
         <SettingRow
-          label="Binary"
-          description={<>Install: <code>winget install ngrok.ngrok</code> or download from <code>ngrok.com/download</code></>}
+          label="二进制文件"
+          description={<>安装：<code>winget install ngrok.ngrok</code>，或从 <code>ngrok.com/download</code> 下载。</>}
           isLast
           control={<ProviderTestInstall provider="ngrok" hasInstall />}
         />
       </div>
 
-      <p style={sectionTitle}>Custom Provider</p>
+      <p style={sectionTitle}>自定义提供商</p>
       <div style={card}>
         <SettingRow
-          label="Binary path"
-          description='Full path to the tunnel binary (e.g. "bore", "lt", or "C:\\tools\\mytunnel.exe").'
+          label="二进制路径"
+          description='隧道二进制文件的完整路径（例如 "bore"、"lt" 或 "C:\\tools\\mytunnel.exe"）。'
           control={
             <input
               type="text"
@@ -270,8 +270,8 @@ export default function TunnelsTab() {
           }
         />
         <SettingRow
-          label="Args template"
-          description='Command arguments with {port} as the port placeholder (e.g. "local {port}"). The binary is called as: binary [args].'
+          label="参数模板"
+          description='命令参数，其中 {port} 作为端口占位符（例如 "local {port}"）。二进制文件调用方式为：binary [args]。'
           control={
             <input
               type="text"
@@ -283,8 +283,8 @@ export default function TunnelsTab() {
           }
         />
         <SettingRow
-          label="Binary"
-          description="The custom binary must print an https:// URL somewhere in its stdout or stderr output."
+          label="二进制文件"
+          description="自定义二进制文件必须在 stdout 或 stderr 输出中的某处打印 https:// URL。"
           isLast
           control={<ProviderTestInstall provider="custom" hasInstall={false} />}
         />
@@ -299,7 +299,7 @@ export default function TunnelsTab() {
               setTnSaved(true)
               setTimeout(() => setTnSaved(false), 2500)
             } catch (e: unknown) {
-              setTnError(e instanceof Error ? e.message : 'Save failed')
+              setTnError(e instanceof Error ? e.message : '保存失败')
             } finally {
               setTnSaving(false)
             }
@@ -312,7 +312,7 @@ export default function TunnelsTab() {
             opacity: tnSaving ? 0.6 : 1, transition: 'background 0.2s',
           }}
         >
-          {tnSaved ? 'Saved!' : tnSaving ? 'Saving…' : 'Save'}
+          {tnSaved ? '已保存！' : tnSaving ? '保存中…' : '保存'}
         </button>
         {tnError && <span style={{ fontSize: 12, color: 'var(--color-status-crashed)' }}>{tnError}</span>}
       </div>

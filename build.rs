@@ -10,4 +10,13 @@
 fn main() {
     // Re-run this script only when GH_OAUTH_CLIENT_ID changes (not on every build)
     println!("cargo:rerun-if-env-changed=GH_OAUTH_CLIENT_ID");
+    println!("cargo:rerun-if-changed=assets/rundock-icon.ico");
+
+    if cfg!(windows) {
+        let mut resource = winresource::WindowsResource::new();
+        resource.set_icon("assets/rundock-icon.ico");
+        resource
+            .compile()
+            .expect("failed to embed the RunDock Windows icon");
+    }
 }

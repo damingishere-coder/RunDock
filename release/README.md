@@ -1,26 +1,20 @@
-# alter — Process Manager
+# RunDock — Developer Project Console
 
-> A fast, lightweight process manager for Windows (and cross-platform). Run and manage any application — Python, Node.js, Go, Rust, .NET, PHP — from a single binary with a built-in web dashboard.
+> A polished local project and process manager with a blue-and-white dashboard. The compatible command remains `alter` so existing scripts and data continue to work.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 [![Built with Rust](https://img.shields.io/badge/Built%20with-Rust-orange.svg)](https://www.rust-lang.org/)
 [![Platform: Windows](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey.svg)]()
-[![winget](https://img.shields.io/badge/winget-thechandanbhagat.alter-blue?logo=windows)](https://github.com/microsoft/winget-pkgs)
+[![GitHub](https://img.shields.io/badge/GitHub-RunDock-147BFF?logo=github)](https://github.com/damingishere-coder/RunDock)
 
 ---
 
 ## Installation
 
-### WinGet (recommended)
-
-```powershell
-winget install thechandanbhagat.alter
-```
-
 ### Manual installer
 
-Download the latest `alter-x.x.x-windows-x64-setup.exe` from [Releases](https://github.com/thechandanbhagat/alter-pm/releases) and run it.  
-`alter.exe` is added to your `PATH` automatically.
+Download the latest `RunDock-x.x.x-windows-x64-setup.exe` from [Releases](https://github.com/damingishere-coder/RunDock/releases) and run it.
+The compatible `alter.exe` command is added to your `PATH` automatically.
 
 ---
 
@@ -45,8 +39,8 @@ Download the latest `alter-x.x.x-windows-x64-setup.exe` from [Releases](https://
 Requires [Rust](https://rustup.rs/).
 
 ```powershell
-git clone https://github.com/thechandanbhagat/alter-pm
-cd alter-pm
+git clone https://github.com/damingishere-coder/RunDock
+cd RunDock
 cargo build --release
 # Binary: target\release\alter.exe
 ```
@@ -78,7 +72,7 @@ alter web    # → http://127.0.0.1:2999/
 
 ## Windows
 
-alter is built with Windows as a first-class platform:
+RunDock is built with Windows as a first-class platform:
 
 - Spawned processes use `CREATE_NO_WINDOW` — **no black console popups**
 - Daemon runs completely hidden in the background

@@ -139,7 +139,7 @@ function NotifCard({
           <button
             style={btnDanger}
             onClick={e => { e.stopPropagation(); onDelete() }}
-            title="Remove namespace override"
+            title="移除命名空间覆盖"
           >
             <Trash2 size={12} />
           </button>
@@ -165,13 +165,13 @@ function NotifCard({
                 color: '#818cf8', textTransform: 'uppercase', marginBottom: 10,
                 display: 'flex', alignItems: 'center', gap: 5,
               }}>
-                <span style={{ fontSize: 13 }}>⚙</span> Process Events
+                <span style={{ fontSize: 13 }}>⚙</span> 进程事件
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-                <EventCheckbox eventKey="on_crash"   label="Crash" />
-                <EventCheckbox eventKey="on_restart" label="Restart" />
-                <EventCheckbox eventKey="on_start"   label="Start" />
-                <EventCheckbox eventKey="on_stop"    label="Stop" />
+                <EventCheckbox eventKey="on_crash"   label="崩溃" />
+                <EventCheckbox eventKey="on_restart" label="重启" />
+                <EventCheckbox eventKey="on_start"   label="启动" />
+                <EventCheckbox eventKey="on_stop"    label="停止" />
               </div>
             </div>
 
@@ -188,11 +188,11 @@ function NotifCard({
                 color: '#fbbf24', textTransform: 'uppercase', marginBottom: 10,
                 display: 'flex', alignItems: 'center', gap: 5,
               }}>
-                <span style={{ fontSize: 13 }}>⏰</span> Cron Events
+                <span style={{ fontSize: 13 }}>⏰</span> 定时任务事件
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-                <EventCheckbox eventKey="on_cron_run"  label="Run" />
-                <EventCheckbox eventKey="on_cron_fail" label="Fail" />
+                <EventCheckbox eventKey="on_cron_run"  label="运行" />
+                <EventCheckbox eventKey="on_cron_fail" label="失败" />
               </div>
             </div>
 
@@ -207,7 +207,7 @@ function NotifCard({
                 onChange={e => setWebhook({ enabled: e.target.checked })}
                 style={{ accentColor: 'var(--color-primary)', width: 13, height: 13 }}
               />
-              Generic Webhook
+              通用 Webhook
             </label>
             <div style={{ marginTop: 10, opacity: config.webhook?.enabled ? 1 : 0.5 }}>
               <span style={labelTextStyle}>URL</span>
@@ -235,7 +235,7 @@ function NotifCard({
             </label>
             <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 8, opacity: config.slack?.enabled ? 1 : 0.5 }}>
               <div>
-                <span style={labelTextStyle}>Webhook URL</span>
+                <span style={labelTextStyle}>Webhook 地址</span>
                 <input
                   style={inputStyle}
                   type="url"
@@ -246,7 +246,7 @@ function NotifCard({
                 />
               </div>
               <div>
-                <span style={labelTextStyle}>Channel (optional)</span>
+                <span style={labelTextStyle}>频道（可选）</span>
                 <input
                   style={inputStyle}
                   type="text"
@@ -271,7 +271,7 @@ function NotifCard({
               Microsoft Teams
             </label>
             <div style={{ marginTop: 10, opacity: config.teams?.enabled ? 1 : 0.5 }}>
-              <span style={labelTextStyle}>Webhook URL</span>
+              <span style={labelTextStyle}>Webhook 地址</span>
               <input
                 style={inputStyle}
                 type="url"
@@ -297,7 +297,7 @@ function NotifCard({
               </span>
             </label>
             <div style={{ marginTop: 10, opacity: config.discord?.enabled ? 1 : 0.5 }}>
-              <span style={labelTextStyle}>Webhook URL</span>
+              <span style={labelTextStyle}>Webhook 地址</span>
               <input
                 style={inputStyle}
                 type="url"
@@ -313,13 +313,13 @@ function NotifCard({
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
             <button style={{ ...btnPrimary, opacity: saving ? 0.7 : 1 }} onClick={onSave} disabled={saving}>
               <Save size={13} />
-              {saving ? 'Saving…' : 'Save'}
+              {saving ? '保存中…' : '保存'}
             </button>
             <button style={{ ...btnSecondary, opacity: testing ? 0.7 : 1 }} onClick={onTest} disabled={testing}>
               <Send size={13} />
-              {testing ? 'Sending…' : 'Test'}
+              {testing ? '发送中…' : '测试'}
             </button>
-            {saved && <span style={{ fontSize: 12, color: 'var(--color-status-running)' }}>✓ Saved</span>}
+            {saved && <span style={{ fontSize: 12, color: 'var(--color-status-running)' }}>✓ 已保存</span>}
             {error && <span style={{ fontSize: 12, color: 'var(--color-destructive)' }}>{error}</span>}
           </div>
         </div>
@@ -357,13 +357,13 @@ export default function NotificationsPage() {
 
   if (loading) {
     return (
-      <div style={{ padding: 24, color: 'var(--color-muted-foreground)' }}>Loading…</div>
+      <div style={{ padding: 24, color: 'var(--color-muted-foreground)' }}>加载中…</div>
     )
   }
   if (fetchError || !store) {
     return (
       <div style={{ padding: 24, color: 'var(--color-destructive)' }}>
-        Failed to load notifications: {fetchError}
+        加载通知失败：{fetchError}
       </div>
     )
   }
@@ -438,7 +438,7 @@ export default function NotificationsPage() {
         return { ...s, namespaces }
       })
     } catch (e) {
-      alert(`Failed to remove namespace: ${e}`)
+      alert(`移除命名空间失败：${e}`)
     }
   }
 
@@ -452,7 +452,7 @@ export default function NotificationsPage() {
       setStore(s => s ? { ...s, namespaces: { ...s.namespaces, [name]: cfg } } : s)
       setNewNsName('')
     } catch (e) {
-      alert(`Failed to add namespace: ${e}`)
+      alert(`添加命名空间失败：${e}`)
     } finally {
       setAddingNs(false)
     }
@@ -462,17 +462,17 @@ export default function NotificationsPage() {
     <div style={{ padding: '20px 24px', maxWidth: 780, overflowY: 'auto', height: '100%' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
         <Bell size={18} />
-        <h1 style={{ fontSize: 18, fontWeight: 600 }}>Notifications</h1>
+        <h1 style={{ fontSize: 18, fontWeight: 600 }}>通知</h1>
       </div>
       <p style={{ color: 'var(--color-muted-foreground)', marginBottom: 28, fontSize: 13 }}>
-        Configure webhook, Slack, and Teams alerts for process and cron lifecycle events.
-        Settings cascade: <strong>process override → namespace → global</strong>.
+        配置进程和定时任务生命周期事件的 Webhook、Slack 和 Teams 通知。
+        设置优先级：<strong>进程覆盖 → 命名空间 → 全局</strong>。
       </p>
 
       {/* Global config */}
-      <p style={sectionTitleStyle}>Global Default</p>
+      <p style={sectionTitleStyle}>全局默认</p>
       <NotifCard
-        title="Global"
+        title="全局"
         config={store.global}
         onChange={updateGlobalConfig}
         onSave={saveGlobal}
@@ -484,12 +484,12 @@ export default function NotificationsPage() {
       />
 
       {/* Namespace overrides */}
-      <p style={{ ...sectionTitleStyle, marginTop: 28 }}>Namespace Overrides</p>
+      <p style={{ ...sectionTitleStyle, marginTop: 28 }}>命名空间覆盖</p>
 
       {Object.entries(store.namespaces).map(([ns, cfg]) => (
         <NotifCard
           key={ns}
-          title={`Namespace: ${ns}`}
+          title={`命名空间：${ns}`}
           config={cfg}
           onChange={c => updateNsConfig(ns, c)}
           onSave={() => saveNs(ns)}
@@ -506,7 +506,7 @@ export default function NotificationsPage() {
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8 }}>
         <input
           style={{ ...inputStyle, width: 220 }}
-          placeholder="Namespace name (e.g. production)"
+          placeholder="命名空间名称（例如：production）"
           value={newNsName}
           onChange={e => setNewNsName(e.target.value)}
           onKeyDown={e => e.key === 'Enter' && addNamespace()}
@@ -517,7 +517,7 @@ export default function NotificationsPage() {
           disabled={addingNs || !newNsName.trim()}
         >
           <Plus size={13} />
-          Add Namespace
+          添加命名空间
         </button>
       </div>
     </div>

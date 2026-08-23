@@ -1,13 +1,13 @@
 // @group Authentication : Bearer token validation middleware
 
+use axum::http::StatusCode;
+use axum::Json;
 use axum::{
     body::Body,
     extract::{Request, State},
     middleware::Next,
     response::{IntoResponse, Response},
 };
-use axum::http::StatusCode;
-use axum::Json;
 use chrono::Utc;
 use std::sync::Arc;
 
@@ -29,16 +29,23 @@ pub async fn require_auth(
 ) -> Response {
     let token = extract_token(&req);
 
-    if let Some(token) = token {
-        // Master token check (CLI — never expires)
-        {
-            let auth = state.auth.read().await;
-            if token == auth.master_token {
-                drop(auth);
-                return next.run(req).await;
-            }
+    // No configured password is the explicit passwordless mode. This matches the
+    // public API contract and keeps a fresh local installation usable without setup.
+    {
+        let auth = state.auth.read().await;
+        if !auth.web_auth_enabled() {
+            drop(auth);
+            return next.run(req).await;
         }
 
+        // Master token check (CLI — never expires)
+        if token.as_deref() == Some(auth.master_token.as_str()) {
+            drop(auth);
+            return next.run(req).await;
+        }
+    }
+
+    if let Some(token) = token {
         // Session token check
         if let Some(entry) = state.sessions.get(&token) {
             if *entry > Utc::now() {
@@ -50,7 +57,11 @@ pub async fn require_auth(
         }
     }
 
-    (StatusCode::UNAUTHORIZED, Json(serde_json::json!({ "error": "Unauthorized" }))).into_response()
+    (
+        StatusCode::UNAUTHORIZED,
+        Json(serde_json::json!({ "error": "Unauthorized" })),
+    )
+        .into_response()
 }
 
 /// Extract the bearer token from Authorization header or ?token= query param.

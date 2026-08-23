@@ -8,9 +8,20 @@ use uuid::Uuid;
 /// Message sent from restarter to manager when a process needs to be restarted or marked errored
 #[derive(Debug)]
 pub enum RestartEvent {
-    Restart { process_id: Uuid },
-    MaxRestartsReached { process_id: Uuid, exit_code: Option<i32> },
-    Exited { process_id: Uuid, exit_code: Option<i32> },
+    Restart {
+        process_id: Uuid,
+        generation: u64,
+    },
+    MaxRestartsReached {
+        process_id: Uuid,
+        generation: u64,
+        exit_code: Option<i32>,
+    },
+    Exited {
+        process_id: Uuid,
+        generation: u64,
+        exit_code: Option<i32>,
+    },
 }
 
 /// Calculates the backoff delay for a given restart attempt.
@@ -25,6 +36,7 @@ pub fn backoff_delay(base_ms: u64, attempt: u32) -> Duration {
 /// Sends RestartEvent back to the manager via the provided channel.
 pub async fn watch_and_restart(
     process_id: Uuid,
+    generation: u64,
     autorestart: bool,
     max_restarts: u32,
     restart_delay_ms: u64,
@@ -42,14 +54,22 @@ pub async fn watch_and_restart(
 
     if clean_exit || !autorestart {
         let _ = event_tx
-            .send(RestartEvent::Exited { process_id, exit_code })
+            .send(RestartEvent::Exited {
+                process_id,
+                generation,
+                exit_code,
+            })
             .await;
         return;
     }
 
     if restart_count >= max_restarts {
         let _ = event_tx
-            .send(RestartEvent::MaxRestartsReached { process_id, exit_code })
+            .send(RestartEvent::MaxRestartsReached {
+                process_id,
+                generation,
+                exit_code,
+            })
             .await;
         return;
     }
@@ -58,6 +78,9 @@ pub async fn watch_and_restart(
     sleep(delay).await;
 
     let _ = event_tx
-        .send(RestartEvent::Restart { process_id })
+        .send(RestartEvent::Restart {
+            process_id,
+            generation,
+        })
         .await;
 }

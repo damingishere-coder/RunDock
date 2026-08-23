@@ -17,7 +17,7 @@ pub async fn send(webhook_url: &str, event: &NotificationEvent) -> Result<()> {
             "color": color,
             "timestamp": chrono::Utc::now().to_rfc3339(),
             "footer": {
-                "text": "alter-pm2"
+                "text": "RunDock"
             }
         }]
     });

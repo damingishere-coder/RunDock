@@ -51,7 +51,7 @@ export function RunOutput({ lines, exitCode, isRunning, onClear, height = 200 }:
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={{ fontSize: 11, color: 'var(--color-muted-foreground)' }}>
-            Output
+            输出
           </span>
           {isRunning && (
             <span style={{
@@ -59,7 +59,7 @@ export function RunOutput({ lines, exitCode, isRunning, onClear, height = 200 }:
               fontSize: 10, fontWeight: 600,
               color: 'var(--color-status-running)',
             }}>
-              <span style={{ animation: 'pulse 1s infinite' }}>●</span> running
+              <span style={{ animation: 'pulse 1s infinite' }}>●</span> 运行中
             </span>
           )}
           {isDone && (
@@ -69,7 +69,7 @@ export function RunOutput({ lines, exitCode, isRunning, onClear, height = 200 }:
               color: exitSuccess ? 'var(--color-status-running)' : 'var(--color-destructive)',
               background: exitSuccess ? 'rgba(34,197,94,0.15)' : 'rgba(239,68,68,0.15)',
             }}>
-              exit {exitCode}
+              退出码 {exitCode}
             </span>
           )}
         </div>
@@ -82,7 +82,7 @@ export function RunOutput({ lines, exitCode, isRunning, onClear, height = 200 }:
             borderRadius: 4, cursor: 'pointer', color: 'var(--color-muted-foreground)',
           }}
         >
-          Clear
+          清空
         </button>
       </div>
 
@@ -97,7 +97,7 @@ export function RunOutput({ lines, exitCode, isRunning, onClear, height = 200 }:
         color: '#e4e4e7',
       }}>
         {lines.length === 0 && !isRunning && (
-          <span style={{ color: '#555', fontStyle: 'italic' }}>No output yet — click ▶ Run to execute the script</span>
+          <span style={{ color: '#555', fontStyle: 'italic' }}>暂无输出 — 点击 ▶ 运行以执行脚本</span>
         )}
         {lines.map((line, i) => (
           <div

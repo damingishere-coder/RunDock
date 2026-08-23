@@ -1,11 +1,11 @@
-; alter - Process Manager
+; RunDock - Developer Project Console
 ; Inno Setup Script
-; https://github.com/thechandanbhagat/alter-pm
+; https://github.com/damingishere-coder/RunDock
 
-#define AppName      "alter"
+#define AppName      "RunDock"
 #define AppVersion   "0.1.0"
-#define AppPublisher "thechandanbhagat"
-#define AppURL       "https://github.com/thechandanbhagat/alter-pm"
+#define AppPublisher "DAMING"
+#define AppURL       "https://github.com/damingishere-coder/RunDock"
 #define AppExeName   "alter.exe"
 #define BinaryDir    "..\target\release"
 
@@ -24,8 +24,8 @@ DefaultGroupName={#AppName}
 DisableProgramGroupPage=yes
 LicenseFile=..\LICENSE
 OutputDir=..\dist
-OutputBaseFilename=alter-{#AppVersion}-windows-x64-setup
-SetupIconFile=
+OutputBaseFilename=RunDock-{#AppVersion}-windows-x64-setup
+SetupIconFile=..\assets\rundock-icon.ico
 Compression=lzma2/ultra64
 SolidCompression=yes
 WizardStyle=modern
@@ -37,7 +37,7 @@ MinVersion=10.0.17763
 
 ; Uninstall info
 UninstallDisplayName={#AppName} {#AppVersion}
-UninstallDisplayIcon={app}\{#AppExeName}
+UninstallDisplayIcon={app}\rundock-icon.ico
 
 ; Architecture — x64 only
 ArchitecturesAllowed=x64
@@ -47,14 +47,15 @@ ArchitecturesInstallIn64BitMode=x64
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
-Name: "addtopath"; Description: "Add alter to PATH (recommended)"; GroupDescription: "System integration:"
+Name: "addtopath"; Description: "Add the compatible alter CLI to PATH (recommended)"; GroupDescription: "System integration:"
 
 [Files]
 ; Main binary
 Source: "{#BinaryDir}\{#AppExeName}"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\assets\rundock-icon.ico"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
-; No start menu shortcut needed for a CLI tool — just a modern apps entry
+Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExeName}"; Parameters: "web"; WorkingDir: "{app}"; IconFilename: "{app}\rundock-icon.ico"
 Name: "{group}\Uninstall {#AppName}"; Filename: "{uninstallexe}"
 
 [Registry]

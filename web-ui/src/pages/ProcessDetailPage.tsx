@@ -7,7 +7,7 @@ import { api } from '@/lib/api'
 import { useDialog } from '@/hooks/useDialog'
 import { Dialog } from '@/components/Dialog'
 import { EnvFileModal } from '@/components/EnvFileModal'
-import { statusColor } from '@/lib/utils'
+import { processStatusLabel, statusColor } from '@/lib/utils'
 import type { AppSettings } from '@/lib/settings'
 import type { GitInfo, LogLine, LogStatsBucket, MetricSample, ProcessInfo } from '@/types'
 
@@ -151,7 +151,7 @@ export default function ProcessDetailPage({ reload, settings, onOpenTerminal }: 
     }
   }, [logLines])
 
-  if (!process) return <div style={{ padding: 24, color: 'var(--color-muted-foreground)' }}>Loading…</div>
+  if (!process) return <div style={{ padding: 24, color: 'var(--color-muted-foreground)' }}>加载中…</div>
 
   const isActive = process.status === 'running' || process.status === 'sleeping' || process.status === 'watching'
   const isToday = dateIndex === -1
@@ -176,14 +176,14 @@ export default function ProcessDetailPage({ reload, settings, onOpenTerminal }: 
     reload()
   }
   async function doStop() {
-    const ok = await confirm(`Stop "${process!.name}"?`, 'The process will be stopped. You can restart it later.')
+    const ok = await confirm(`停止“${process!.name}”？`, '进程将停止，之后可以重新启动。')
     if (!ok) return
     await api.stopProcess(process!.id).catch(() => {})
     reload()
   }
   async function doDelete() {
     if (settings.confirmBeforeDelete) {
-      const ok = await danger(`Delete "${process!.name}"?`, 'This will permanently remove the process and its configuration.', 'Delete')
+      const ok = await danger(`删除“${process!.name}”？`, '这将永久删除该进程及其配置。', '删除')
       if (!ok) return
     }
     await api.deleteProcess(process!.id).catch(() => {})
@@ -209,7 +209,7 @@ export default function ProcessDetailPage({ reload, settings, onOpenTerminal }: 
       api.getProcessGit(process!.id).then(setGitInfo).catch(() => {})
       setTimeout(reload, 1000)
     } catch (e: unknown) {
-      setGitLog((e as Error)?.message ?? 'Pull failed')
+      setGitLog((e as Error)?.message ?? '拉取失败')
       setGitStatus('error')
       setGitLogOpen(true)
     }
@@ -222,7 +222,7 @@ export default function ProcessDetailPage({ reload, settings, onOpenTerminal }: 
 
   async function doVSCode() {
     if (!process!.cwd) {
-      await alert('No working directory', 'This process has no working directory configured.')
+      await alert('没有工作目录', '此进程尚未配置工作目录。')
       return
     }
     window.open(`vscode://file/${process!.cwd.replace(/\\/g, '/')}`)
@@ -257,29 +257,29 @@ export default function ProcessDetailPage({ reload, settings, onOpenTerminal }: 
         background: 'var(--color-card)', flexShrink: 0,
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <button onClick={() => navigate('/processes')} style={ghostBtnStyle}>← Back</button>
+          <button onClick={() => navigate('/processes')} style={ghostBtnStyle}>← 返回</button>
           <span style={{ color: statusColor(process.status), fontSize: 12 }}>●</span>
           <span style={{ fontWeight: 600, fontSize: 14 }}>{process.name}</span>
-          <span style={{ fontSize: 12, color: statusColor(process.status) }}>{process.status}</span>
+          <span style={{ fontSize: 12, color: statusColor(process.status) }}>{processStatusLabel(process.status)}</span>
         </div>
         <div style={{ display: 'flex', gap: 6 }}>
           {isActive
             ? <>
-                <ToolBtn label="↺ Restart" onClick={doRestart} />
-                <ToolBtn label="■ Stop" onClick={doStop} />
+                <ToolBtn label="↺ 重启" onClick={doRestart} />
+                <ToolBtn label="■ 停止" onClick={doStop} />
               </>
-            : <ToolBtn label="▶ Start" onClick={doStart} />
+            : <ToolBtn label="▶ 启动" onClick={doStart} />
           }
-          <ToolBtn label="✎ Edit" onClick={() => navigate(`/edit/${process.id}`)} />
+          <ToolBtn label="✎ 编辑" onClick={() => navigate(`/edit/${process.id}`)} />
           <ToolBtn label="🔑 .env" onClick={() => setEnvOpen(true)} />
-          <ToolBtn label="✕ Delete" onClick={doDelete} danger />
+          <ToolBtn label="✕ 删除" onClick={doDelete} danger />
 
           {/* Terminal button group — terminal + copy path + open explorer */}
           <div style={{ display: 'flex', gap: 0 }}>
             {/* Open terminal — shows full cwd path on hover */}
             <button
               onClick={doTerminal}
-              title={process.cwd ? `Open terminal at:\n${process.cwd}` : 'Open terminal'}
+              title={process.cwd ? `在此处打开终端：\n${process.cwd}` : '打开终端'}
               style={{
                 display: 'flex', alignItems: 'center', gap: 5,
                 padding: '4px 10px', fontSize: 12, fontWeight: 500,
@@ -293,7 +293,7 @@ export default function ProcessDetailPage({ reload, settings, onOpenTerminal }: 
               onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'var(--color-secondary)' }}
             >
               <SquareTerminal size={12} />
-              Terminal
+              终端
             </button>
 
             {/* Copy path to clipboard */}
@@ -305,7 +305,7 @@ export default function ProcessDetailPage({ reload, settings, onOpenTerminal }: 
                     setTimeout(() => setCwdCopied(false), 1500)
                   })
                 }}
-                title={`Copy path: ${process.cwd}`}
+                title={`复制路径：${process.cwd}`}
                 style={{
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   width: 26, padding: '4px 0',
@@ -328,7 +328,7 @@ export default function ProcessDetailPage({ reload, settings, onOpenTerminal }: 
             {process.cwd && (
               <button
                 onClick={doOpenFolder}
-                title={`Open in Explorer: ${process.cwd}`}
+                title={`在资源管理器中打开：${process.cwd}`}
                 style={{
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   width: 26, padding: '4px 0',
@@ -384,15 +384,15 @@ export default function ProcessDetailPage({ reload, settings, onOpenTerminal }: 
 
             {/* Dirty indicator */}
             {gitInfo.dirty && (
-              <span style={{ fontSize: 10, color: '#f97316', fontWeight: 600 }} title="Uncommitted changes">✎ modified</span>
+              <span style={{ fontSize: 10, color: '#f97316', fontWeight: 600 }} title="有未提交的更改">✎ 已修改</span>
             )}
 
             {/* Ahead / behind */}
             {gitInfo.behind > 0 && (
-              <span style={{ fontSize: 10, color: 'var(--color-destructive)', fontWeight: 600 }}>↓{gitInfo.behind} behind</span>
+              <span style={{ fontSize: 10, color: 'var(--color-destructive)', fontWeight: 600 }}>↓{gitInfo.behind} 个落后提交</span>
             )}
             {gitInfo.ahead > 0 && (
-              <span style={{ fontSize: 10, color: 'var(--color-status-running)', fontWeight: 600 }}>↑{gitInfo.ahead} ahead</span>
+              <span style={{ fontSize: 10, color: 'var(--color-status-running)', fontWeight: 600 }}>↑{gitInfo.ahead} 个领先提交</span>
             )}
 
             {/* Package manager badge */}
@@ -420,10 +420,10 @@ export default function ProcessDetailPage({ reload, settings, onOpenTerminal }: 
                 flexShrink: 0,
               }}
             >
-              {gitStatus === 'pulling' ? '⟳ Pulling…'
-                : gitStatus === 'done' ? '✓ Done'
-                : gitStatus === 'error' ? '✕ Failed'
-                : '↓ Pull & Restart'}
+              {gitStatus === 'pulling' ? '⟳ 拉取中…'
+                : gitStatus === 'done' ? '✓ 完成'
+                : gitStatus === 'error' ? '✕ 失败'
+                : '↓ 拉取并重启'}
             </button>
 
             {/* Reset to idle after done/error */}
@@ -452,7 +452,7 @@ export default function ProcessDetailPage({ reload, settings, onOpenTerminal }: 
               onClick={() => setGitLogOpen(true)}
               style={{ fontSize: 10, marginTop: 3, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-muted-foreground)', textAlign: 'left', padding: 0 }}
             >
-              ▸ Show output
+              ▸ 显示输出
             </button>
           )}
         </div>
@@ -467,13 +467,13 @@ export default function ProcessDetailPage({ reload, settings, onOpenTerminal }: 
         {/* Date pager */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <button disabled={dateIndex >= logDates.length - 1} onClick={() => setDateIndex(i => i + 1)} style={navBtnStyle}>
-            ← Older
+            ← 更早
           </button>
           <span style={{ color: 'var(--color-muted-foreground)', minWidth: 100, textAlign: 'center' }}>
-            {isToday ? '📡 Today (live)' : logDates[dateIndex]}
+            {isToday ? '📡 今天（实时）' : logDates[dateIndex]}
           </span>
           <button disabled={isToday} onClick={() => setDateIndex(i => i - 1)} style={navBtnStyle}>
-            Newer →
+            更新 →
           </button>
         </div>
 
@@ -486,7 +486,7 @@ export default function ProcessDetailPage({ reload, settings, onOpenTerminal }: 
               background: streamFilter === f ? 'var(--color-primary)' : 'transparent',
               color: streamFilter === f ? 'var(--color-primary-foreground)' : 'var(--color-muted-foreground)',
             }}>
-              {f === 'all' ? 'All' : f === 'stdout' ? 'Out' : 'Err'}
+              {f === 'all' ? '全部' : f === 'stdout' ? '标准输出' : '错误输出'}
             </button>
           ))}
         </div>
@@ -510,7 +510,7 @@ export default function ProcessDetailPage({ reload, settings, onOpenTerminal }: 
           }}>
             <span>{visibleLines[0]?.timestamp?.slice(11, 19) ?? ''}</span>
             <span style={{ color: sliderPos >= 990 ? 'var(--color-status-running)' : 'var(--color-primary)' }}>
-              {sliderPos >= 990 ? '● live' : `▸ ${sliderTimestamp}`}
+              {sliderPos >= 990 ? '● 实时' : `▸ ${sliderTimestamp}`}
             </span>
             <span>{visibleLines[visibleLines.length - 1]?.timestamp?.slice(11, 19) ?? ''}</span>
           </div>
@@ -526,7 +526,7 @@ export default function ProcessDetailPage({ reload, settings, onOpenTerminal }: 
         <span style={{ fontSize: 12, color: 'var(--color-muted-foreground)', userSelect: 'none' }}>🔍</span>
         <input
           type="text"
-          placeholder="Filter logs…"
+          placeholder="筛选日志…"
           value={textFilter}
           onChange={e => setTextFilter(e.target.value)}
           style={{
@@ -538,7 +538,7 @@ export default function ProcessDetailPage({ reload, settings, onOpenTerminal }: 
         {textFilter && (
           <>
             <span style={{ fontSize: 11, color: 'var(--color-muted-foreground)', whiteSpace: 'nowrap' }}>
-              {visibleLines.length} match{visibleLines.length !== 1 ? 'es' : ''}
+              {visibleLines.length} 条匹配
             </span>
             <button
               onClick={() => setTextFilter('')}
@@ -569,10 +569,10 @@ export default function ProcessDetailPage({ reload, settings, onOpenTerminal }: 
           {visibleLines.length === 0 && (
             <div style={{ color: 'var(--color-muted-foreground)' }}>
               {logLines.length === 0
-                ? 'No log output yet.'
+                ? '暂无日志输出。'
                 : textFilter
-                  ? `No lines match "${textFilter}".`
-                  : `No ${streamFilter === 'stderr' ? 'error' : 'stdout'} lines found.`}
+                  ? `没有匹配“${textFilter}”的日志行。`
+                  : `未找到${streamFilter === 'stderr' ? '错误输出' : '标准输出'}日志行。`}
             </div>
           )}
         </div>
@@ -662,7 +662,7 @@ function MetricsPanel({ buckets, samples }: {
         }}
       >
         <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--color-muted-foreground)', letterSpacing: '0.05em', textTransform: 'uppercase', flexShrink: 0 }}>
-          Metrics
+          指标
         </span>
         {/* Live stats pills */}
         <div style={{ display: 'flex', gap: 10, alignItems: 'center', flex: 1 }}>
@@ -681,7 +681,7 @@ function MetricsPanel({ buckets, samples }: {
               <span style={{ color: 'var(--color-status-running)' }}>{totalOut}</span>
               {' / '}
               <span style={{ color: 'var(--color-status-crashed)' }}>{totalErr}</span>
-              {' lines today'}
+              {' 条今日日志'}
             </span>
           )}
         </div>
@@ -693,7 +693,7 @@ function MetricsPanel({ buckets, samples }: {
         <div style={{ padding: '0 16px 10px' }}>
           {/* Tab switcher */}
           <div style={{ display: 'flex', gap: 2, marginBottom: 8, background: 'var(--color-background)', borderRadius: 6, padding: 2, border: '1px solid var(--color-border)', width: 'fit-content' }}>
-            {([['logs', 'Log Volume'], ['cpu', 'CPU'], ['mem', 'Memory']] as const).map(([t, label]) => (
+            {([['logs', '日志量'], ['cpu', 'CPU'], ['mem', '内存']] as const).map(([t, label]) => (
               <button key={t} onClick={() => setTab(t)} style={{
                 padding: '3px 12px', fontSize: 11, fontWeight: 500, borderRadius: 4,
                 border: 'none', cursor: 'pointer', transition: 'background 0.15s',
@@ -734,7 +734,7 @@ function LogVolumeContent({ buckets }: { buckets: LogStatsBucket[] }) {
   return (
     <>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 }}>
-        <span style={{ fontSize: 10, color: 'var(--color-muted-foreground)' }}>5 min intervals · today</span>
+        <span style={{ fontSize: 10, color: 'var(--color-muted-foreground)' }}>5 分钟间隔 · 今天</span>
         <div style={{ display: 'flex', gap: 2, background: 'var(--color-background)', borderRadius: 6, padding: 2, border: '1px solid var(--color-border)' }}>
           {(['both', 'stdout', 'stderr'] as const).map(f => (
             <button key={f} onClick={() => setFilter(f)} style={{
@@ -746,7 +746,7 @@ function LogVolumeContent({ buckets }: { buckets: LogStatsBucket[] }) {
                 : f === 'stderr' ? 'var(--color-status-crashed)'
                 : 'var(--color-muted-foreground)',
             }}>
-              {f === 'both' ? 'Both' : f === 'stdout' ? `Out ${totalOut}` : `Err ${totalErr}`}
+              {f === 'both' ? '全部' : f === 'stdout' ? `标准输出 ${totalOut}` : `错误输出 ${totalErr}`}
             </button>
           ))}
         </div>
@@ -790,8 +790,8 @@ function CpuContent({ samples }: { samples: MetricSample[] }) {
   return (
     <>
       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'var(--color-muted-foreground)', marginBottom: 4 }}>
-        <span>1 min samples · today</span>
-        <span>peak {peak.toFixed(1)}%</span>
+        <span>1 分钟采样 · 今天</span>
+        <span>峰值 {peak.toFixed(1)}%</span>
       </div>
       <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: H, display: 'block' }}>
         <defs>
@@ -824,8 +824,8 @@ function MemContent({ samples }: { samples: MetricSample[] }) {
   return (
     <>
       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'var(--color-muted-foreground)', marginBottom: 4 }}>
-        <span>1 min samples · today</span>
-        <span>peak {fmtBytes(maxMem)}</span>
+        <span>1 分钟采样 · 今天</span>
+        <span>峰值 {fmtBytes(maxMem)}</span>
       </div>
       <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: H, display: 'block' }}>
         <defs>

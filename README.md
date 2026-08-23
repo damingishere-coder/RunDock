@@ -1,26 +1,24 @@
-# alter — Process Manager
+# RunDock — Developer Project Console
 
-> A fast, lightweight process manager for Windows (and cross-platform). Run and manage any application — Python, Node.js, Go, Rust, .NET, PHP — from a single binary with a built-in web dashboard.
+<p align="center">
+  <img src="./assets/rundock-icon.svg" width="112" alt="RunDock icon" />
+</p>
+
+> A polished local project and process manager for Windows (and cross-platform). RunDock keeps related services together, exposes logs and ports when needed, and retains the compatible `alter` CLI for existing scripts.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 [![Built with Rust](https://img.shields.io/badge/Built%20with-Rust-orange.svg)](https://www.rust-lang.org/)
 [![Platform: Windows](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey.svg)]()
-[![winget](https://img.shields.io/badge/winget-thechandanbhagat.alter-blue?logo=windows)](https://github.com/microsoft/winget-pkgs)
+[![GitHub](https://img.shields.io/badge/GitHub-RunDock-147BFF?logo=github)](https://github.com/damingishere-coder/RunDock)
 
 ---
 
 ## Installation
 
-### WinGet (recommended)
-
-```powershell
-winget install thechandanbhagat.alter
-```
-
 ### Manual installer
 
-Download the latest `alter-x.x.x-windows-x64-setup.exe` from [Releases](https://github.com/thechandanbhagat/alter-pm/releases) and run it.  
-`alter.exe` is added to your `PATH` automatically.
+Download the latest `RunDock-x.x.x-windows-x64-setup.exe` from [Releases](https://github.com/damingishere-coder/RunDock/releases) and run it.
+RunDock is the product name; the compatible `alter.exe` command is added to your `PATH` automatically.
 
 ---
 
@@ -50,8 +48,8 @@ Download the latest `alter-x.x.x-windows-x64-setup.exe` from [Releases](https://
 Requires [Rust](https://rustup.rs/).
 
 ```powershell
-git clone https://github.com/thechandanbhagat/alter-pm
-cd alter-pm
+git clone https://github.com/damingishere-coder/RunDock
+cd RunDock
 cargo build --release
 # Binary: target\release\alter.exe
 ```
@@ -83,7 +81,7 @@ alter web    # → http://127.0.0.1:2999/
 
 ## Windows
 
-alter is built with Windows as a first-class platform:
+RunDock is built with Windows as a first-class platform:
 
 - Spawned processes use `CREATE_NO_WINDOW` — **no black console popups**
 - Daemon runs completely hidden in the background
@@ -132,7 +130,7 @@ Full documentation is in [`docs/`](./docs/):
 | [CLI Reference](./docs/CLI.md) | All commands, flags, and examples |
 | [API Reference](./docs/API.md) | Full REST API documentation |
 | [Ecosystem Config](./docs/ECOSYSTEM_CONFIG.md) | Config file format reference |
-| [Architecture](./docs/ARCHITECTURE.md) | How alter works under the hood |
+| [Architecture](./docs/ARCHITECTURE.md) | How RunDock works under the hood |
 | [Changelog](./docs/CHANGELOG.md) | Version history |
 
 ---

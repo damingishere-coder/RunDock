@@ -41,6 +41,12 @@ pub struct AuthConfig {
 
 // @group Authentication : Password operations
 impl AuthConfig {
+    /// Whether browser/API authentication is currently enabled.
+    /// A missing password means the local dashboard is intentionally passwordless.
+    pub fn web_auth_enabled(&self) -> bool {
+        self.password_hash.is_some()
+    }
+
     pub fn verify_password(&self, password: &str) -> bool {
         let Some(hash) = &self.password_hash else {
             return false;
@@ -82,14 +88,30 @@ impl AuthConfig {
 
     // @group Authentication > PIN : Verify a PIN against stored hash
     pub fn verify_pin(&self, pin: &str) -> bool {
-        let Some(hash) = &self.pin_hash else { return false };
-        let Ok(parsed) = PasswordHash::new(hash) else { return false };
-        Argon2::default().verify_password(pin.as_bytes(), &parsed).is_ok()
+        let Some(hash) = &self.pin_hash else {
+            return false;
+        };
+        let Ok(parsed) = PasswordHash::new(hash) else {
+            return false;
+        };
+        Argon2::default()
+            .verify_password(pin.as_bytes(), &parsed)
+            .is_ok()
     }
 
     // @group Authentication > PIN : Remove configured PIN
     pub fn clear_pin(&mut self) {
         self.pin_hash = None;
+    }
+
+    /// Disable browser authentication while preserving the CLI master token.
+    /// PINs, passkeys, and auto-lock are meaningless without a dashboard password,
+    /// so clear them at the same time to prevent a stale lock screen.
+    pub fn disable_web_auth(&mut self) {
+        self.password_hash = None;
+        self.pin_hash = None;
+        self.passkeys.clear();
+        self.lock_timeout_mins = None;
     }
 }
 
@@ -142,4 +164,38 @@ pub fn save(config: &AuthConfig) -> Result<()> {
 
 pub fn auth_config_file() -> std::path::PathBuf {
     crate::config::paths::data_dir().join("auth.json")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn disabling_web_auth_clears_browser_credentials_but_keeps_master_token() {
+        let mut config = AuthConfig {
+            password_hash: None,
+            master_token: generate_token(),
+            passkeys: vec![StoredPasskey {
+                name: "test passkey".to_string(),
+                credential: serde_json::json!({ "id": "test" }),
+                registered_at: Utc::now(),
+            }],
+            passkey_user_id: Uuid::new_v4(),
+            pin_hash: None,
+            lock_timeout_mins: Some(15),
+        };
+        config.set_password("correct-horse-battery-staple").unwrap();
+        config.set_pin("1234").unwrap();
+        let master_token = config.master_token.clone();
+        assert!(config.web_auth_enabled());
+
+        config.disable_web_auth();
+
+        assert!(!config.web_auth_enabled());
+        assert!(config.password_hash.is_none());
+        assert!(config.pin_hash.is_none());
+        assert!(config.passkeys.is_empty());
+        assert!(config.lock_timeout_mins.is_none());
+        assert_eq!(config.master_token, master_token);
+    }
 }
