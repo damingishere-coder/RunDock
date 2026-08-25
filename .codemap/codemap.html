@@ -1,0 +1,634 @@
+<!DOCTYPE html>
+<!--
+  Functional Architecture Map (interactive). GENERATED from modules.json by the codemap skill.
+  Do not hand-edit — edit modules.json and re-run render.py.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Functional Architecture Map</title>
+<style>
+  :root{
+    --bg:#131517; --bg2:#0e1012; --panel:#1b1e21; --panel2:#202428;
+    --ink:#e8e6e3; --muted:#9aa1a8; --faint:#6b7280;
+    --border:#2a2e33; --border2:#363b41;
+    --accent:#f59e0b; --accent-dim:#b4730e; --accent-soft:rgba(245,158,11,.14);
+    --in:#7c8794; --out:#f59e0b;
+    --c-low:#525a62; --c-med:#7e8893; --c-high:#c9cdd2; --c-core:#f59e0b;
+    --mono:"SF Mono",ui-monospace,"Cascadia Code","JetBrains Mono",Consolas,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{background:var(--bg);
+    color:var(--ink); font-family:var(--sans); -webkit-font-smoothing:antialiased; overflow:hidden;}
+  .app{display:grid; grid-template-columns:1fr 348px; grid-template-rows:auto 1fr; height:100vh}
+  header{grid-column:1/3; display:flex; align-items:center; gap:16px; padding:12px 20px;
+    border-bottom:1px solid var(--border); background:var(--bg);}
+  header .mark{width:22px;height:22px;border-radius:6px;flex:0 0 auto;background:var(--accent);}
+  header h1{font-size:14px;font-weight:600;margin:0;letter-spacing:.1px;white-space:nowrap}
+  header h1 span{color:var(--muted);font-weight:400}
+  header .sub{font-size:11.5px;color:var(--faint);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  header .spacer{flex:1}
+  .search{display:flex;align-items:center;gap:8px;background:var(--panel);
+    border:1px solid var(--border);border-radius:8px;padding:7px 11px;width:230px;}
+  .search:focus-within{border-color:var(--border2)}
+  .search input{background:none;border:none;outline:none;color:var(--ink);font-family:var(--sans);font-size:12.5px;width:100%;}
+  .search svg{flex:0 0 auto;opacity:.6}
+  .btn{font:inherit;font-size:12px;color:var(--muted);background:var(--panel);
+    border:1px solid var(--border);border-radius:8px;padding:7px 12px;cursor:pointer;transition:.12s;}
+  .btn:hover{color:var(--ink);border-color:var(--border2);background:var(--panel2)}
+  .btn.active{color:#0e0f11;background:var(--accent);border-color:var(--accent)}
+  .filt{font:inherit;font-size:12px;color:var(--muted);background:var(--panel);
+    border:1px solid var(--border);border-radius:8px;padding:7px 8px;cursor:pointer;max-width:150px}
+  .filt:hover{color:var(--ink);border-color:var(--border2);background:var(--panel2)}
+  .filt.on{color:#1a1a1a;background:var(--accent);border-color:var(--accent)}
+  .fcount{font-family:var(--mono);font-size:10.5px;color:var(--accent);white-space:nowrap;min-width:52px}
+  .board-wrap{position:relative;overflow:auto;background:var(--bg2)}
+  .board{position:relative;min-width:min-content;padding:26px 30px 60px}
+  svg.edges{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:1;overflow:visible}
+  .band{position:relative;z-index:2;margin-bottom:13px}
+  .band-head{display:flex;align-items:baseline;gap:10px;margin:0 2px 9px;position:sticky;left:0;}
+  .band-head .t{font-size:11px;font-weight:700;letter-spacing:.9px;text-transform:uppercase;color:var(--ink)}
+  .band-head .d{font-size:11px;color:var(--faint)}
+  .band-head .num{font-size:9.5px;color:var(--faint);border:1px solid var(--border);border-radius:20px;padding:1px 7px;font-family:var(--mono)}
+  .band-head .gloc{color:var(--muted);border-color:transparent;padding-left:0}
+  .band-body{display:flex;flex-wrap:wrap;gap:7px}
+  .wire{position:relative;z-index:2;display:flex;align-items:center;gap:14px;margin:6px 2px 16px;color:var(--accent);}
+  .wire .line{flex:1;height:1px;background:linear-gradient(90deg,transparent,var(--accent-dim),transparent)}
+  .wire .lbl{font-family:var(--mono);font-size:10.5px;letter-spacing:1px;color:var(--accent);white-space:nowrap}
+  .node{position:relative;background:var(--panel);border:1px solid var(--border);border-radius:9px;
+    padding:8px 30px 8px 12px;cursor:pointer;min-width:104px;
+    transition:transform .12s, border-color .12s, background .12s, box-shadow .12s, opacity .15s;user-select:none;}
+  .node::before{content:"";position:absolute;left:0;top:8px;bottom:8px;width:3px;border-radius:3px;background:var(--c-low);}
+  .node.c-med::before{background:var(--c-med)} .node.c-high::before{background:var(--c-high)}
+  .node.c-core::before{background:var(--c-core);box-shadow:0 0 8px var(--accent-soft)}
+  .node .lab{font-size:12px;font-weight:560;line-height:1.25;letter-spacing:.1px}
+  .node .meta{font-size:9.5px;color:var(--faint);font-family:var(--mono);margin-top:2px}
+  .node:hover{border-color:var(--border2);background:var(--panel2);transform:translateY(-1px)}
+  .node .chip{position:absolute;top:6px;right:7px;font-family:var(--mono);font-size:9px;font-weight:700;
+    line-height:1;padding:2px 4px;border-radius:4px;color:#0c0d0e;background:var(--h,#6b7280);opacity:0;transition:opacity .15s;}
+  .board.show-health .node::before{background:var(--h)!important;box-shadow:none}
+  .board.show-health .node .chip{opacity:1}
+  .board.show-health.has-sel .node:not(.lit) .chip{opacity:.25}
+  .board.has-sel .node{opacity:.26;filter:saturate(.7)}
+  .board.has-sel .node.lit{opacity:1;filter:none}
+  .node.sel{border-color:var(--accent);background:#241d12;box-shadow:0 0 0 1px var(--accent), 0 6px 22px rgba(245,158,11,.18);transform:translateY(-1px);}
+  .node.dep{border-color:var(--accent-dim)} .node.dependent{border-color:var(--in)}
+  aside{background:var(--panel);border-left:1px solid var(--border);overflow-y:auto;padding:20px 20px 40px;}
+  .empty-hint{color:var(--faint);font-size:12.5px;line-height:1.7} .empty-hint b{color:var(--muted);font-weight:600}
+  .legend{margin-top:22px} .legend h4,aside h4{font-size:10.5px;text-transform:uppercase;letter-spacing:1px;color:var(--faint);margin:0 0 10px}
+  .legend .row{display:flex;align-items:center;gap:9px;margin-bottom:7px;font-size:12px;color:var(--muted)}
+  .swatch{width:16px;height:9px;border-radius:3px;flex:0 0 auto}
+  .ln{width:26px;height:0;border-top-width:2px;border-top-style:solid;flex:0 0 auto}
+  .detail .kicker{font-family:var(--mono);font-size:10px;color:var(--accent);letter-spacing:.5px;text-transform:uppercase}
+  .detail h2{font-size:18px;margin:5px 0 3px;font-weight:650;line-height:1.2}
+  .detail .path{font-family:var(--mono);font-size:11px;color:var(--faint);word-break:break-all;margin-bottom:13px}
+  .pill-row{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:15px}
+  .pill{font-size:10.5px;border:1px solid var(--border2);border-radius:20px;padding:3px 9px;color:var(--muted);font-family:var(--mono)}
+  .pill.cpl{border-color:var(--accent-dim);color:var(--accent)}
+  .detail p.desc{font-size:13px;line-height:1.6;color:var(--ink);margin:0 0 16px}
+  .reltitle{font-size:10.5px;text-transform:uppercase;letter-spacing:1px;color:var(--faint);margin:16px 0 8px;display:flex;align-items:center;gap:7px}
+  .reltitle .dotc{width:7px;height:7px;border-radius:50%}
+  .rel{display:flex;flex-direction:column;gap:4px}
+  .rel button{text-align:left;font:inherit;font-size:12px;color:var(--muted);background:var(--panel);
+    border:1px solid var(--border);border-radius:7px;padding:6px 9px;cursor:pointer;transition:.13s;
+    display:flex;justify-content:space-between;align-items:center;gap:8px;}
+  .rel button:hover{color:var(--ink);border-color:var(--accent-dim);background:var(--panel2)}
+  .rel button .bnd{font-size:9px;font-family:var(--mono);color:var(--faint)}
+  .rel .none{font-size:11.5px;color:var(--faint);font-style:italic;padding:2px}
+  .clearbtn{margin-top:18px;width:100%}
+  .scorebox{display:flex;align-items:center;gap:12px;margin:2px 0 13px}
+  .scorebox .big{font-size:34px;font-weight:740;line-height:1;font-family:var(--mono)}
+  .scorebox .gr{font-size:13px;font-weight:700;border:1.5px solid;border-radius:7px;padding:3px 9px}
+  .scorebox .bar{flex:1;height:7px;border-radius:5px;background:#23272c;overflow:hidden}
+  .scorebox .bar i{display:block;height:100%;border-radius:5px}
+  .findings{display:flex;flex-direction:column;gap:7px;margin-top:4px}
+  .finding{border:1px solid var(--border);border-left-width:3px;border-radius:7px;padding:7px 9px;background:#16191c}
+  .finding .top{display:flex;align-items:center;gap:7px;margin-bottom:3px}
+  .finding .sev{font-family:var(--mono);font-size:8.5px;font-weight:700;padding:1px 5px;border-radius:4px;letter-spacing:.4px}
+  .finding .loc{font-family:var(--mono);font-size:10px;color:var(--muted);word-break:break-all}
+  .finding .txt{font-size:11.5px;line-height:1.5;color:#cfd3d8}
+  .sev-HIGH{background:#3a1714;color:#f0857a} .finding.sev-HIGH{border-left-color:#e0524b}
+  .sev-MED{background:#3a2c12;color:#e7b35e} .finding.sev-MED{border-left-color:#d9a441}
+  .sev-LOW{background:#23282d;color:#9aa1a8} .finding.sev-LOW{border-left-color:#525a62}
+  .tagchips{display:flex;flex-wrap:wrap;gap:5px;margin:0 0 13px}
+  .tg{font-size:9.5px;font-family:var(--mono);border-radius:5px;padding:2px 7px;background:#23282d;color:#aeb4bb;border:1px solid var(--border)}
+  .tg.bad{background:#2c1a17;color:#e88;border-color:#4a2420} .tg.ok{background:#1d2420;color:#8a9;border-color:#2a352e}
+  .report .stat-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin:14px 0 6px}
+  .report .stat{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:9px 6px;text-align:center}
+  .report .stat .n{font-family:var(--mono);font-size:18px;font-weight:740;line-height:1}
+  .report .stat .l{font-size:8.5px;color:var(--faint);text-transform:uppercase;letter-spacing:.5px;margin-top:3px}
+  .report h3{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--faint);margin:20px 0 8px}
+  .report .theme{font-size:12px;line-height:1.6;color:#cfd3d8;margin:0 0 9px;padding-left:11px;border-left:2px solid var(--accent-dim)}
+  .report .theme b{color:#fff;font-weight:600}
+  .grade-A{color:#76b39a;border-color:#3a5249} .grade-B{color:#b9c0c7;border-color:var(--border2)}
+  .grade-C{color:#d9a441;border-color:#5a4720} .grade-D{color:#e08a4a;border-color:#5a3a20} .grade-F{color:#e0524b;border-color:#5a2420}
+  .scrollnote{position:absolute;right:14px;bottom:12px;z-index:5;font-size:10.5px;color:var(--faint);font-family:var(--mono);pointer-events:none;background:#0e1012aa;padding:3px 8px;border-radius:6px;border:1px solid var(--border)}
+  .modal{position:fixed;inset:0;z-index:60;display:none;background:#0a0b0ccc;overflow:auto;padding:46px 20px}
+  .modal.open{display:block}
+  .modal .sheet{position:relative;max-width:740px;margin:0 auto;background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:24px 26px 30px}
+  .modal .sheet h2{font-size:17px;font-weight:650;margin:0 0 3px;letter-spacing:.1px}
+  .modal .sheet .intro{font-size:12.5px;color:var(--faint);margin:0 0 6px;line-height:1.5}
+  .modal .xbtn{position:absolute;top:16px;right:16px}
+  .std-h4{font-size:10.5px;text-transform:uppercase;letter-spacing:1px;color:var(--faint);margin:22px 0 4px}
+  .std-row{display:flex;gap:13px;align-items:baseline;padding:8px 0;border-top:1px solid var(--border)}
+  .std-badge{flex:0 0 56px;font-family:var(--mono);font-weight:700;font-size:12px;text-align:center;border-radius:6px;padding:3px 0;color:#0c0d0e}
+  .std-range{flex:0 0 56px;font-family:var(--mono);font-size:11px;color:var(--muted)}
+  .std-key{flex:0 0 116px}
+  .std-row .sev{font-family:var(--mono);font-size:9px;font-weight:700;padding:2px 6px;border-radius:4px;letter-spacing:.4px}
+  .std-row .tg[contenteditable]{outline:none;min-width:40px}
+  .std-desc[contenteditable]{outline:1px dashed var(--border2);outline-offset:2px;border-radius:3px}
+  .xrm{flex:0 0 auto;background:none;border:none;color:var(--faint);cursor:pointer;font-size:12px;padding:0 2px;line-height:1}
+  .xrm:hover{color:#e0524b}
+  .toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(8px);z-index:80;
+    background:var(--panel2);border:1px solid var(--border2);color:var(--ink);font-size:12.5px;
+    padding:9px 14px;border-radius:8px;opacity:0;pointer-events:none;transition:.18s;box-shadow:0 6px 20px #0007}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  .std-desc{flex:1;font-size:12.5px;color:#cfd3d8;line-height:1.5}
+  ::-webkit-scrollbar{width:11px;height:11px}
+  ::-webkit-scrollbar-thumb{background:#2c3137;border-radius:6px;border:3px solid var(--bg2)}
+  ::-webkit-scrollbar-track{background:transparent}
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="mark"></div>
+    <div>
+      <h1 id="projTitle">Functional Architecture Map</h1>
+      <div class="sub" id="subLine"></div>
+    </div>
+    <div class="spacer"></div>
+    <div class="search">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+      <input id="search" placeholder="Find a module…" autocomplete="off"/>
+    </div>
+    <select class="filt" id="gradeFilter" title="Show only modules at/below this grade">
+      <option value="">All grades</option>
+      <option value="90">≤ B  (score &lt;90)</option>
+      <option value="75">≤ C  (&lt;75)</option>
+      <option value="60">≤ D  (&lt;60)</option>
+      <option value="40">F&nbsp;&nbsp;(&lt;40)</option>
+    </select>
+    <select class="filt" id="tagFilter" title="Show only modules with this issue"><option value="">Any issue</option></select>
+    <span class="fcount" id="fcount"></span>
+    <button class="btn" id="stdBtn">Standard</button>
+    <button class="btn" id="reportBtn">Audit report</button>
+    <button class="btn" id="healthBtn">Color: coupling</button>
+    <button class="btn" id="spineBtn">Data-flow spine</button>
+  </header>
+  <div class="board-wrap" id="boardWrap">
+    <div class="board" id="board">
+      <svg class="edges" id="edges">
+        <defs>
+          <marker id="ah-out" markerWidth="9" markerHeight="9" refX="7" refY="4.2" orient="auto"><path d="M0,0 L8,4.2 L0,8.4 Z" fill="var(--out)"/></marker>
+          <marker id="ah-in" markerWidth="9" markerHeight="9" refX="7" refY="4.2" orient="auto"><path d="M0,0 L8,4.2 L0,8.4 Z" fill="var(--in)"/></marker>
+        </defs>
+      </svg>
+    </div>
+    <div class="scrollnote">click a module · scroll to pan</div>
+  </div>
+  <aside id="aside"><div id="detail"></div></aside>
+</div>
+<div class="modal" id="stdModal"></div>
+
+<script>
+const DATA = {"meta": {"project": "RunDock / Alter", "lang": "zh", "subtitle": "Rust + React 本地开发进程管理器工程地图与质量审计", "generatedAt": "2026-08-25", "htmlPath": ".codemap/codemap.html", "mdPath": ".codemap/codemap.md", "spineDesc": "用户在 React 控制台发起进程操作，经统一 API 客户端和 Axum 鉴权路由进入进程监督核心，再把运行状态与项目元数据持久化为本地 JSON 快照。", "tracked_loc": 50646, "tracked_files": 208, "rev": "15aea4916fad15020bb8391262d9f9227f890d59"}, "bands": [{"id": "ui-shell", "tier": "fe", "t": "前端 · 应用壳", "d": "导航、认证入口与全局界面状态"}, {"id": "ui-features", "tier": "fe", "t": "前端 · 功能页面", "d": "进程、项目、观测与设置交互"}, {"id": "ui-infra", "tier": "fe", "t": "前端 · 数据访问", "d": "HTTP、认证令牌、服务器选择与轮询 hooks"}, {"id": "wire", "wire": true, "t": "◀ HTTP · SSE · WebSocket ▶"}, {"id": "api", "tier": "be", "t": "后端 · API 与系统边界", "d": "Axum 路由、认证、文件系统和外部能力"}, {"id": "core", "tier": "be", "t": "后端 · 进程运行核心", "d": "启动、停止、重启、健康检查、计划任务与日志"}, {"id": "state", "tier": "be", "t": "后端 · 状态与集成", "d": "JSON 持久化、数据模型、通知与第三方服务"}, {"id": "delivery", "tier": "ops", "t": "交付 · 构建与文档", "d": "依赖、CI、安装、发布和工程文档"}], "spine": ["frontend_shell", "frontend_process_projects", "frontend_transport", "api_process_projects", "process_lifecycle", "state_persistence"], "reportThemes": [["安全依赖运行前提而非代码强制", "当前监听 127.0.0.1 限制了网络暴露，但默认无密码与全开放 CORS 仍让恶意网页或本机进程接近文件、终端、脚本和更新接口；一旦改绑非回环地址，风险进一步扩大为网络远程控制面。"], ["失败经常被伪装成成功、空数据或首次运行", "从状态配置加载、日志读取、前端轮询到更新/重启流程，大量 silent catch 与默认回退让真实故障表现为零值、加载中、默认配置或成功提示，削弱恢复与诊断。"], ["持久化与副作用缺少事务边界", "进程启动、项目元数据和 state.json 分步保存；固定 tmp 文件、并发异步写、保存失败不回滚以及重复 resurrect 都可能产生部分成功、旧快照覆盖或运行态与磁盘态分裂。"], ["重复生命周期实现已经产生行为漂移", "首次启动、崩溃重启、cron 启动和恢复分别维护相似的 spawn/日志/watch/health 流程；watcher 被立即释放、自动重启漏掉 hook/健康检查等缺陷说明重复不再只是代码风格问题。"], ["测试与 CI 没有覆盖最高风险边界", "已有 Rust/前端测试能保护部分解析与 UI helper，但认证、文件边界、持久化并发、恢复幂等、真实 API、更新完整性和通知/AI 出站均缺少系统级回归门槛；Release workflow 也不先跑完整质量门禁。"], ["架构规模合适，模块内部边界欠清晰", "单体 Rust daemon + React 控制台符合本地 V1 规模，不需要微服务；真正的问题集中在 ProcessManager、App.tsx、API 路由与设置页面等 God 模块，应通过小轮次提取状态机、IO 边界和错误语义。"]], "standard": {"rubric": [{"grade": "A", "score": 95, "range": "90–100", "en": "clean, well-scoped, idiomatic", "zh": "干净、职责单一、地道"}, {"grade": "B", "score": 82, "range": "75–89", "en": "minor issues: a documented shim, mild bloat", "zh": "小问题：有文档的兼容、轻微臃肿"}, {"grade": "C", "score": 67, "range": "60–74", "en": "notable hacks / fallbacks / bloat / duplication", "zh": "明显的 hack / 回退 / 臃肿 / 重复"}, {"grade": "D", "score": 50, "range": "40–59", "en": "significant legacy / stubs / duplication, or a protocol violation", "zh": "严重的遗留 / 占位 / 重复，或协议违规"}, {"grade": "F", "score": 25, "range": "0–39", "en": "broken, fake output, or unfinished-but-wired", "zh": "损坏、伪造输出，或未完成却已接线"}], "severities": [{"key": "HIGH", "en": "wrong / dangerous / fake, a protocol or security issue, or a genuine maintenance hazard", "zh": "错误 / 危险 / 伪造、协议或安全问题，或真正的维护地雷"}, {"key": "MED", "en": "a real smell a maintainer should fix", "zh": "维护者该修的真坏味"}, {"key": "LOW", "en": "a documented shim, a cosmetic cast, benign bloat — worth noting, not urgent", "zh": "有文档的兼容、装饰性 cast、良性臃肿 —— 值得记、不紧急"}], "coupling": [{"key": "core", "en": "system spine — central to almost everything", "zh": "系统主线 —— 几乎牵连一切"}, {"key": "high", "en": "many connections", "zh": "连接很多"}, {"key": "med", "en": "moderate", "zh": "中等"}, {"key": "low", "en": "leaf / self-contained", "zh": "叶子 / 自洽"}], "tags": [{"id": "monkeypatch", "label": "monkeypatch", "labelZh": "猴补丁", "bad": true, "en": "runtime mutation of another module / stdlib / vendor; reflection or prototype patching", "zh": "运行时改写别的模块/标准库/依赖；反射或原型补丁"}, {"id": "fallback", "label": "fallback", "labelZh": "回退兜底", "bad": true, "en": "'try the real thing, then fake/degrade'; a||b||c chains that hide which value is real", "zh": "“先试真的再退化/造假”；a||b||c 掩盖哪个是真值"}, {"id": "silent-except", "label": "silent-except", "labelZh": "静默吞错", "bad": true, "en": "swallowed errors: empty catch / except:pass / ignored return codes", "zh": "吞掉错误：空 catch / except:pass / 忽略返回码"}, {"id": "legacy", "label": "legacy", "labelZh": "遗留", "bad": true, "en": "deprecated/back-compat shims, dead-but-shipped code, parallel old+new paths", "zh": "遗留/兼容垫片、已发布的死代码、新旧并存"}, {"id": "dual-format", "label": "dual-format", "labelZh": "双格式", "bad": true, "en": "accepting two shapes for one field (snake||camel), patched through the code", "zh": "同一字段接受两种形态（snake||camel）并散落各处"}, {"id": "stub", "label": "stub", "labelZh": "占位桩", "bad": true, "en": "NotImplemented / TODO / dead buttons / demo scripts presented as real", "zh": "未实现/TODO/死按钮/演示脚本当成品"}, {"id": "fake-output", "label": "fake-output", "labelZh": "伪造输出", "bad": true, "en": "returns random/canned/hardcoded results where real work is implied", "zh": "本应真算的地方返回随机/写死结果"}, {"id": "duplication", "label": "duplication", "labelZh": "重复", "bad": true, "en": "copy-pasted logic, or an existing shared abstraction not reused", "zh": "复制粘贴，或已有共享抽象却不复用"}, {"id": "bloat", "label": "bloat", "labelZh": "臃肿", "bad": true, "en": "oversized file / function; too many responsibilities in one unit", "zh": "超大文件/函数；单元职责过多"}, {"id": "glue", "label": "glue", "labelZh": "胶水", "bad": true, "en": "valueless pass-through: rows of thin forwarders / no-op adapters", "zh": "无价值透传：成片薄包装 / 零转换适配器"}, {"id": "any-escape", "label": "any-escape", "labelZh": "类型逃逸", "bad": true, "en": "bypassing the type system: as any / @ts-ignore / dynamic / void* / reinterpret_cast / unsafe", "zh": "绕过类型系统：as any / @ts-ignore / dynamic / void* / reinterpret_cast / unsafe"}, {"id": "over-fit", "label": "over-fit", "labelZh": "过度特化", "bad": true, "en": "hardcoded to one case where a small generalization was expected", "zh": "硬编码单一情况，本应小幅泛化"}, {"id": "god-component", "label": "god-component", "labelZh": "上帝组件", "bad": true, "en": "one component/class/file doing far too much", "zh": "一个组件/类/文件做太多事"}, {"id": "placeholder", "label": "placeholder", "labelZh": "占位", "bad": true, "en": "unfinished UI / data presented as if complete", "zh": "未完成的 UI/数据当作已完成"}, {"id": "clean", "label": "clean", "labelZh": "干净", "bad": false, "en": "no material issues — well-scoped", "zh": "无实质问题 —— 职责单一"}]}, "modules": [{"id": "frontend_shell", "label": "React 应用壳与导航", "band": "ui-shell", "path": "web-ui/src/App.tsx", "desc": "承载路由、侧栏、服务器切换、认证门禁、全局状态和页面装配。", "coupling": "core", "deps": ["frontend_process_projects", "frontend_operations", "frontend_settings_ai_terminal", "frontend_transport"], "loc": 3518, "score": 52, "grade": "D", "tags": ["god-component", "bloat", "silent-except", "duplication", "legacy", "fallback"], "findings": [{"sev": "HIGH", "loc": "web-ui/src/App.tsx:84-702", "text": "App.tsx 共 2,516 行；Layout 同时承担进程/项目轮询、通知托盘、AI 面板、终端面板、侧栏筛选、保存/关闭守护进程、全部 React Router 路由和 StatusBar 编排。其后还在同一文件内承载约 500 行 ServerSwitcher（:1728-2265）和 AuthGuard（:2348-2455）。根壳协调全局状态和导航是合理的，但把连接配置、认证锁屏和大量功能细节集中在单文件中，职责泛化不适当，已构成真实维护风险。"}, {"sev": "MED", "loc": "web-ui/src/App.tsx:208-218", "text": "handleSave 与 handleShutdown 对 API 错误使用 catch(() => {})；保存失败后仍无条件弹出“状态已保存”（:209-210），关闭失败也没有用户反馈（:218），导致界面成功语义与真实守护进程状态脱节。"}, {"sev": "MED", "loc": "web-ui/src/App.tsx:2397-2415", "text": "认证锁屏配置 authStatus() 失败时在 :2409 直接静默吞掉异常，lockConfig 保留默认值；用户无法知道 PIN/超时配置未刷新，且后续锁屏行为可能继续使用过期配置。"}, {"sev": "LOW", "loc": "web-ui/src/App.tsx:137-144", "text": "更新检查失败在 :143 使用空 catch；更新徽标静默缺失，壳层没有诊断信号。该功能可降级，但错误不可观测。"}, {"sev": "LOW", "loc": "web-ui/src/App.tsx:1844-1855", "text": "SSH 隧道 RemoteServer 预览对象在 copyTunnelCmd 中手工构造，并在 JSX :2189-2199 再次复制同一字段映射；端口默认值和字段变化需要同步维护，属于局部 duplication。"}, {"sev": "LOW", "loc": "web-ui/src/components/GitHubStarBanner.tsx:237-249", "text": "GitHubStarWidget 的外部 fetch 失败在 :246-248 静默吞掉，页面退化为不显示数量；注释明确这是非关键降级，因此严重度为 LOW，但仍缺少可观测信号。"}, {"sev": "LOW", "loc": "web-ui/src/App.css:1-42", "text": "内容仍是 Vite 初始模板的 #root、.logo、.card、.read-the-docs 和 logo-spin 样式；指定入口 main.tsx 仅导入 index.css（:1-4），App.tsx 也未导入 App.css，当前范围内表现为未接入的 legacy 样式资产。"}]}, {"id": "frontend_process_projects", "label": "前端进程与项目工作台", "band": "ui-features", "path": "web-ui/src/pages/ProcessesPage.tsx 等", "desc": "实现进程、逻辑项目、计划任务、日志详情和环境文件的主要用户操作流程。", "coupling": "high", "deps": ["frontend_transport", "api_process_projects"], "loc": 6120, "score": 48, "grade": "D", "tags": ["bloat", "god-component", "duplication", "fallback", "silent-except", "any-escape"], "findings": [{"sev": "HIGH", "loc": "web-ui/src/pages/ProcessDetailPage.tsx:46", "text": "首次 getProcess 失败在 :50 直接静默吞掉；process 保持 null，渲染分支 :154 永远显示加载中，没有错误态或重试入口。进程详情页在核心请求失败时会卡在伪加载状态。"}, {"sev": "MED", "loc": "web-ui/src/pages/ProjectsPage.tsx:40", "text": "该页面约 995 行，单一组件同时负责筛选/分组/统计、端口轮询、项目启停重启、启停用、备注和分类编辑、成员列表、项目详情 inspector 及桌面/技术组件两套渲染。页面工作台职责虽应协调这些流程，但当前单组件范围已明显超出适当泛化，形成维护性 bloat/god-component。"}, {"sev": "MED", "loc": "web-ui/src/pages/ProcessDetailPage.tsx:20", "text": "该页面约 907 行；同一组件包含进程轮询、日期日志加载、5 分钟日志统计轮询、60 秒指标轮询、SSE 生命周期、进程控制、Git pull、终端/文件夹/VS Code 操作、.env 模态框和 CPU/内存/日志图表（:46-152、:170-228、:632-907），职责边界过宽。"}, {"sev": "MED", "loc": "web-ui/src/pages/ProcessesPage.tsx:372", "text": "卡片视图 ProcessCard（:372-515）与表格视图 ProcessRow（:534-645）分别复制 stop/start/restart/delete/clone/toggleEnabled 操作、通知检测、二级 action 列表和按钮渲染；同一进程行为需要在两套视图同步维护，属于实质 duplication。"}, {"sev": "MED", "loc": "web-ui/src/components/EnvFilePanel.tsx:18", "text": "EnvFilePanel（:18-165）与 EnvFileModal（:17-162）重复 envFileColor/envFileBg、文件列表加载、文件读取、切换、保存、重启和同步状态机；StartPage 也再次复制颜色映射（web-ui/src/pages/StartPage.tsx:18-38），形成多个 env 编辑实现。"}, {"sev": "MED", "loc": "web-ui/src/components/EnvFilePanel.tsx:66", "text": "listEnvFiles 失败时 :74-79 人工写入 [{name:.env,path:空}] 并继续 loadFile(.env)；EnvFileModal 同样在 :59-72 执行。真实文件列表不可用被静默降级成伪 .env 条目，后续读取/保存/同步可能只能失败或误导用户。"}, {"sev": "MED", "loc": "web-ui/src/pages/StartPage.tsx:113", "text": "saveEnvFile 的 writeEnvFile 异常在 :122 以空 catch 忽略，未设置 error 或失败状态；用户看不到写入失败。该页面同时在 env 列表/检查失败路径 :87-104 多处只做降级或清空状态。"}, {"sev": "MED", "loc": "web-ui/src/pages/ProcessesPage.tsx:41", "text": "UI 设置、端口轮询和批量/单进程操作大量使用空 catch（:45、:103、:146-153、:384-398、:543-560），API 失败后仍定时 reload 或保持旧列表，没有统一错误反馈，控制操作的失败与没有变化不可区分。"}, {"sev": "MED", "loc": "web-ui/src/pages/CreateCronJobPage.tsx:162", "text": "SSE message 使用 JSON.parse 后直接把 data.stream/data.content 强制断言为目标类型（:170-173），没有运行时字段校验；解析异常在 :175 直接忽略。外部事件数据跨越类型边界时可能把无效值写入运行输出。"}, {"sev": "LOW", "loc": "web-ui/src/components/CodeEditor.tsx:126", "text": "将 CSS 属性值 off 强制断言为 React.CSSProperties[overflowWrap]，绕过类型检查；该值并非标准 overflow-wrap 值，属于不必要的 any-escape。"}]}, {"id": "frontend_operations", "label": "前端观测与运维页面", "band": "ui-features", "path": "web-ui/src/pages/AnalyticsPage.tsx 等", "desc": "展示指标、日志容量、通知、端口和隧道状态并触发相关运维动作。", "coupling": "med", "deps": ["frontend_transport", "integrations_observability"], "loc": 3588, "score": 54, "grade": "D", "tags": ["fallback", "silent-except", "bloat", "god-component", "duplication", "any-escape"], "findings": [{"sev": "HIGH", "loc": "web-ui/src/pages/AnalyticsPage.tsx:457", "text": "每个进程的 getLogStats 失败在 :458 被转换为 [processId, []]，没有错误状态；LogVolumePage 同样在 :217-224 转为空 buckets，LogLibraryPage 在 :37-47 转为空日志元数据。运维图表会把后端故障显示成无日志或零值，无法区分真实零数据与 API 失败，属于危险的观测降级。"}, {"sev": "MED", "loc": "web-ui/src/pages/PortFinderPage.tsx:59", "text": "PortFinderPage 约 677 行，主组件同时管理端口加载、过滤/分组、PID 终止确认、隧道创建、表格渲染，并在组件内部定义 Th/Td/PortRow（:187-359）；单个页面承载过多状态和职责，形成 god-component/bloat。"}, {"sev": "MED", "loc": "web-ui/src/pages/LogVolumePage.tsx:203", "text": "LogVolumePage 约 540 行，同时实现全量日志 API 轮询、聚合/排名/缩放计算、筛选、SVG 图表和进程卡片；AnalyticsPage 又在 :449-524 实现相似的单进程日志统计轮询和图表，职责与数据流重复。"}, {"sev": "MED", "loc": "web-ui/src/pages/NotificationsPage.tsx:92", "text": "NotificationsPage 的 NotifCard 在 :98-111 和 :201-310 手工实现四种通知渠道字段；NotifModal 的 ChannelFields 在 web-ui/src/components/NotifModal.tsx:29-114 另建一套字段数组和更新器，defaultConfig 也与 :9-10 的 defaultNotifConfig 分开维护，通知配置 UI 存在明显 duplication 和潜在语义漂移。"}, {"sev": "MED", "loc": "web-ui/src/components/NotifModal.tsx:250", "text": "NsNotifModal 用 useState 懒初始化函数执行 api.getNotifications() 副作用（:250-255），不是 effect；请求失败只 setLoading(false)，保留默认 NotificationConfig 且不显示错误，已有命名空间配置可能被静默显示为默认值。"}, {"sev": "MED", "loc": "web-ui/src/pages/PortFinderPage.tsx:118", "text": "handleTunnel 创建隧道失败在 :126-128 静默忽略；注释声称由 TunnelsPage 显示错误，但 navigate(/tunnels) 只在成功路径 :122-125 执行，失败时当前页面没有错误反馈。"}, {"sev": "MED", "loc": "web-ui/src/pages/TunnelsPage.tsx:60", "text": "CopyBtn 在 :64 忽略 clipboard.writeText 失败，却立即 setCopied(true) 并展示复制成功状态；剪贴板权限或系统调用失败时 UI 会产生错误成功反馈。"}, {"sev": "MED", "loc": "web-ui/src/pages/TunnelsPage.tsx:284", "text": "停止或移除隧道操作在 :285-291 对 API 异常使用空 catch，随后无条件静默刷新；用户无法知道 stop/remove 是否失败。AnalyticsPage 的批量启动/重启也在 :26-35 使用同类吞错。"}, {"sev": "LOW", "loc": "web-ui/src/pages/AnalyticsPage.tsx:527", "text": "AnalyticsPage :527-530 与 LogVolumePage :16-20 重复实现相同的 ISO 时间到 HH:MM 格式化函数；公共展示逻辑分散维护。"}, {"sev": "LOW", "loc": "web-ui/src/components/NotificationTray.tsx:218", "text": "每一条通知的 RelativeTime 都独立创建一个 30 秒 setInterval（:220-223）；通知数量增长时定时器数量线性增长，属于局部 bloat。"}, {"sev": "LOW", "loc": "web-ui/src/components/NotifModal.tsx:200", "text": "ProcessNotifModal/NsNotifModal 的异常处理均使用 catch (e: any)（:200、:208、:274、:281），错误边界绕过 TypeScript 类型约束，属于低严重度 any-escape。"}]}, {"id": "frontend_settings_ai_terminal", "label": "前端设置、AI 与终端", "band": "ui-features", "path": "web-ui/src/components/settings 与 TerminalPanel", "desc": "管理安全、AI Provider、通知、隧道和终端设置，并提供浏览器 PTY/AI 交互。", "coupling": "high", "deps": ["frontend_transport", "api_security_os", "integrations_observability"], "loc": 4257, "score": 55, "grade": "D", "tags": ["fallback", "silent-except", "bloat", "god-component", "glue"], "findings": [{"sev": "HIGH", "loc": "web-ui/src/components/settings/GeneralTab.tsx:72", "text": "更新调用被 catch(() => {}) 吞掉；随后第74-79行只轮询健康状态，旧守护进程仍健康时会被标记为更新成功并 reload，无法区分更新失败与服务仍在线，产生假成功。"}, {"sev": "MED", "loc": "web-ui/src/components/settings/GeneralTab.tsx:36", "text": "重启失败被忽略后仍继续健康检查；第42行可能仅因旧服务健康就显示已恢复连接，隐藏真实重启错误。"}, {"sev": "MED", "loc": "web-ui/src/components/settings/GeneralTab.tsx:28", "text": "系统路径加载失败静默处理，sysPaths 保持 null，渲染处第191、197行会永久显示加载中，用户没有失败反馈。"}, {"sev": "MED", "loc": "web-ui/src/components/settings/AiTab.tsx:131", "text": "异常分支注释声称使用 fallback list，但实际没有设置任何 fallback；切换 Provider 时第139行先清空 aiModel，失败后第501行可能渲染空模型选项。"}, {"sev": "MED", "loc": "web-ui/src/components/settings/TelegramTab.tsx:78", "text": "新令牌写入失败被忽略，随后第81-84行查询已持久化的令牌并清空输入；旧令牌仍有效时会误显示验证成功并丢失用户刚输入的新令牌。"}, {"sev": "MED", "loc": "web-ui/src/components/settings/TunnelsTab.tsx:36", "text": "隧道配置加载失败静默回落到第10-15行的 Cloudflare/null 默认状态，没有错误提示；用户可能误认为远端配置为空并覆盖保存。"}, {"sev": "MED", "loc": "web-ui/src/components/AiPanel.tsx:167", "text": "流式请求只在 clearChat 中 abort，关闭或卸载面板没有 cleanup；第187-200行的旧流仍可继续回调并更新状态，关闭后重开或新会话时存在串流和生命周期泄漏风险。"}, {"sev": "MED", "loc": "web-ui/src/components/TerminalPanel.tsx:101", "text": "单一 721 行组件同时承担标签页、拆分窗格、xterm 初始化、WebSocket/PTy 协议、输入解析、历史持久化、ResizeObserver、布局和完整渲染（约第105-677行），职责虽同属终端域但已形成明显维护热点。"}, {"sev": "LOW", "loc": "web-ui/src/components/settings/SecurityTab.tsx:141", "text": "自动锁定保存异常被完全忽略，finally 只恢复 saving 状态；用户看不到失败原因，也无法确认锁定设置是否真正持久化。"}]}, {"id": "frontend_transport", "label": "前端 API、认证与轮询层", "band": "ui-infra", "path": "web-ui/src/lib 与 web-ui/src/hooks", "desc": "集中封装 REST/SSE 请求、Bearer 会话、服务器配置和进程/健康轮询。", "coupling": "core", "deps": ["api_process_projects", "api_security_os", "integrations_observability"], "loc": 1916, "score": 52, "grade": "D", "tags": ["any-escape", "fallback", "silent-except", "bloat", "god-component", "duplication", "over-fit", "legacy", "dual-format"], "findings": [{"sev": "HIGH", "loc": "web-ui/src/lib/servers.ts:76", "text": "direct 远程连接固定构造 http:// URL（70-76），而统一请求会附加 Bearer token（web-ui/src/lib/api.ts:64-76）；连接非本机 daemon 时凭据可能明文传输。SSH 模式仅因本地转发到 127.0.0.1 而例外。"}, {"sev": "MED", "loc": "web-ui/src/lib/api.ts:233", "text": "EventSource 将 session token 放入 URL 查询参数（streamLogs 231-234、runScript 250-253、streamInstallProvider 549-552）；Bearer token 会进入服务器访问日志、代理日志、浏览器 URL/referrer 等位置。"}, {"sev": "MED", "loc": "web-ui/src/hooks/useProcesses.ts:27", "text": "useProcesses 用 setInterval(load, intervalMs) 调度异步请求，没有 in-flight 或 AbortController 保护；daemon 响应变慢时会产生重叠轮询，旧响应可能覆盖新状态。useProjects:25 与 useDaemonHealth:24 采用相同模式。"}, {"sev": "MED", "loc": "web-ui/src/lib/settings.ts:80", "text": "loadSettings 对所有非 2xx 与网络异常直接返回 DEFAULT_SETTINGS（80、83-85），saveSettings 只 await fetch 但不检查 response.ok（89-96）；认证失败或服务端保存失败会被 UI 当作默认值或成功而静默吞掉。"}, {"sev": "MED", "loc": "web-ui/src/lib/servers.ts:65", "text": "getActiveServer 在活动 ID 不存在时静默回退 LOCAL_SERVER（65-66）；结合 getServers 对 JSON 仅做类型断言且解析失败返回空数组（37-43），过期或损坏的远程选择可能把后续写操作路由到本地 daemon。"}, {"sev": "MED", "loc": "web-ui/src/lib/api.ts:76", "text": "request 将任意 RequestInit.headers 强制断言为 Record<string,string>，并把未校验的 response.json() 直接断言为 Promise<T>（76、88）；WebAuthn 接口进一步以 Promise<object> 返回并在 auth.ts:44、63 使用 any，服务端字段漂移只能在运行时暴露。"}, {"sev": "MED", "loc": "web-ui/src/lib/api.ts:379", "text": "AI SSE 解析遇到 JSON 或协议行错误时直接 catch 后忽略（374-380），流结束仍无条件调用 onDone（381-386）；截断或格式损坏的响应可能被呈现为成功的部分输出。"}, {"sev": "MED", "loc": "web-ui/src/lib/api.ts:92", "text": "单个 api 对象从 92 延伸至 572 行，集中进程、项目、日志、脚本、通知、系统、AI、认证、Telegram、隧道和终端等职责；settings.ts:66-97 又复制一套 fetch/auth 逻辑并采用不同错误策略，形成 bloat 与 transport duplication。"}, {"sev": "MED", "loc": "web-ui/src/hooks/useSettings.ts:20", "text": "updateSettings 在 React setState updater 内直接调用异步 saveSettings（20-25）；快速连续 patch 会启动无序写请求，后完成的旧请求可能覆盖新设置，且副作用嵌入状态计算。"}, {"sev": "LOW", "loc": "web-ui/src/lib/auth.ts:44", "text": "prepareCreationOptions 和 prepareRequestOptions 明确以 any 接收服务端 WebAuthn 数据（44-45、62-63），没有运行时结构校验；挑战字段缺失或类型错误会在 base64urlToBuffer/浏览器 API 深处才失败。"}, {"sev": "LOW", "loc": "web-ui/src/lib/processWeb.test.ts:13", "text": "模块测试目前只覆盖 processWeb helpers（13-57）和 projects helpers（projects.test.ts:24-46）；api/auth/servers/settings 以及三个轮询 hook 没有同目录测试，最高风险的鉴权、SSE、fallback 和并发轮询路径缺少回归保护。"}]}, {"id": "bootstrap_daemon", "label": "CLI、守护进程与 Web 入口", "band": "api", "path": "src/main.rs、src/lib.rs、src/daemon、src/cli", "desc": "解析 CLI、派生后台守护进程、恢复状态、组装 Axum/嵌入式前端并处理关闭信号。", "coupling": "core", "deps": ["api_security_os", "api_process_projects", "state_persistence", "process_lifecycle"], "loc": 1587, "score": 38, "grade": "F", "tags": ["any-escape", "fallback", "silent-except", "fake-output", "legacy", "duplication", "glue"], "findings": [{"sev": "HIGH", "loc": "src/client/daemon_client.rs:16", "text": "CLI 从本地 auth 配置读取 master token，并在 :18-25 注入到 http://{host}:{port}；host 可由 CLI/ALTER_HOST 任意指定（src/cli/args.rs:13-19），因此连接非本机 daemon 时会通过明文 HTTP 发送高权限凭据。"}, {"sev": "HIGH", "loc": "src/daemon/server.rs:15", "text": "HTTP 服务允许任意 Origin、方法和请求头（:15-18），同时绑定地址完全由配置 host 决定（:26-28）；非回环部署时入口层不提供来源约束，安全性完全依赖下游认证配置。"}, {"sev": "HIGH", "loc": "src/utils/pid.rs:5", "text": "PID 文件通过普通 std::fs::write 覆盖（:5-8），daemon 启动时直接调用（src/daemon/mod.rs:21-22），没有排他创建、锁、PID 身份校验或已有实例仲裁；并发启动可互相覆盖 PID 文件，停止/退出时还可能删除其他实例的 PID 文件。"}, {"sev": "MED", "loc": "src/daemon/mod.rs:64", "text": "状态加载失败被 if let Ok 静默忽略，随后继续恢复信号、启动 Telegram 和 HTTP 服务（:63-80）；持久化损坏或读取错误会以空状态继续运行，调用方看不到明确的恢复失败。"}, {"sev": "MED", "loc": "src/cli/commands/daemon.rs:62", "text": "后台 daemon 启动后只轮询 TCP connect，连接成功即打印 started（:57-64），没有等待 HTTP health、路由可用或初始化完成；端口已占用但服务未就绪时可能误报成功。"}, {"sev": "MED", "loc": "src/cli/commands/daemon.rs:130", "text": "is_daemon_alive 发送 health 请求后只检查返回字节是否以 HTTP/ 开头（:129-137），不校验状态码、响应路径或服务标识；任意占用目标端口的 HTTP 服务都可能被判定为 Alter daemon。"}, {"sev": "MED", "loc": "src/cli/commands/daemon.rs:77", "text": "stop_daemon 忽略 shutdown POST 的 Result 后直接打印 daemon stopped（:72-79）；网络错误、鉴权失败或服务拒绝时 CLI 仍会给出成功结论。"}, {"sev": "MED", "loc": "src/cli/commands/daemon.rs:85", "text": "restart_daemon 忽略 shutdown 结果，仅等待最多 3 秒后调用 start_daemon（:84-97）；start_daemon 又只验证 TCP，旧进程未真正退出或新进程未完成初始化时仍可能报告 restarted。"}, {"sev": "MED", "loc": "src/daemon/signals.rs:6", "text": "信号处理器保存一次状态后直接 std::process::exit(0)（:7-15），没有通知 Axum server 优雅停止、等待请求/后台任务收尾或确认子任务已退出；保存成功不等于运行时资源已清理。"}, {"sev": "MED", "loc": "src/client/daemon_client.rs:74", "text": "SSE 日志流把所有 chunk 追加到 buf，只有遇到换行才截断（:78-91），没有单行或累计缓冲上限；服务端持续发送无换行数据时客户端内存可无界增长。"}, {"sev": "MED", "loc": "src/utils/pid.rs:30", "text": "Windows process_exists 通过 tasklist 输出 contains(pid.to_string()) 判断进程存在（:30-38），PID 12 可能匹配 112 等字符串；Unix 分支仅检查 /proc/{pid} 是否存在（:40-44），两者都未验证进程命令行和身份。"}, {"sev": "MED", "loc": "src/daemon/mod.rs:43", "text": "daemon tracing 使用 rolling::never 创建固定 daemon.log（:45-56），本模块未设置大小、日期轮转或保留上限；长期运行日志可无限增长，且 tracing 初始化错误路径没有降级诊断。"}, {"sev": "LOW", "loc": "src/web/mod.rs:20", "text": "嵌入式 SPA 响应只设置 Content-Type（:24-39），未设置 CSP、X-Content-Type-Options、Referrer-Policy 等安全响应头；未知路径统一回退 index.html，调试/错误路由边界较弱。"}, {"sev": "LOW", "loc": "src/lib.rs:72", "text": "web 命令将可控 host/port 拼成 URL，并在 Windows 通过 cmd /c start 执行（:72-78）；输入未做 URL/字符校验，存在 shell 参数解释和打开非预期地址的边界风险。"}, {"sev": "LOW", "loc": "src/cli/commands/startup.rs:15", "text": "生成的 PowerShell/systemd 启动文本直接插入 current_exe 与 USER（:7-17,22-44），未做引号、换行或特殊字符转义；路径或环境变量含特殊字符时，复制生成内容可能得到错误或可注入的启动配置。"}, {"sev": "LOW", "loc": "src/client/daemon_client.rs:97", "text": "响应解析失败时直接 unwrap_or(Value::Null)，非 JSON 错误体被转换成 unknown error（:97-110），丢失服务端诊断信息并使 CLI 难以区分协议错误与业务错误。"}]}, {"id": "api_process_projects", "label": "进程、项目与 Ecosystem API", "band": "api", "path": "src/api/routes/processes.rs、projects.rs、ecosystem.rs", "desc": "把进程 CRUD、批量命名空间操作、逻辑项目聚合和 Ecosystem 导入映射到运行核心。", "coupling": "core", "deps": ["process_lifecycle", "state_persistence", "integrations_observability"], "loc": 1329, "score": 49, "grade": "D", "tags": ["any-escape", "fallback", "silent-except", "bloat", "god-component", "duplication", "glue", "over-fit"], "findings": [{"sev": "HIGH", "loc": "src/api/routes/processes.rs:47", "text": "is_env_filename 只检查 .env 前后缀（47-50），未拒绝路径分隔符；../outside.env 或 Windows 下 ..\\outside.env 会通过校验，随后在 499、526 直接与 cwd join，GET 可越界读取、PUT 可越界覆盖工作目录外文件。"}, {"sev": "MED", "loc": "src/api/routes/processes.rs:338", "text": "PATCH /processes/:id 用 StartRequest 重建完整 AppConfig，但省略字段会被重置：args/env/watch 等使用 unwrap_or_default，log_file、error_file、env_file、health_check、hooks 直接置 None/默认（338-369），而非保留 existing 配置，部分更新会破坏未提交字段。"}, {"sev": "MED", "loc": "src/api/routes/processes.rs:121", "text": "多数生命周期路由在返回成功前仅 tokio::spawn detached save_to_disk，并把失败降为 warn（121、142、153、168、179、204、373）；请求成功不代表状态已持久化，快速重启或 daemon 退出可能丢失最新状态。"}, {"sev": "MED", "loc": "src/api/routes/processes.rs:249", "text": "get_logs 对 read_merged_logs/read_merged_logs_for_date 错误统一 unwrap_or_default（248-250），get_log_dates 也在 271-272 静默返回空日期；磁盘读取失败会被客户端误显示为空日志。"}, {"sev": "MED", "loc": "src/api/routes/processes.rs:242", "text": "日志行数只解析为任意 usize，没有上限或拒绝异常值；结合底层尾读实现需要扫描完整日志，攻击者可用超大 lines 参数放大磁盘扫描和内存占用。"}, {"sev": "MED", "loc": "src/api/routes/processes.rs:110", "text": "start_process 已启动进程后才同步 save_projects（119-120）；保存失败会把请求返回为错误，但没有停止或回滚已运行的进程，调用方会看到失败而运行态已发生改变。"}, {"sev": "MED", "loc": "src/api/routes/projects.rs:323", "text": "update_project 先修改 projects store（323-347），再逐个 set_enabled（349-357）；任何成员更新失败都会直接返回，内存中的项目元数据已变更却没有事务回滚，项目与进程状态可能分裂。"}, {"sev": "MED", "loc": "src/api/routes/ecosystem.rs:30", "text": "load_ecosystem 逐个启动配置中的 app 并返回 started/errors（30-41），但该路由没有调用 save_to_disk、save_projects 或确保项目元数据；通过生态配置启动的进程在 daemon 重启后可能不被恢复。"}, {"sev": "MED", "loc": "src/api/routes/processes.rs:627", "text": "clone_process 先快照 existing_names 再选择唯一名称（627-645），没有保留名或原子占用；并发 clone 请求可以选择相同名称。克隆同时主动丢弃 log_file、error_file、env_file 和 cron 时间字段（663-671），语义边界未明确。"}, {"sev": "LOW", "loc": "src/api/routes/processes.rs:688", "text": "resolve 将 manager.resolve_id 的所有错误统一映射为 404（688-693），无法区分非法 ID、名称解析失败和真实不存在，诊断信息被静默折叠。"}, {"sev": "LOW", "loc": "src/api/routes/processes.rs:1", "text": "processes.rs 约 693 行，单文件同时承载 CRUD、生命周期、日志/SSE、指标、终端、env 文件、批量操作和 clone；职责明显泛化，且多个路由重复 detached autosave 与错误处理逻辑。"}]}, {"id": "api_security_os", "label": "认证与本机系统能力 API", "band": "api", "path": "src/api/middleware.rs 与 system/update/scripts/terminal 路由", "desc": "执行认证授权、文件系统、脚本、端口、PTY 终端、自更新和守护进程控制等高权限本机操作。", "coupling": "core", "deps": ["state_persistence", "process_lifecycle"], "loc": 2642, "score": 30, "grade": "F", "tags": ["any-escape", "fallback", "silent-except", "stub", "duplication", "bloat"], "findings": [{"sev": "HIGH", "loc": "src/api/middleware.rs:32", "text": "未配置 Web 密码时直接执行 next.run(req)，完全跳过 token 校验；src/api/mod.rs:13-34 将 system、scripts、ports、terminals、update、git 等高权限路由全部置于该中间件后，非回环暴露时可形成未授权本机能力访问。"}, {"sev": "HIGH", "loc": "src/api/routes/system.rs:196", "text": "read-env 接受请求提供的任意绝对或相对路径并直接 read_to_string；write-env 在 :217-220 对任意 path 直接 tokio::fs::write，未做根目录边界、规范化、文件类型或大小校验。"}, {"sev": "HIGH", "loc": "src/api/routes/system.rs:229", "text": "sync-env 接受任意 source_path，读取其内容并枚举同目录 env 文件后直接写回 :263-300；源文件路径和目标目录均无允许范围约束。"}, {"sev": "HIGH", "loc": "src/api/routes/terminal.rs:62", "text": "WebSocket query 的 cwd 原样传入 PTY；:123-143 启动 powershell.exe 或 SHELL 指定的 shell 并设置该 cwd。结合全局 passwordless 放行可提供远程交互式本机 Shell。"}, {"sev": "HIGH", "loc": "src/api/routes/scripts.rs:123", "text": "save_script 将请求 content 直接写入脚本目录；run_script 在 :260-318 按扩展名调用 powershell/cmd/bash/python 等解释器执行。该任意代码执行能力只依赖可绕过的全局认证。"}, {"sev": "HIGH", "loc": "src/api/routes/update.rs:151", "text": "升级 URL 仅使用 starts_with(https://github.com/) 检查，未固定仓库/资产、校验哈希或签名；:224-240 无下载大小限制，随后 :175-192 或 :198-219 执行安装器、替换当前二进制并重启。"}, {"sev": "HIGH", "loc": "src/api/routes/ports.rs:244", "text": "kill_port_process 只拒绝 PID 0；:248-275 可对任意存在 PID 调用 sysinfo Process::kill，未验证进程归属、命令行或进程树。"}, {"sev": "MED", "loc": "src/api/routes/auth.rs:104", "text": "密码登录和 :130-147 PIN 登录仅校验凭据并创建 session，没有失败次数、速率限制或临时锁定；4/6 位 PIN 尤其易受在线猜测。"}, {"sev": "MED", "loc": "src/api/routes/auth.rs:285", "text": "每次登录都向 DashMap 插入 24 小时 session；:303-305 只在被查询时检查过期，没有全局清理或数量上限，可被大量登录请求持续膨胀。"}, {"sev": "MED", "loc": "src/api/middleware.rs:67", "text": "为 EventSource 支持将 token 放入 URI query；:77-82 原样提取 token，认证凭据可能进入访问日志、代理日志、浏览器历史或 Referer。"}, {"sev": "MED", "loc": "src/api/routes/scripts.rs:361", "text": "脚本 child 被移动到独立 tokio::spawn 等待任务；SSE 事件流断开时没有取消该任务或显式终止 child，且执行没有运行时上限，可能积累后台进程。"}, {"sev": "MED", "loc": "src/api/routes/terminal.rs:221", "text": "WebSocket 输入消息直接转为字节并发送给 PTY（:223-244），没有单帧大小、总输入量、会话数或空闲超时限制；终端会话 registry 也没有容量控制。"}, {"sev": "MED", "loc": "src/api/routes/git.rs:161", "text": "git_pull 在进程 cwd 执行 git pull，并按仓库文件自动执行 npm/yarn/pnpm/pip/cargo/go 安装或构建（:164-179），未设超时、并发锁或输出上限；仓库脚本可产生额外执行副作用。"}, {"sev": "MED", "loc": "src/api/routes/terminal_history.rs:49", "text": "history key 和 CmdEntry.cmd 均无长度或字符限制；虽然单 key 截断 150 条（:60-61），但整体 HashMap 无数量上限，且每次请求完整读写文件（:25-40），并发更新可能丢失数据。"}, {"sev": "MED", "loc": "src/api/routes/ui_settings.rs:46", "text": "UI settings 接受并返回任意 serde_json::Value（:47-56），没有 schema、深度或大小限制；:32 直接覆盖文件，异常/并发时缺少原子写入。"}, {"sev": "MED", "loc": "src/api/error.rs:57", "text": "From<anyhow::Error> 直接将 e.to_string() 放入 ApiError；内部 OS 错误、路径、命令或文件信息可原样返回客户端，扩大诊断信息泄露。"}, {"sev": "LOW", "loc": "src/api/routes/auth.rs:275", "text": "四个 passkey 路由固定返回 501 stub，认证能力表面存在但实际未实现，前端调用只能得到占位错误。"}, {"sev": "LOW", "loc": "src/api/routes/auth.rs:155", "text": "logout 仅从 Authorization header 提取 token；middleware 同时支持 query token（:67-84），因此通过 SSE query 建立的 session 无法由该 logout 路由清除。"}, {"sev": "LOW", "loc": "src/api/routes/auth.rs:309", "text": "认证 token 解析逻辑在 auth.rs 与 middleware.rs 重复实现（middleware :67-84），两处仅支持精确 Bearer 前缀，存在行为漂移和维护重复。"}]}, {"id": "process_lifecycle", "label": "进程监督与日志核心", "band": "core", "path": "src/process 与 src/logging", "desc": "负责子进程启动、PID 管理、状态机、自动重启、cron、健康检查、文件监听、日志写入和指标采样。", "coupling": "core", "deps": ["state_persistence", "integrations_observability"], "loc": 3012, "score": 48, "grade": "D", "tags": ["god-component", "bloat", "duplication", "silent-except", "fallback", "stub"], "findings": [{"sev": "HIGH", "loc": "src/process/manager.rs:829", "text": "watch 模式创建 FileWatcher 后立即丢弃返回值；FileWatcher 仅持有 RecommendedWatcher（src/process/watcher.rs:11），start 返回 Self（src/process/watcher.rs:62），因此返回后 watcher 被释放，watch_paths 不会持续触发重启；同时启动错误被 let _ 丢弃。"}, {"sev": "HIGH", "loc": "src/process/manager.rs:1102", "text": "每个 cron tick 都重新 LogWriter::new 并覆盖 proc.log_writer；LogWriter 在 src/logging/writer.rs:75 订阅同一 broadcast，且只保存 JoinHandle（src/logging/writer.rs:57）而无 Drop/abort。旧任务会继续接收后续日志，导致重复写入、任务和文件句柄累积；普通重启路径也在 src/process/manager.rs:660、897 重复创建。"}, {"sev": "MED", "loc": "src/logging/rotation.rs:22", "text": "(1..max_files).rev() 使 i+1 > max_files 的删除分支（src/logging/rotation.rs:26）永远不可达，.max_files 文件不会被删除；Windows 下已有目标文件时 rename 还可能失败，导致轮转写入报错。"}, {"sev": "MED", "loc": "src/logging/writer.rs:86", "text": "写入任务用 if let Ok 和 let _ 丢弃 write_line 错误；午夜轮转在 src/logging/writer.rs:105、110 也丢弃 rotate_by_date/reopen 错误，日志可能静默停止或未轮转。"}, {"sev": "MED", "loc": "src/process/manager.rs:687", "text": "所有 spawn 路径把 env_file::merge_env 错误静默回退到 config.env（同样位于 src/process/manager.rs:910、1184），缺失或损坏的 env 文件无法被调用方区分，进程可能带着不完整环境启动。"}, {"sev": "MED", "loc": "src/process/manager.rs:487", "text": "批量 start/stop/restart 只保留成功项（src/process/manager.rs:487、515、547），单个失败没有错误结果或日志，部分生命周期失败会表现为正常返回的部分列表。"}, {"sev": "MED", "loc": "src/process/manager.rs:846", "text": "ProcessManager 同时承担 registry、重启、cron、metrics、log-alert 等职责（构造函数在 src/process/manager.rs:67-98 启动四个后台循环，文件约 1477 行）。restart_loop 的重复 spawn 分支（src/process/manager.rs:864-988）未复用 do_spawn 的 pre_start、post_start、health-check、watcher 路径（src/process/manager.rs:671-840），崩溃自动重启不会恢复完整生命周期。"}, {"sev": "MED", "loc": "src/logging/reader.rs:105", "text": "read_log_stats_today 使用 map_while(Result::ok)，BufRead 错误会被丢弃并继续返回 Ok，损坏或读取中断的日志会产生低估统计且无告警。"}, {"sev": "LOW", "loc": "src/process/rolling_restart.rs:20", "text": "公开导出的 rolling_restart（模块由 src/process/mod.rs:9 导出）仍直接返回 not yet implemented，多实例滚动重启目前是 stub，调用方无法获得该能力。"}, {"sev": "LOW", "loc": "src/logging/reader.rs:17", "text": "read_last_lines 先把整个文件读入 Vec 再截取尾部（src/logging/reader.rs:17-22）；在日志文件由 src/logging/writer.rs:15 限制到 10MB、且接口只需 n 行的情况下存在不必要的内存与扫描开销。"}]}, {"id": "state_persistence", "label": "配置、模型与 JSON 持久化", "band": "state", "path": "src/daemon/state.rs、src/config、src/models", "desc": "定义跨层数据模型并把进程、项目、认证、通知、Telegram、隧道和 AI 配置保存到本地文件。", "coupling": "core", "deps": ["process_lifecycle", "integrations_observability"], "loc": 2065, "score": 50, "grade": "D", "tags": ["fallback", "silent-except", "dual-format", "legacy", "duplication", "bloat", "stub", "over-fit"], "findings": [{"sev": "HIGH", "loc": "src/daemon/state.rs:206", "text": "恢复 cron 进程时，stale PID 存活但 kill_orphan_pid 失败只记录 warn（206-212），随后仍在 215-218 重新注册 Sleeping 和调度器；旧进程可能继续运行并与新调度实例重复执行。"}, {"sev": "MED", "loc": "src/daemon/state.rs:262", "text": "saved_app_from_snapshot 持久化 restart_count 和 autorestart_on_restore，但 restore 本身从未读取或传递这两个字段（恢复调用仅传 id/config/PID/cron history，217、226、238、246、250）；重启 daemon 后重启计数可能归零，autorestart_on_restore 成为无效状态字段。"}, {"sev": "MED", "loc": "src/daemon/state.rs:135", "text": "save_to_disk 每次使用固定 state.json.tmp，未见并发写入协调；rename 失败后删除临时文件并直接覆盖目标（137-140），既可能发生并发保存互相覆盖，也失去崩溃时的原子替换保证。"}, {"sev": "MED", "loc": "src/config/project_store.rs:33", "text": "ProjectStore 对读取或 JSON 解析错误统一 ok().and_then(...).unwrap_or_default；notification_store、tunnel_config、telegram_config、log_alert_config 也在各自 load 中静默回退默认值，损坏的持久化数据会被伪装成首次运行状态并可能在后续保存时覆盖。"}, {"sev": "MED", "loc": "src/config/auth_config.rs:128", "text": "已有 auth.json 读取或解析失败时，load 直接生成新的 master_token（137-144），并忽略 save 结果（145）；临时文件锁或损坏即可静默轮换 CLI 凭据并丢失原认证状态。"}, {"sev": "MED", "loc": "src/config/notification_store.rs:34", "text": "notifications 保存直接调用 std::fs::rename(tmp, path)，没有 Windows 覆盖替换或 fallback；同一文件已存在时 Windows rename 通常失败，通知配置更新可能无法持久化。该实现也与 project_store 的 MoveFileExW 替换逻辑（54-73）不一致。"}, {"sev": "MED", "loc": "src/models/process_info.rs:47", "text": "ProcessInfo 文件声明其结构用于 API 发送（1），但序列化字段包含完整 env HashMap（47-48）；任何返回 ProcessInfo 的接口都可能原样暴露环境变量中的凭据。"}, {"sev": "MED", "loc": "src/models/ai.rs:22", "text": "AiSettings 默认派生 Serialize/Deserialize，且直接保存 github_token、anthropic_key、openai_key（22、31、35），没有 skip 或脱敏边界；任何对该模型的序列化都会原样输出密钥。"}, {"sev": "LOW", "loc": "src/daemon/state.rs:23", "text": "SavedState 只有 saved_at 和 apps，没有 schema/version 或迁移分派；兼容性依赖零散的 serde default（36、40、45），而 load_from_disk 在解析失败时直接返回错误（148-152），未来状态结构变更缺少明确迁移边界。"}, {"sev": "LOW", "loc": "src/daemon/state.rs:226", "text": "cron_run_history 虽在 SavedApp 中持久化并在活动 cron 恢复时传递（217），但手动停止的 cron 走 register_stopped(id, config)（226），历史记录在 daemon 重启后被丢弃。"}, {"sev": "LOW", "loc": "src/config/auth_config.rs:16", "text": "StoredPasskey 仅保存 raw serde_json::Value；注释明确真实 WebAuthn backend 尚未接入（16-18），但 AuthConfig 已将其作为可持久化 passkey 记录，属于未完成的占位能力。"}]}, {"id": "integrations_observability", "label": "AI、通知、隧道与观测集成", "band": "state", "path": "src/api/routes/ai.rs、src/notifications、src/telegram、src/tunnel", "desc": "对接 AI Provider、Webhook/Telegram 通知、Cloudflare/ngrok 隧道以及日志/指标查询。", "coupling": "high", "deps": ["state_persistence", "process_lifecycle"], "loc": 4036, "score": 35, "grade": "F", "tags": ["any-escape", "fallback", "silent-except", "fake-output", "duplication", "bloat", "god-component", "glue"], "findings": [{"sev": "HIGH", "loc": "src/api/routes/ai.rs:460", "text": "openai_base_url/ollama_base_url 可由设置请求写入（:125-130），list_openai_models 随后将 API Key 发送到该 URL 的 /models（:462-465）；chat 也将 openai/ollama 请求发送到配置地址（:569-574），无协议、主机或内网地址限制，存在凭据外泄与 SSRF。"}, {"sev": "HIGH", "loc": "src/api/routes/ai.rs:809", "text": "build_system_prompt 将进程名称、命令、cwd 和最近日志原样拼入发送给外部 AI Provider 的 system prompt（:809-832）；日志是非信任输入，可能包含密钥或提示注入内容，未见脱敏、长度上限或出站数据边界。"}, {"sev": "HIGH", "loc": "src/telegram/bot.rs:147", "text": "白名单判断只在 allowed_chat_ids 非空时生效；列表为空时所有 Telegram chat/user 都继续到 :163-173 的命令分发，可调用 /start、/stop、/restart 等进程控制命令。"}, {"sev": "HIGH", "loc": "src/api/routes/notifications.rs:78", "text": "test_notification 接受调用方提供的完整 NotificationConfig 并强制触发事件（:92-106,143-145）；sender.rs 对其中 webhook/slack/teams/discord URL 直接 POST（src/notifications/sender.rs:223-240），无 URL/目标网段限制，可形成 SSRF 或外部消息滥发。"}, {"sev": "HIGH", "loc": "src/api/routes/notifications.rs:25", "text": "GET notifications 直接返回完整 NotificationsStore（:26-30），未做字段脱敏；配置对象包含 webhook、Slack、Teams、Discord 地址/凭据字段，造成集成秘密泄露。"}, {"sev": "MED", "loc": "src/api/routes/ai.rs:558", "text": "每次 chat 请求都 tokio::spawn 独立上游流任务（:558-582）；输入 history/message 在此处未见大小或并发限制，reqwest::Client::new()（:596,655,737）未设置请求超时，客户端断开后上游任务可能继续占用资源或产生计费。"}, {"sev": "MED", "loc": "src/api/routes/ai.rs:198", "text": "GitHub Device Flow 状态存放在全局 state.ai_device_auth（:203-205），auth/status 没有用户/session 绑定；不同客户端可轮询、推进或消费同一设备授权流程。"}, {"sev": "MED", "loc": "src/api/routes/ai.rs:57", "text": "AI 配置使用直接 std::fs::write 覆盖 ai-settings.json（:63-66），未见原子替换、并发写保护或文件权限处理；同时持久化 API token 等敏感配置。"}, {"sev": "MED", "loc": "src/notifications/dispatcher.rs:29", "text": "每个通知事件对每个渠道直接 tokio::spawn fire-and-forget 任务（:29-67），没有全局并发上限、队列长度或合并策略；崩溃/健康告警风暴可无限堆积任务。"}, {"sev": "MED", "loc": "src/notifications/channels/webhook.rs:15", "text": "Webhook 发送只检查 reqwest transport error，未调用 error_for_status（:15-20）；HTTP 4xx/5xx 仍可能返回 Ok，dispatcher 可能将失败通知当作成功。Slack/Discord 通道有同样模式。"}, {"sev": "MED", "loc": "src/tunnel/mod.rs:108", "text": "隧道发现 URL 超时或输出结束时仅将状态置 Failed、移除 pids 并 return（:108-121），该分支未调用 child.kill；静态代码未看到子进程终止保证，可能遗留 tunnel 进程。"}, {"sev": "MED", "loc": "src/tunnel/mod.rs:202", "text": "Custom provider 将配置中的 binary_path 直接传给 Command::new，并将 args_template 按空白拆分执行（:202-218）；API 可更新完整 TunnelSettings（src/api/routes/tunnels.rs:90-101），未见路径/参数边界或可执行文件归属校验。"}, {"sev": "MED", "loc": "src/tunnel/mod.rs:146", "text": "stop 依据保存的 PID 直接调用 kill_pid（:146-150）；kill_pid 在 Windows 使用 taskkill /F /T /PID、Unix 发送 SIGTERM（:334-349），未校验进程身份，存在 PID 复用误杀风险。"}, {"sev": "MED", "loc": "src/api/routes/tunnels.rs:127", "text": "Linux provider 安装通过 sh -c 执行 curl | sudo tee、apt-get update/install（:120-135），安装接口没有可见的超时、输出大小或并发控制；SSE 安装流同样启动该子进程（:218-246）。"}, {"sev": "MED", "loc": "src/telegram/bot.rs:167", "text": "每条 Telegram update 都创建独立 tokio::spawn 命令任务（:163-173），没有并发上限；高频消息可同时触发大量进程查询/控制与 Telegram 回包。"}, {"sev": "MED", "loc": "src/telegram/commands.rs:14", "text": "send_message 只等待 HTTP 请求完成并返回 Ok（:16-26），未解析 Telegram JSON 的 ok 字段或检查 HTTP 状态；服务端拒绝消息时上层仍可能报告成功。"}, {"sev": "MED", "loc": "src/api/routes/telegram.rs:97", "text": "allowed_chat_ids 直接接受任意长度 Vec 并持久化（:97-105），没有数量或输入大小限制；与 bot.rs 空列表放行逻辑共同扩大配置误用和资源风险。"}, {"sev": "MED", "loc": "src/api/routes/logs.rs:28", "text": "flush_logs 对运行中进程的 out.log/err.log 直接 remove_file（:28-34），未停止 writer 或协调文件句柄；Windows 可能删除失败，Unix 可能让 writer 继续写入已删除 inode，导致查询与实际日志分离。"}, {"sev": "MED", "loc": "src/api/routes/metrics.rs:24", "text": "Prometheus label 直接插入用户可控的 process name/namespace（:24-27,35-38,45-48,55-58,66-71），未转义引号、反斜杠或换行，可生成非法或伪造的指标文本。"}, {"sev": "MED", "loc": "src/api/routes/log_alerts.rs:22", "text": "PUT log-alerts 直接反序列化并整体保存 LogAlertStore，namespace override 也直接 insert（:22-39），未见阈值、冷却时间、命名空间数量或字段大小校验；异常输入可造成配置膨胀或告警风暴。"}, {"sev": "LOW", "loc": "src/tunnel/mod.rs:276", "text": "Custom provider 只从任意输出行提取第一个 https:// 字符串并保存为 public_url（:318-329），没有 URL 解析、域名或路径校验；恶意/异常 provider 输出可造成错误的公开地址展示。"}, {"sev": "LOW", "loc": "src/notifications/sender.rs:275", "text": "通知 payload 将 process name、namespace、script、PID 和重启信息发送至外部 webhook（:275-292），未见敏感字段过滤或长度限制；配置误指向第三方时可能扩大运行环境信息泄露。"}]}, {"id": "delivery_docs", "label": "构建、发布与工程文档", "band": "delivery", "path": "Cargo/package 配置、CI、安装与 docs", "desc": "定义依赖、质量命令、Windows/Linux 构建安装、GitHub Release 和面向维护者/用户的文档。", "coupling": "med", "deps": ["bootstrap_daemon", "frontend_shell"], "loc": 16576, "score": 38, "grade": "F", "tags": ["dual-format", "fallback", "silent-except", "legacy", "duplication", "placeholder", "glue", "any-escape"], "findings": [{"sev": "HIGH", "loc": ".github/workflows/release-linux.yml:271", "text": "APT 仓库签名被明确设计为可选；APT_GPG_KEY 缺失时 :275-277 直接跳过 GPG 并继续 :294-301 提交和推送 gh-pages，最终可发布未签名的软件包，破坏发行物真实性校验。"}, {"sev": "HIGH", "loc": ".github/workflows/release-linux.yml:12", "text": "整个 Linux workflow 默认授予 contents: write、pages: write、id-token: write（:12-15），权限覆盖构建、打包和发布相关 job；构建阶段还执行 npm/cargo 依赖脚本，受污染的构建依赖可获得超出构建所需的发布权限。"}, {"sev": "MED", "loc": ".github/workflows/release.yml:7", "text": "Windows release workflow 仅在 v* tag push 触发（:7-10），Windows/Linux 构建 job 只执行 npm run build 和 cargo build（Windows :54-63，Linux workflow :39-43、:84-87），没有 PR/main 的 cargo test、clippy、cargo audit、前端 test/lint 门禁。"}, {"sev": "MED", "loc": ".github/workflows/release.yml:32", "text": "发布流程使用 dtolnay/rust-toolchain@stable、actions/checkout@v4、setup-node@v4 和 softprops/action-gh-release@v2（:29-32,47-52,189-197），均未 pin 到 commit SHA；release workflow 具备 contents: write，供应链变更可直接影响发行物。"}, {"sev": "MED", "loc": "Cargo.toml:3", "text": "项目包版本为 1.1.0，但 installer/alter-setup.iss 默认 AppVersion 仍为 0.1.0（:6），docs/API.md 示例 health version 为 0.3.0（:360）；版本真相分散，依赖构建脚本或 CI 临时改写。"}, {"sev": "MED", "loc": "scripts/release.ps1:20", "text": "本地 release 脚本直接修改受版本控制的 installer/alter-setup.iss（:22-24），没有备份、回滚或 finally 清理；构建、ISCC 或哈希步骤失败后工作树会残留版本改写。"}, {"sev": "MED", "loc": ".gitignore:24", "text": "仓库忽略 winget/manifests（:24），且当前没有 winget 目录；scripts/release.ps1 :47-57 只有目录存在时才更新 WinGet SHA256，当前仓库执行发布脚本会静默跳过该完整性元数据更新。"}, {"sev": "MED", "loc": "web-ui/package.json:6", "text": "前端 package.json 以 npm scripts 和 package-lock 为主（:6-15），仓库同时保留 bun.lock；bun.lock 的 devDependencies（:23-38）缺少 package.json 中的 testing-library、msw、prettier、vitest 等条目，存在双锁文件漂移，CI 又固定使用 npm ci。"}, {"sev": "MED", "loc": "Justfile:31", "text": "Rust 测试 recipe 将 cargo nextest 的 stderr 重定向到 /dev/null，并对任意非零结果执行 cargo test（:31-34）；nextest 不可用、崩溃或测试行为差异时诊断被隐藏，可能把失败原因伪装成普通 fallback。"}, {"sev": "MED", "loc": "lefthook.yml:5", "text": "pre-commit 只覆盖 staged 前端 lint-staged 与 Rust cargo fmt --check（:5-16），没有 Rust clippy、cargo test、cargo audit、前端 test/build；本地钩子与 Justfile 的完整 lint/test 目标不一致。"}, {"sev": "MED", "loc": "scripts/build-deb.sh:13", "text": "VERSION、ARCH 和 binary-path 全部来自位置参数（:13-19），脚本不校验参数数量、架构枚举或版本格式；:43-47 将 VERSION/ARCH 直接插入 sed 替换表达式，特殊字符可破坏 control 文件或生成非预期包名。"}, {"sev": "MED", "loc": "installer/alter-setup.iss:61", "text": "安装器以 HKLM 写入系统 PATH（:61-66），并在安装后执行 setx /M PATH（:85-94）；全局环境变更和 setx 的长度或展开语义未做保护，可能破坏已有系统 PATH。"}, {"sev": "MED", "loc": "packaging/debian/prerm:5", "text": "卸载前对 alter daemon stop 和 systemctl stop/disable 的错误全部使用 2>/dev/null || true（:5-12）；服务停止失败仍继续卸载，可能留下运行进程、PID 或占用文件。"}, {"sev": "LOW", "loc": "README.md:123", "text": "根 README、release/README.md 和 docs/README.md 都维护独立安装、功能和文档索引副本（根 README :123-134，release README :114-125），没有生成或一致性校验机制，品牌、命令和版本说明容易继续漂移。"}, {"sev": "LOW", "loc": "docs/CHANGELOG.md:187", "text": "CHANGELOG 将 depends_on、rolling restart 标记为代码已提交但尚未在 binary 激活（:187-190），同时 docs/ECOSYSTEM_CONFIG.md 还公开 Reserved 或自定义日志字段（:122-125）；文档混合描述实现、预留和未来特性，发布能力边界不清。"}]}]};
+const M = DATA.modules || [];
+const BANDS = DATA.bands || [];
+const SPINE = DATA.spine || [];
+const REPORT_THEMES = DATA.reportThemes || [];
+const META = DATA.meta || {};
+/* HTML-escape every string that comes from modules.json (labels, descriptions,
+   findings, tags, paths, meta, themes, standard) before it enters innerHTML. The only
+   trusted HTML is the template's own i18n strings (tl) and the structural markup. */
+function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g, c=>(
+  {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+let BAD_TAGS = new Set(["monkeypatch","fallback","legacy","dual-format","stub","fake-output","bloat","duplication","glue","silent-except","silent-catch","any-escape","over-fit","god-component","placeholder"]);
+
+/* ---------- i18n: display language via meta.lang (module names never translated) ---------- */
+const LANG = META.lang || "en";
+const I18N = {
+ en:{ mapSuffix:"· Functional Architecture Map", sub:"functional modules · call hierarchy · coupling · quality score · LoC",
+   report:"report", searchPh:"Find a module…", allGrades:"All grades", anyIssue:"Any issue", scrollNote:"click a module · scroll to pan",
+   about:"What it does", audit:"Quality audit", clean:"no material issues — clean / well-scoped",
+   dependsOn:"Depends on / calls →", usedBy:"← Used by (dependents)", none:"— none —", clearSel:"Clear selection",
+   couplingLbl:"coupling", deps:"dependencies", dependents:"dependents", locUnit:"LoC", coreModules:"Core modules (the spine)",
+   lgCoupling:"Coupling", lgCore:"core — system spine", lgHigh:"high — many connections", lgMed:"medium", lgLow:"low — leaf / self-contained",
+   lgEdges:"Edges", lgOut:"depends on / calls →", lgIn:"← used by (dependent)",
+   introHint:"<b>Click any module</b> to see what it does, its quality score &amp; findings, what it calls (solid amber, downstream) and what depends on it (dashed gray, upstream).<br><br>Each card shows a <b>health score</b> (0–100). Toggle the color mode, filter by grade/issue, or open the <b>Audit report</b>.",
+   criticalPath:"Critical path", spineTitle:"Data-flow spine", path:"Path", healthReport:"Health report", qa:"Quality audit",
+   worst:"Worst offenders — click to inspect", commonTags:"Most-common smell tags", themes:"Cross-cutting themes", backToMap:"← Back to map", avg:"avg",
+   filter:"Filter", modulesWord:"modules", allWord:"all", noMatches:"no matches", clearFilters:"Clear filters",
+   btnReport:"Audit report", btnSpine:"Data-flow spine", colorCoupling:"Color: coupling", colorHealth:"Color: health",
+   btnStd:"Standard", stdTitle:"Audit standard", stdIntro:"How modules are scored — the same rubric for every module, language, and run. Click Edit to add your own issue tags.",
+   stdRubric:"Score → grade", stdSeverity:"Finding severity", stdTags:"Issue tags", stdCoupling:"Coupling (structural, not quality)", close:"Close",
+   stdEditBtn:"Edit", stdDone:"Done", stdExport:"Export", stdReset:"Reset", stdAddTag:"+ Tag",
+   stdEditHint:"Editing — changes save in this browser. Export → save as <code>.codemap/standard.json</code> to make them permanent and used by audits.",
+   stdNewTagId:"New tag id (e.g. perf-risk, security):", stdExported:"Saved standard.json — put it in .codemap/",
+   copyFix:"Copy fix prompt", copied:"Copied — paste into Claude Code / Codex",
+   trackedLoc:(l,f)=>`${l} tracked LoC · ${f} files` },
+ zh:{ mapSuffix:"· 功能架构图", sub:"功能模块 · 调用层级 · 耦合 · 质量评分 · 代码行数",
+   report:"报告", searchPh:"查找模块…", allGrades:"全部等级", anyIssue:"全部问题", scrollNote:"点击模块 · 滚动平移",
+   about:"模块简介", audit:"质量审计", clean:"无实质问题 —— 干净、职责单一",
+   dependsOn:"依赖 / 调用 →", usedBy:"← 被谁依赖", none:"— 无 —", clearSel:"清除选择",
+   couplingLbl:"耦合", deps:"个依赖", dependents:"个被依赖", locUnit:"行", coreModules:"核心模块（主线）",
+   lgCoupling:"耦合", lgCore:"core — 系统主线枢纽", lgHigh:"high — 连接很多", lgMed:"medium — 中等", lgLow:"low — 叶子 / 自洽",
+   lgEdges:"连线", lgOut:"依赖 / 调用 →", lgIn:"← 被依赖",
+   introHint:"<b>点击任意模块</b>查看它在做什么、质量评分与问题、它调用了谁（实线琥珀＝下游）以及谁依赖它（虚线灰＝上游）。<br><br>每张卡片都有<b>健康分</b>（0–100）。可切换配色模式、按等级或问题筛选，或打开<b>审计报告</b>。",
+   criticalPath:"关键路径", spineTitle:"数据流主线", path:"路径", healthReport:"健康报告", qa:"质量审计",
+   worst:"最差模块 —— 点击查看", commonTags:"最常见问题标签", themes:"跨模块共性问题", backToMap:"← 返回地图", avg:"平均",
+   filter:"筛选", modulesWord:"个模块", allWord:"全部", noMatches:"无匹配", clearFilters:"清除筛选",
+   btnReport:"审计报告", btnSpine:"数据流主线", colorCoupling:"配色：耦合", colorHealth:"配色：健康度",
+   btnStd:"评判标准", stdTitle:"评判标准", stdIntro:"模块如何打分 —— 所有模块、所有语言、每一次运行都用同一套标准。点「编辑」可加入你自己的问题标签。",
+   stdRubric:"分数 → 等级", stdSeverity:"问题严重度", stdTags:"问题标签", stdCoupling:"耦合（结构维度，非质量）", close:"关闭",
+   stdEditBtn:"编辑", stdDone:"完成", stdExport:"导出", stdReset:"重置", stdAddTag:"+ 标签",
+   stdEditHint:"编辑中 —— 改动保存在本浏览器。导出 → 存为 <code>.codemap/standard.json</code> 即永久生效并被审计采用。",
+   stdNewTagId:"新标签 id（如 perf-risk、security）：", stdExported:"已生成 standard.json —— 放到 .codemap/ 下",
+   copyFix:"复制修复指令", copied:"已复制 —— 粘贴到 Claude Code / Codex",
+   trackedLoc:(l,f)=>`${l} 行（已跟踪）· ${f} 个文件` },
+};
+function tl(k){ const d=I18N[LANG]||I18N.en; return d[k]!=null?d[k]:(I18N.en[k]!=null?I18N.en[k]:k); }
+document.documentElement.lang = LANG;
+function stdText(o){ return o ? (LANG==="zh" ? (o.zh||o.en||"") : (o.en||o.zh||"")) : ""; }
+
+/* ---------- the audit standard — editable, configurable, its own page ----------
+   Effective standard = a saved browser draft (user edits), else the injected file
+   (DATA.standard, from .codemap/standard.json or the skill default), else
+   this built-in fallback. Edit it on the Standard page and Export to standard.json
+   to make it permanent and used by audits. Custom tags flow through the whole map. */
+const BUILTIN_STD = {
+  rubric:[
+    {grade:"A",score:95,range:"90–100",en:"clean, well-scoped, idiomatic",zh:"干净、职责单一、地道"},
+    {grade:"B",score:82,range:"75–89",en:"minor issues: a documented shim, mild bloat",zh:"小问题：有文档的兼容、轻微臃肿"},
+    {grade:"C",score:67,range:"60–74",en:"notable hacks / fallbacks / bloat / duplication",zh:"明显的 hack / 回退 / 臃肿 / 重复"},
+    {grade:"D",score:50,range:"40–59",en:"significant legacy / stubs / duplication, or a protocol violation",zh:"严重的遗留 / 占位 / 重复，或协议违规"},
+    {grade:"F",score:25,range:"0–39",en:"broken, fake output, or unfinished-but-wired",zh:"损坏、伪造输出，或未完成却已接线"},
+  ],
+  severities:[
+    {key:"HIGH",en:"wrong / dangerous / fake, a protocol or security issue, or a genuine maintenance hazard",zh:"错误 / 危险 / 伪造、协议或安全问题，或真正的维护地雷"},
+    {key:"MED",en:"a real smell a maintainer should fix",zh:"维护者该修的真坏味"},
+    {key:"LOW",en:"a documented shim, a cosmetic cast, benign bloat — worth noting, not urgent",zh:"有文档的兼容、装饰性 cast、良性臃肿 —— 值得记、不紧急"},
+  ],
+  coupling:[
+    {key:"core",en:"system spine — central to almost everything",zh:"系统主线 —— 几乎牵连一切"},
+    {key:"high",en:"many connections",zh:"连接很多"},
+    {key:"med",en:"moderate",zh:"中等"},
+    {key:"low",en:"leaf / self-contained",zh:"叶子 / 自洽"},
+  ],
+  tags:[
+    {id:"monkeypatch",label:"monkeypatch",labelZh:"猴补丁",bad:true,en:"runtime mutation of another module / stdlib / vendor; reflection or prototype patching",zh:"运行时改写别的模块/标准库/依赖；反射或原型补丁"},
+    {id:"fallback",label:"fallback",labelZh:"回退兜底",bad:true,en:"'try the real thing, then fake/degrade'; a||b||c chains that hide which value is real",zh:"“先试真的再退化/造假”；a||b||c 掩盖哪个是真值"},
+    {id:"silent-except",label:"silent-except",labelZh:"静默吞错",bad:true,en:"swallowed errors: empty catch / except:pass / ignored return codes",zh:"吞掉错误：空 catch / except:pass / 忽略返回码"},
+    {id:"legacy",label:"legacy",labelZh:"遗留",bad:true,en:"deprecated/back-compat shims, dead-but-shipped code, parallel old+new paths",zh:"遗留/兼容垫片、已发布的死代码、新旧并存"},
+    {id:"dual-format",label:"dual-format",labelZh:"双格式",bad:true,en:"accepting two shapes for one field (snake||camel), patched through the code",zh:"同一字段接受两种形态（snake||camel）并散落各处"},
+    {id:"stub",label:"stub",labelZh:"占位桩",bad:true,en:"NotImplemented / TODO / dead buttons / demo scripts presented as real",zh:"未实现/TODO/死按钮/演示脚本当成品"},
+    {id:"fake-output",label:"fake-output",labelZh:"伪造输出",bad:true,en:"returns random/canned/hardcoded results where real work is implied",zh:"本应真算的地方返回随机/写死结果"},
+    {id:"duplication",label:"duplication",labelZh:"重复",bad:true,en:"copy-pasted logic, or an existing shared abstraction not reused",zh:"复制粘贴，或已有共享抽象却不复用"},
+    {id:"bloat",label:"bloat",labelZh:"臃肿",bad:true,en:"oversized file / function; too many responsibilities in one unit",zh:"超大文件/函数；单元职责过多"},
+    {id:"glue",label:"glue",labelZh:"胶水",bad:true,en:"valueless pass-through: rows of thin forwarders / no-op adapters",zh:"无价值透传：成片薄包装 / 零转换适配器"},
+    {id:"any-escape",label:"any-escape",labelZh:"类型逃逸",bad:true,en:"bypassing the type system: as any / @ts-ignore / dynamic / void* / reinterpret_cast / unsafe",zh:"绕过类型系统：as any / @ts-ignore / dynamic / void* / reinterpret_cast / unsafe"},
+    {id:"over-fit",label:"over-fit",labelZh:"过度特化",bad:true,en:"hardcoded to one case where a small generalization was expected",zh:"硬编码单一情况，本应小幅泛化"},
+    {id:"god-component",label:"god-component",labelZh:"上帝组件",bad:true,en:"one component/class/file doing far too much",zh:"一个组件/类/文件做太多事"},
+    {id:"placeholder",label:"placeholder",labelZh:"占位",bad:true,en:"unfinished UI / data presented as if complete",zh:"未完成的 UI/数据当作已完成"},
+    {id:"clean",label:"clean",labelZh:"干净",bad:false,en:"no material issues — well-scoped",zh:"无实质问题 —— 职责单一"},
+  ],
+};
+const STD_KEY = "codemap.standard."+(META.project||"default");
+function loadStdDraft(){ try{ const s=localStorage.getItem(STD_KEY); return s?JSON.parse(s):null; }catch(e){ return null; } }
+let STDDATA = loadStdDraft() || JSON.parse(JSON.stringify(DATA.standard || BUILTIN_STD));
+const TAGMETA = {};
+function rebuildTagMeta(){
+  for(const k in TAGMETA) delete TAGMETA[k];
+  (STDDATA.tags||[]).forEach(t=>TAGMETA[t.id]=t);
+  BAD_TAGS = new Set((STDDATA.tags||[]).filter(t=>t.bad!==false).map(t=>t.id));
+}
+function tagMeta(id){ return TAGMETA[id] || {id,label:id,bad:true}; }
+function tagLabel(t){ const m=tagMeta(t); return LANG==="zh" ? (m.labelZh||m.label||t) : (m.label||t); }
+rebuildTagMeta();
+
+/* problems POP (saturated red→amber), good RECEDES (pale low-sat green).
+   The cue is saturation/lightness, not hue — colorblind-friendlier. */
+function healthColor(s){
+  if(s==null) return "#6b7280";
+  const stops=[[0,[224,78,74]],[42,[226,128,66]],[60,[222,172,52]],
+               [74,[214,180,72]],[82,[168,180,140]],[100,[150,178,150]]];
+  s=Math.max(0,Math.min(100,s));
+  let a=stops[0], b=stops[stops.length-1];
+  for(let i=0;i<stops.length-1;i++){ if(s>=stops[i][0] && s<=stops[i+1][0]){a=stops[i];b=stops[i+1];break;} }
+  const t=(s-a[0])/((b[0]-a[0])||1);
+  const c=a[1].map((v,k)=>Math.round(v+(b[1][k]-v)*t));
+  return `rgb(${c[0]},${c[1]},${c[2]})`;
+}
+const byId = Object.fromEntries(M.map(m=>[m.id,m]));
+const dependentsOf = id => M.filter(m=>(m.deps||[]).includes(id)).map(m=>m.id);
+
+const board=document.getElementById("board");
+const svg=document.getElementById("edges");
+const detail=document.getElementById("detail");
+const cardEl={};
+
+document.getElementById("projTitle").innerHTML = esc(META.project||"Project")+` <span>${tl('mapSuffix')}</span>`;
+document.getElementById("subLine").innerHTML = esc(META.subtitle||tl('sub'))+
+  (META.mdPath?`  ·  <a href="${esc(META.mdPath.split('/').pop())}" style="color:var(--accent);text-decoration:none">${tl('report')} ↗</a>`:"");
+/* localize static header chrome (module names/labels are never translated) */
+document.querySelector(".scrollnote").textContent = tl("scrollNote");
+document.getElementById("search").placeholder = tl("searchPh");
+document.getElementById("reportBtn").textContent = tl("btnReport");
+document.getElementById("spineBtn").textContent = tl("btnSpine");
+document.getElementById("stdBtn").textContent = tl("btnStd");
+document.getElementById("gradeFilter").options[0].textContent = tl("allGrades");
+document.getElementById("tagFilter").options[0].textContent = tl("anyIssue");
+
+BANDS.forEach(b=>{
+  if(b.wire){
+    const w=document.createElement("div"); w.className="wire";
+    w.innerHTML=`<div class="line"></div><div class="lbl">${esc(b.t||"boundary")}</div><div class="line"></div>`;
+    board.appendChild(w); return;
+  }
+  const band=document.createElement("div"); band.className=`band tier-${b.tier||""}`;
+  const items=M.filter(m=>m.band===b.id);
+  const gloc=items.reduce((a,m)=>a+(m.loc||0),0);
+  const head=document.createElement("div"); head.className="band-head";
+  head.innerHTML=`<span class="t">${esc(b.t||b.id)}</span><span class="d">${esc(b.d||"")}</span>`+
+    `<span class="num">${items.length}</span><span class="num gloc">${gloc.toLocaleString()} ${tl('locUnit')}</span>`;
+  band.appendChild(head);
+  const body=document.createElement("div"); body.className="band-body";
+  items.forEach(m=>{
+    const n=document.createElement("div");
+    n.className=`node c-${m.coupling||"low"}`; n.dataset.id=m.id;
+    if(m.score!=null) n.style.setProperty("--h",healthColor(m.score));
+    const chip=m.score!=null?`<span class="chip">${m.score}</span>`:"";
+    const locStr=m.loc!=null?` · ${Number(m.loc).toLocaleString()} ${tl('locUnit')}`:"";
+    n.innerHTML=`${chip}<div class="lab">${esc(m.label)}</div><div class="meta">${esc(m.grade||"–")} · ${(m.deps||[]).length}→ ${dependentsOf(m.id).length}←${locStr}</div>`;
+    n.addEventListener("click",e=>{e.stopPropagation();select(m.id)});
+    body.appendChild(n); cardEl[m.id]=n;
+  });
+  band.appendChild(body); board.appendChild(band);
+});
+
+function center(el){const r=el.getBoundingClientRect(), br=board.getBoundingClientRect();
+  return {x:r.left-br.left+r.width/2, y:r.top-br.top+r.height/2, w:r.width, h:r.height};}
+function clip(c,from){const dx=from.x-c.x, dy=from.y-c.y, hw=c.w/2+2, hh=c.h/2+2;
+  if(dx===0&&dy===0) return c;
+  const s=Math.min(hw/Math.abs(dx||1e-6), hh/Math.abs(dy||1e-6));
+  return {x:c.x+dx*s, y:c.y+dy*s};}
+function edge(aEl,bEl,kind){
+  const ca=center(aEl), cb=center(bEl), a=clip(ca,cb), b=clip(cb,ca);
+  const dy=b.y-a.y, k=Math.min(Math.abs(dy)*0.4+30,150);
+  const p=document.createElementNS("http://www.w3.org/2000/svg","path");
+  p.setAttribute("d",`M${a.x},${a.y} C${a.x},${a.y+(dy>=0?k:-k)} ${b.x},${b.y-(dy>=0?k:-k)} ${b.x},${b.y}`);
+  p.setAttribute("fill","none");
+  p.setAttribute("stroke",kind==="out"?"var(--out)":"var(--in)");
+  p.setAttribute("stroke-width",kind==="out"?"1.9":"1.5");
+  p.setAttribute("stroke-opacity",kind==="out"?"0.95":"0.6");
+  if(kind==="in")p.setAttribute("stroke-dasharray","4 3");
+  p.setAttribute("marker-end",kind==="out"?"url(#ah-out)":"url(#ah-in)");
+  svg.appendChild(p);
+}
+function clearEdges(){[...svg.querySelectorAll("path")].forEach(p=>p.remove());}
+
+let current=null, spineOn=false;
+function resetClasses(){board.classList.remove("has-sel");
+  Object.values(cardEl).forEach(n=>n.classList.remove("sel","dep","dependent","lit"));}
+function select(id){
+  if(current===id){clearSel();return;}
+  current=id; spineOn=false; document.getElementById("spineBtn").classList.remove("active");
+  clearEdges(); resetClasses();
+  const m=byId[id]; const outs=(m.deps||[]); const ins=dependentsOf(id);
+  board.classList.add("has-sel"); cardEl[id].classList.add("sel","lit");
+  outs.forEach(d=>{cardEl[d]&&(cardEl[d].classList.add("dep","lit"),edge(cardEl[id],cardEl[d],"out"));});
+  ins.forEach(d=>{cardEl[d]&&(cardEl[d].classList.add("dependent","lit"),edge(cardEl[d],cardEl[id],"in"));});
+  renderDetail(m,outs,ins);
+  cardEl[id].scrollIntoView({block:"nearest",inline:"nearest",behavior:"smooth"});
+}
+function clearSel(){current=null; clearEdges(); resetClasses(); renderIntro();}
+function showSpine(){
+  current=null; clearEdges(); resetClasses(); board.classList.add("has-sel");
+  spineOn=true; document.getElementById("spineBtn").classList.add("active");
+  SPINE.forEach(id=>cardEl[id]&&cardEl[id].classList.add("lit"));
+  for(let i=0;i<SPINE.length-1;i++){const a=cardEl[SPINE[i]],b=cardEl[SPINE[i+1]];
+    if(a&&b){a.classList.add("sel");b.classList.add("sel");edge(a,b,"out");}}
+  detail.innerHTML=`<div class="detail"><div class="kicker">${tl('criticalPath')}</div><h2>${tl('spineTitle')}</h2>
+    <p class="desc">${esc(META.spineDesc||"The system's critical request path, end to end.")}</p>
+    <div class="reltitle">${tl('path')}</div>
+    <div class="rel">${SPINE.map(id=>byId[id]?`<button data-go="${esc(id)}"><span>${esc(byId[id].label)}</span><span class="bnd">${esc(byId[id].coupling)}</span></button>`:"").join("")}</div>
+    ${legendHTML()}</div>`;
+  bindGo();
+}
+function auditHTML(m){
+  if(m.score==null) return "";
+  const col=healthColor(m.score);
+  const tags=(m.tags||[]).map(t=>`<span class="tg ${t==='clean'?'ok':(BAD_TAGS.has(t)?'bad':'')}">${esc(tagLabel(t))}</span>`).join("");
+  const sevCls=s=>({HIGH:"HIGH",MED:"MED",LOW:"LOW"}[s]||"LOW");
+  const fnd=(m.findings||[]).length
+    ? m.findings.map(f=>`<div class="finding sev-${sevCls(f.sev)}"><div class="top"><span class="sev sev-${sevCls(f.sev)}">${esc(f.sev)}</span><span class="loc">${esc(f.loc||"")}</span></div><div class="txt">${esc(f.text||"")}</div></div>`).join("")
+    : `<div class="none">${tl('clean')}</div>`;
+  return `<div class="reltitle" style="margin-top:6px">${tl('audit')}</div>`+`
+    <div class="scorebox"><span class="big" style="color:${col}">${m.score}</span>
+      <span class="gr grade-${esc(m.grade)}">${esc(m.grade)}</span>
+      <span class="bar"><i style="width:${m.score}%;background:${col}"></i></span></div>
+    <div class="tagchips">${tags}</div><div class="findings">${fnd}</div>`;
+}
+function renderDetail(m,outs,ins){
+  const li=arr=>arr.length?arr.map(id=>byId[id]?`<button data-go="${esc(id)}"><span>${esc(byId[id].label)}</span><span class="bnd">${esc(byId[id].band)}</span></button>`:"").join(""):`<div class="none">${tl('none')}</div>`;
+  detail.innerHTML=`<div class="detail"><div class="kicker">${esc(bandTitle(m.band))}</div>
+    <h2>${esc(m.label)}</h2><div class="path">${esc(m.path||"")}</div>
+    <div class="pill-row"><span class="pill cpl">${tl('couplingLbl')}: ${esc(m.coupling)}</span>
+      ${m.loc!=null?`<span class="pill">${Number(m.loc).toLocaleString()} ${tl('locUnit')}</span>`:""}
+      <span class="pill">${outs.length} ${tl('deps')}</span><span class="pill">${ins.length} ${tl('dependents')}</span></div>
+    ${m.desc?`<div class="reltitle">${tl('about')}</div><p class="desc">${esc(m.desc)}</p>`:""}
+    ${auditHTML(m)}
+    <div class="reltitle"><span class="dotc" style="background:var(--out)"></span>${tl('dependsOn')}</div>
+    <div class="rel">${li(outs)}</div>
+    <div class="reltitle"><span class="dotc" style="background:var(--in)"></span>${tl('usedBy')}</div>
+    <div class="rel">${li(ins)}</div>
+    ${m.score!=null?`<button class="btn clearbtn" id="copyFixBtn" style="margin-top:14px">${tl('copyFix')} ↗</button>`:""}
+    <button class="btn clearbtn" id="clearBtn" style="margin-top:8px">${tl('clearSel')}</button></div>`;
+  bindGo(); document.getElementById("clearBtn").addEventListener("click",clearSel);
+  const cf=document.getElementById("copyFixBtn");
+  if(cf) cf.onclick=()=>{ copyText("/codemap fix "+m.id); toast(tl('copied')); };
+}
+function bindGo(){detail.querySelectorAll("[data-go]").forEach(b=>b.addEventListener("click",()=>select(b.dataset.go)));}
+function bandTitle(b){return (BANDS.find(x=>x.id===b)||{}).t||b;}
+function legendHTML(){
+  return `<div class="legend"><h4>${tl('lgCoupling')}</h4>
+    <div class="row"><span class="swatch" style="background:var(--c-core)"></span>${tl('lgCore')}</div>
+    <div class="row"><span class="swatch" style="background:var(--c-high)"></span>${tl('lgHigh')}</div>
+    <div class="row"><span class="swatch" style="background:var(--c-med)"></span>${tl('lgMed')}</div>
+    <div class="row"><span class="swatch" style="background:var(--c-low)"></span>${tl('lgLow')}</div>
+    <h4 style="margin-top:18px">${tl('lgEdges')}</h4>
+    <div class="row"><span class="ln" style="border-color:var(--out)"></span>${tl('lgOut')}</div>
+    <div class="row"><span class="ln" style="border-color:var(--in);border-top-style:dashed"></span>${tl('lgIn')}</div></div>`;
+}
+function renderIntro(){
+  const cores=M.filter(m=>m.coupling==="core");
+  detail.innerHTML=`<div class="detail"><div class="empty-hint">${tl('introHint')}</div>
+    ${cores.length?`<div class="reltitle" style="margin-top:22px">${tl('coreModules')}</div>
+    <div class="rel">${cores.map(m=>`<button data-go="${esc(m.id)}"><span>${esc(m.label)}</span><span class="bnd">${esc(m.band)}</span></button>`).join("")}</div>`:""}
+    ${legendHTML()}</div>`;
+  bindGo();
+}
+function renderReport(){
+  current=null; spineOn=false; clearEdges(); resetClasses();
+  document.getElementById("spineBtn").classList.remove("active");
+  const scored=M.filter(m=>m.score!=null);
+  if(!scored.length){renderIntro();return;}
+  const avg=Math.round(scored.reduce((a,m)=>a+m.score,0)/scored.length);
+  const gc={A:0,B:0,C:0,D:0,F:0}; scored.forEach(m=>gc[m.grade]!=null&&gc[m.grade]++);
+  const worst=[...scored].sort((a,b)=>a.score-b.score).slice(0,10);
+  const tagCount={}; scored.forEach(m=>(m.tags||[]).forEach(t=>{if(BAD_TAGS.has(t))tagCount[t]=(tagCount[t]||0)+1;}));
+  const topTags=Object.entries(tagCount).sort((a,b)=>b[1]-a[1]).slice(0,8);
+  const locLine=META.locLine||(META.tracked_loc?tl('trackedLoc')(Number(META.tracked_loc).toLocaleString(),META.tracked_files||"?"):"");
+  detail.innerHTML=`<div class="report">
+    <div class="kicker" style="font-family:var(--mono);font-size:10px;color:var(--accent);letter-spacing:.5px">${tl('qa')} · ${scored.length} ${tl('modulesWord')}</div>
+    <h2 style="font-size:18px;margin:5px 0 2px;font-weight:650">${tl('healthReport')}</h2>
+    <div class="path" style="color:var(--faint);font-size:11px;margin-bottom:4px">${["monkeypatch","fallback","legacy","stub","bloat","duplication","dual-format"].map(tagLabel).join(" · ")}</div>
+    ${locLine?`<div class="path" style="color:var(--muted);font-size:11px;margin-bottom:2px">${esc(locLine)}</div>`:""}
+    <div class="stat-grid">
+      <div class="stat"><div class="n" style="color:${healthColor(avg)}">${avg}</div><div class="l">${tl('avg')}</div></div>
+      <div class="stat"><div class="n grade-A">${gc.A}</div><div class="l">A</div></div>
+      <div class="stat"><div class="n grade-B">${gc.B}</div><div class="l">B</div></div>
+      <div class="stat"><div class="n grade-C">${gc.C}</div><div class="l">C</div></div>
+      <div class="stat"><div class="n grade-D" style="color:#e0524b">${gc.D+gc.F}</div><div class="l">D/F</div></div>
+    </div>
+    <h3>${tl('worst')}</h3>
+    <div class="rel">${worst.map(m=>`<button data-go="${esc(m.id)}"><span>${esc(m.label)}</span><span class="bnd" style="color:${healthColor(m.score)}">${m.score} · ${esc(m.grade)}</span></button>`).join("")}</div>
+    ${topTags.length?`<h3>${tl('commonTags')}</h3><div class="tagchips">${topTags.map(([t,n])=>`<span class="tg bad">${esc(tagLabel(t))} ·${n}</span>`).join("")}</div>`:""}
+    ${REPORT_THEMES.length?`<h3>${tl('themes')}</h3>${REPORT_THEMES.map(([h,b])=>`<p class="theme"><b>${esc(h)}.</b> ${esc(b)}</p>`).join("")}`:""}
+    <button class="btn clearbtn" id="toMapBtn">${tl('backToMap')}</button></div>`;
+  bindGo(); document.getElementById("toMapBtn").addEventListener("click",clearSel);
+}
+function toast(msg){
+  let t=document.getElementById("toast");
+  if(!t){ t=document.createElement("div"); t.id="toast"; t.className="toast"; document.body.appendChild(t); }
+  t.textContent=msg; t.classList.add("show");
+  clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove("show"),2400);
+}
+function copyText(s){
+  if(navigator.clipboard) { navigator.clipboard.writeText(s).catch(()=>{}); return; }
+  const ta=document.createElement("textarea"); ta.value=s; document.body.appendChild(ta); ta.select();
+  try{ document.execCommand("copy"); }catch(e){} ta.remove();
+}
+let STD_EDIT=false;
+function openStandard(){ STD_EDIT=false; renderStd(); document.getElementById("stdModal").classList.add("open"); }
+function closeStandard(){ document.getElementById("stdModal").classList.remove("open"); }
+function saveStdDraft(){ try{ localStorage.setItem(STD_KEY, JSON.stringify(STDDATA)); }catch(e){} rebuildTagMeta(); }
+function langKey(){ return LANG==="zh" ? "zh" : "en"; }
+function renderStd(){
+  const ed=STD_EDIT, ce=ed?' contenteditable="true" spellcheck="false"':'';
+  const rubric=STDDATA.rubric.map((x,i)=>`<div class="std-row"><span class="std-badge" style="background:${healthColor(x.score)}">${esc(x.grade)}</span><span class="std-range">${esc(x.range)}</span><span class="std-desc"${ce} data-k="rubric" data-i="${i}">${esc(stdText(x))}</span></div>`).join("");
+  const sev=STDDATA.severities.map((x,i)=>`<div class="std-row"><span class="std-key"><span class="sev sev-${esc(x.key)}">${esc(x.key)}</span></span><span class="std-desc"${ce} data-k="sev" data-i="${i}">${esc(stdText(x))}</span></div>`).join("");
+  const tags=STDDATA.tags.map((x,i)=>`<div class="std-row"><span class="std-key"><span class="tg ${x.bad===false?'ok':'bad'}"${ce} data-k="taglabel" data-i="${i}">${esc(LANG==="zh"?(x.labelZh||x.label):x.label)}</span></span><span class="std-desc"${ce} data-k="tag" data-i="${i}">${esc(stdText(x))}</span>${ed?`<button class="xrm" data-rm="${i}" title="remove">✕</button>`:''}</div>`).join("");
+  const coup=STDDATA.coupling.map((x,i)=>`<div class="std-row"><span class="std-key" style="font-family:var(--mono);font-size:11.5px;color:var(--ink)">${esc(x.key)}</span><span class="std-desc"${ce} data-k="coup" data-i="${i}">${esc(stdText(x))}</span></div>`).join("");
+  document.getElementById("stdModal").innerHTML=`<div class="sheet">
+    <div class="xbtn" style="display:flex;gap:6px">
+      <button class="btn ${ed?'active':''}" id="stdEdit">${ed?tl('stdDone'):tl('stdEditBtn')}</button>
+      ${ed?`<button class="btn" id="stdExport">${tl('stdExport')}</button><button class="btn" id="stdReset">${tl('stdReset')}</button>`:''}
+      <button class="btn" id="stdClose">${tl('close')}</button>
+    </div>
+    <h2>${tl('stdTitle')}</h2><div class="intro">${ed?tl('stdEditHint'):tl('stdIntro')}</div>
+    <div class="std-h4">${tl('stdRubric')}</div>${rubric}
+    <div class="std-h4">${tl('stdSeverity')}</div>${sev}
+    <div class="std-h4">${tl('stdTags')}${ed?` <button class="btn" id="stdAddTag" style="margin-left:8px;padding:2px 8px">${tl('stdAddTag')}</button>`:''}</div>${tags}
+    <div class="std-h4">${tl('stdCoupling')}</div>${coup}</div>`;
+  document.getElementById("stdClose").onclick=closeStandard;
+  document.getElementById("stdEdit").onclick=()=>{STD_EDIT=!STD_EDIT; renderStd();};
+  if(ed){
+    document.getElementById("stdExport").onclick=()=>{
+      const blob=new Blob([JSON.stringify(STDDATA,null,1)],{type:"application/json"});
+      const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="standard.json"; a.click();
+      toast(tl('stdExported'));
+    };
+    document.getElementById("stdReset").onclick=()=>{
+      try{localStorage.removeItem(STD_KEY);}catch(e){}
+      STDDATA=JSON.parse(JSON.stringify(DATA.standard||BUILTIN_STD)); rebuildTagMeta(); renderStd();
+    };
+    document.getElementById("stdAddTag").onclick=()=>{
+      const id=(prompt(tl('stdNewTagId'))||"").trim().toLowerCase().replace(/\s+/g,"-");
+      if(!id || STDDATA.tags.some(t=>t.id===id)) return;
+      STDDATA.tags.push({id,label:id,labelZh:id,bad:true,en:"",zh:""}); saveStdDraft(); renderStd();
+    };
+    document.querySelectorAll("#stdModal [data-rm]").forEach(b=>b.onclick=()=>{STDDATA.tags.splice(+b.dataset.rm,1); saveStdDraft(); renderStd();});
+    document.querySelectorAll("#stdModal [data-k]").forEach(el=>el.addEventListener("input",()=>{
+      const i=+el.dataset.i, v=el.textContent, lk=langKey();
+      const k=el.dataset.k;
+      if(k==="rubric") STDDATA.rubric[i][lk]=v;
+      else if(k==="sev") STDDATA.severities[i][lk]=v;
+      else if(k==="coup") STDDATA.coupling[i][lk]=v;
+      else if(k==="tag") STDDATA.tags[i][lk]=v;
+      else if(k==="taglabel") STDDATA.tags[i][LANG==="zh"?"labelZh":"label"]=v;
+      saveStdDraft();
+    }));
+  }
+}
+function toggleHealth(){
+  const on=!board.classList.contains("show-health");
+  board.classList.toggle("show-health",on);
+  const b=document.getElementById("healthBtn");
+  b.classList.toggle("active",on); b.textContent=on?tl('colorHealth'):tl('colorCoupling');
+}
+/* ---------- filtering: search + grade threshold + issue tag (combined, AND) ---------- */
+let filterGrade=null, filterTag=null, searchQuery="";
+function filtersActive(){return filterGrade!=null||filterTag!=null||searchQuery!=="";}
+function matchesFilter(m){
+  if(filterGrade!=null && !(m.score!=null && m.score<filterGrade)) return false;
+  if(filterTag && !(m.tags||[]).includes(filterTag)) return false;
+  if(searchQuery){const q=searchQuery;
+    if(!(m.label.toLowerCase().includes(q)||m.id.toLowerCase().includes(q)||(m.desc||"").toLowerCase().includes(q))) return false;}
+  return true;
+}
+function runFilter(){
+  if(!filtersActive()){document.getElementById("fcount").textContent="";clearSel();return;}
+  current=null; spineOn=false; document.getElementById("spineBtn").classList.remove("active");
+  clearEdges(); resetClasses(); board.classList.add("has-sel");
+  document.getElementById("gradeFilter").classList.toggle("on",filterGrade!=null);
+  document.getElementById("tagFilter").classList.toggle("on",!!filterTag);
+  let n=0;
+  M.forEach(m=>{ if(matchesFilter(m)){cardEl[m.id].classList.add("lit");n++;} });
+  document.getElementById("fcount").textContent=n+" / "+M.length;
+  const matches=M.filter(matchesFilter).sort((a,b)=>(a.score??999)-(b.score??999));
+  const gl={90:"≤ B",75:"≤ C",60:"≤ D",40:"F"}[filterGrade];
+  const crit=[gl||"",filterTag?("#"+esc(tagLabel(filterTag))):"",searchQuery?('"'+esc(searchQuery)+'"'):""].filter(Boolean).join("  ·  ");
+  detail.innerHTML=`<div class="detail"><div class="kicker">${tl('filter')}</div>
+    <h2>${n} ${tl('modulesWord')}</h2><div class="path">${crit||tl('allWord')}</div>
+    <div class="rel">${matches.map(m=>`<button data-go="${esc(m.id)}"><span>${esc(m.label)}</span><span class="bnd" style="color:${healthColor(m.score)}">${m.score!=null?m.score+" · "+esc(m.grade):""}</span></button>`).join("")||`<div class="none">${tl('noMatches')}</div>`}</div>
+    <button class="btn clearbtn" id="clearFilterBtn">${tl('clearFilters')}</button></div>`;
+  bindGo(); document.getElementById("clearFilterBtn").addEventListener("click",resetFilters);
+}
+function resetFilters(){
+  filterGrade=null; filterTag=null; searchQuery="";
+  document.getElementById("gradeFilter").value=""; document.getElementById("gradeFilter").classList.remove("on");
+  document.getElementById("tagFilter").value=""; document.getElementById("tagFilter").classList.remove("on");
+  document.getElementById("search").value=""; document.getElementById("fcount").textContent="";
+  clearSel();
+}
+/* populate the issue-tag dropdown from the negative tags present, by frequency */
+(function(){
+  const cnt={}; M.forEach(m=>(m.tags||[]).forEach(t=>{if(BAD_TAGS.has(t))cnt[t]=(cnt[t]||0)+1;}));
+  const sel=document.getElementById("tagFilter");
+  Object.entries(cnt).sort((a,b)=>b[1]-a[1]).forEach(([t,c])=>{
+    const o=document.createElement("option"); o.value=t; o.textContent=`${tagLabel(t)} (${c})`; sel.appendChild(o);});
+})();
+document.getElementById("search").addEventListener("input",e=>{searchQuery=e.target.value.trim().toLowerCase();runFilter();});
+document.getElementById("search").addEventListener("keydown",e=>{
+  if(e.key==="Enter"){const lit=board.querySelector(".node.lit");if(lit)select(lit.dataset.id);}});
+document.getElementById("gradeFilter").addEventListener("change",e=>{filterGrade=e.target.value?Number(e.target.value):null;runFilter();});
+document.getElementById("tagFilter").addEventListener("change",e=>{filterTag=e.target.value||null;runFilter();});
+document.getElementById("healthBtn").addEventListener("click",toggleHealth);
+document.getElementById("reportBtn").addEventListener("click",renderReport);
+document.getElementById("spineBtn").addEventListener("click",()=>{spineOn?clearSel():showSpine();});
+document.getElementById("stdBtn").addEventListener("click",openStandard);
+document.getElementById("stdModal").addEventListener("click",e=>{ if(e.target.id==="stdModal") closeStandard(); });
+window.addEventListener("keydown",e=>{ if(e.key==="Escape") closeStandard(); });
+board.addEventListener("click",()=>{filtersActive()?runFilter():clearSel();});
+let rt; window.addEventListener("resize",()=>{clearTimeout(rt);rt=setTimeout(()=>{const c=current;if(c){current=null;select(c);}else if(spineOn)showSpine();},120);});
+board.classList.add("show-health");
+document.getElementById("healthBtn").classList.add("active");
+document.getElementById("healthBtn").textContent=tl("colorHealth");
+renderIntro();
+</script>
+</body>
+</html>
