@@ -7,7 +7,7 @@
   "htmlPath": ".codemap/codemap.html",
   "mdPath": ".codemap/codemap.md",
   "spineDesc": "用户在 React 控制台发起进程操作，经统一 API 客户端和 Axum 鉴权路由进入进程监督核心，再把运行状态与项目元数据持久化为本地 JSON 快照。",
-  "tracked_loc": 75269,
+  "tracked_loc": 75270,
   "tracked_files": 225,
   "rev": "WORKTREE-2026-08-26"
  },
@@ -445,8 +445,8 @@
     "process_lifecycle"
    ],
    "desc": "执行认证授权、文件系统、脚本、端口、PTY 终端、自更新和守护进程控制等高权限本机操作。",
-   "loc": 5163,
-   "contentHash": "5674cb13fd304a9efd62ca201784a6e6075851c19328ea28af9ca02c17fcede5",
+   "loc": 5164,
+   "contentHash": "1f72f9e3d30f101ce47994d94ccecaed645d3f9416d96abb2d0a2e559e31191a",
    "score": 85,
    "grade": "B",
    "tags": [
@@ -464,9 +464,9 @@
      "text": "system.rs 约 837 行，仍同时承载健康、状态保存、受限文件访问、统计、重启和桌面打开等系统边界，后续可按能力分路由模块。"
     }
    ],
-   "auditedHash": "5674cb13fd304a9efd62ca201784a6e6075851c19328ea28af9ca02c17fcede5",
+   "auditedHash": "1f72f9e3d30f101ce47994d94ccecaed645d3f9416d96abb2d0a2e559e31191a",
    "auditedAt": "2026-08-26",
-   "auditedRev": "WORKTREE-2026-08-26"
+   "auditedRev": "d517e72615940e6554f922bea733fb1f51f4a64d"
   },
   {
    "id": "process_lifecycle",

@@ -7,7 +7,7 @@
 
 > **Interactive view:** [`.codemap/codemap.html`](codemap.html) — per-module scores, findings, LoC, and the dependency graph. This file is the written report.
 
-**Generated:** 2026-08-26 · **Modules:** 12 · **Size:** 75269 tracked LoC across 225 files
+**Generated:** 2026-08-26 · **Modules:** 12 · **Size:** 75270 tracked LoC across 225 files
 
 ## Health by layer
 
@@ -49,7 +49,7 @@ _LoC is the representative file/folder per module; folder-level modules overlap 
 
 | Module | LoC | Score | Tags |
 |---|--:|:--|:--|
-| 认证与本机系统能力 API | 5,163 | 85 B | bloat |
+| 认证与本机系统能力 API | 5,164 | 85 B | bloat |
 | CLI、守护进程与 Web 入口 | 3,019 | 90 A | bloat |
 | 进程、项目与 Ecosystem API | 2,288 | 80 B | bloat |
 

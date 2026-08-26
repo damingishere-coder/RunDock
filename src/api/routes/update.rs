@@ -721,6 +721,7 @@ fn verify_update_publisher(path: &Path) -> anyhow::Result<()> {
     result
 }
 
+#[cfg(any(windows, test))]
 fn normalize_thumbprint(value: &str) -> String {
     value
         .bytes()

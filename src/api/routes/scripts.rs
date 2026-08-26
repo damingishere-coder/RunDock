@@ -608,7 +608,7 @@ async fn run_script(
     Path(name): Path<String>,
 ) -> Result<Sse<impl futures::Stream<Item = Result<Event, Infallible>>>, ApiError> {
     let dir = scripts_dir();
-    let (snapshot, ext, language) = {
+    let (snapshot, _ext, language) = {
         let _script_guard = state.script_mutation_lock.lock().await;
         let script_path = find_script_path(&dir, &name)?;
         let ext = script_path
@@ -627,7 +627,7 @@ async fn run_script(
     #[cfg(target_os = "windows")]
     let mut cmd = {
         // .bat/.cmd files must be run via "cmd /C <script>" — not "cmd /C cmd <script>"
-        let is_batch = ext == "bat" || ext == "cmd";
+        let is_batch = _ext == "bat" || _ext == "cmd";
         if is_batch {
             let mut c = Command::new("cmd");
             c.args(["/C", &script_str]);
