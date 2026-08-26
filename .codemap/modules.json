@@ -7,7 +7,7 @@
   "htmlPath": ".codemap/codemap.html",
   "mdPath": ".codemap/codemap.md",
   "spineDesc": "用户在 React 控制台发起进程操作，经统一 API 客户端和 Axum 鉴权路由进入进程监督核心，再把运行状态与项目元数据持久化为本地 JSON 快照。",
-  "tracked_loc": 75264,
+  "tracked_loc": 75269,
   "tracked_files": 225,
   "rev": "WORKTREE-2026-08-26"
  },
@@ -571,8 +571,8 @@
     "process_lifecycle"
    ],
    "desc": "对接 AI Provider、Webhook/Telegram 通知、Cloudflare/ngrok 隧道以及日志/指标查询。",
-   "loc": 6749,
-   "contentHash": "027adfd3d85a93c18d0165a6ddceb6df5cb417ed232d987b65707ffecdd8f0fd",
+   "loc": 6752,
+   "contentHash": "bb9719c383d2a77596022b3097a8d5c8174b19f5e54bb1705f54bedde39972c9",
    "score": 84,
    "grade": "B",
    "tags": [
@@ -582,12 +582,12 @@
     {
      "sev": "MED",
      "loc": "src/api/routes/ai.rs:402",
-     "text": "ai.rs 约 1,495 行，仍集中 provider、Device Flow、模型发现、流式请求和设置路由；出站策略、上下文脱敏、大小上限与每流轮询凭据已收紧，但领域拆分仍有维护收益。"
+     "text": "ai.rs 约 1,495 行，仍集中 provider、Device Flow、模型发现、流式请求和设置路由；出站策略、上下文脱敏、大小上限与每流凭据已收紧，但按领域拆分仍有维护收益。src/api/routes/ai_context.rs:400-404 已将模拟 provider/GitHub token 改为运行时拼接，stale 触发点已消除。未发现 P0-P2 功能或安全风险。"
     }
    ],
-   "auditedHash": "027adfd3d85a93c18d0165a6ddceb6df5cb417ed232d987b65707ffecdd8f0fd",
+   "auditedHash": "bb9719c383d2a77596022b3097a8d5c8174b19f5e54bb1705f54bedde39972c9",
    "auditedAt": "2026-08-26",
-   "auditedRev": "WORKTREE-2026-08-26"
+   "auditedRev": "c2de2b1d889d6f9d9bcd464cf205c0bfa88e61f1"
   },
   {
    "id": "delivery_docs",
@@ -623,8 +623,8 @@
     "frontend_shell"
    ],
    "desc": "定义依赖、质量命令、Windows/Linux 构建安装、GitHub Release 和面向维护者/用户的文档。",
-   "loc": 16840,
-   "contentHash": "86a90eeff7689653a25e7a4c277cb21d77121d32ed2c1d9cfe64d216d8e75efd",
+   "loc": 16842,
+   "contentHash": "fd2a97313e88683e327ba0d107cb267667ac1f0e175565a5c46e93ffc853ea11",
    "score": 88,
    "grade": "B",
    "tags": [
@@ -634,12 +634,12 @@
     {
      "sev": "LOW",
      "loc": "README.md:16",
-     "text": "根 README 与 docs/README.md 仍分别维护部分重叠的安装、构建和功能说明；当前内容已同步，但缺少自动一致性检查。"
+     "text": "根 README 与 docs/README.md 仍分别维护部分重叠的安装、构建和功能说明；当前内容已同步，但缺少自动一致性检查。`.github/workflows/quality.yml:108-111` 新增 coverage 目录创建仅修复 LCOV 输出路径，不引入 P0-P2 风险。"
     }
    ],
-   "auditedHash": "86a90eeff7689653a25e7a4c277cb21d77121d32ed2c1d9cfe64d216d8e75efd",
+   "auditedHash": "fd2a97313e88683e327ba0d107cb267667ac1f0e175565a5c46e93ffc853ea11",
    "auditedAt": "2026-08-26",
-   "auditedRev": "WORKTREE-2026-08-26"
+   "auditedRev": "c2de2b1d889d6f9d9bcd464cf205c0bfa88e61f1"
   }
  ]
 }

@@ -6,7 +6,7 @@
     {
       "sev": "MED",
       "loc": "src/api/routes/ai.rs:402",
-      "text": "ai.rs 约 1,495 行，仍集中 provider、Device Flow、模型发现、流式请求和设置路由；出站策略、上下文脱敏、大小上限与每流轮询凭据已收紧，但领域拆分仍有维护收益。"
+      "text": "ai.rs 约 1,495 行，仍集中 provider、Device Flow、模型发现、流式请求和设置路由；出站策略、上下文脱敏、大小上限与每流凭据已收紧，但按领域拆分仍有维护收益。src/api/routes/ai_context.rs:400-404 已将模拟 provider/GitHub token 改为运行时拼接，stale 触发点已消除。未发现 P0-P2 功能或安全风险。"
     }
   ]
 }

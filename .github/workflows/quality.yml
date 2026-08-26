@@ -106,7 +106,9 @@ jobs:
       - run: cargo check --all-targets --locked
       - run: cargo audit
       - name: Test with Rust LCOV coverage
-        run: cargo llvm-cov --all-targets --locked --lcov --output-path coverage/rust-lcov.info --fail-under-lines 20
+        run: |
+          mkdir -p coverage
+          cargo llvm-cov --all-targets --locked --lcov --output-path coverage/rust-lcov.info --fail-under-lines 20
       - name: Upload Rust coverage
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:

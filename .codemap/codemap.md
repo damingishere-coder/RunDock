@@ -7,7 +7,7 @@
 
 > **Interactive view:** [`.codemap/codemap.html`](codemap.html) — per-module scores, findings, LoC, and the dependency graph. This file is the written report.
 
-**Generated:** 2026-08-26 · **Modules:** 12 · **Size:** 75264 tracked LoC across 225 files
+**Generated:** 2026-08-26 · **Modules:** 12 · **Size:** 75269 tracked LoC across 225 files
 
 ## Health by layer
 
@@ -63,14 +63,14 @@ _LoC is the representative file/folder per module; folder-level modules overlap 
 
 | Module | LoC | Score | Tags |
 |---|--:|:--|:--|
-| AI、通知、隧道与观测集成 | 6,749 | 84 B | bloat |
+| AI、通知、隧道与观测集成 | 6,752 | 84 B | bloat |
 | 配置、模型与 JSON 持久化 | 4,929 | 93 A | stub |
 
 ### 交付 · 构建与文档
 
 | Module | LoC | Score | Tags |
 |---|--:|:--|:--|
-| 构建、发布与工程文档 | 16,840 | 88 B | duplication |
+| 构建、发布与工程文档 | 16,842 | 88 B | duplication |
 
 ## Worst offenders
 
@@ -81,9 +81,9 @@ _LoC is the representative file/folder per module; folder-level modules overlap 
 - **进程、项目与 Ecosystem API (80/B)** — src/api/routes/processes.rs:110: processes.rs 约 1,354 行，生命周期、日志、通知、项目关联与批量操作路由仍在单模块内；副作用与持久化已增加补偿事务，但文件级回归面仍较大。
 - **前端 API、认证与轮询层 (82/B)** — web-ui/src/lib/api.ts:493: 统一 api 对象仍在单文件中聚合进程、项目、日志、认证、AI、Telegram、隧道和系统能力；错误校验与 transport 已统一，但后续可按领域拆文件以降低导航成本。
 - **进程监督与日志核心 (82/B)** — src/process/manager.rs:62: manager.rs 仍约 3,200 行并承载 registry、spawn、restart、cron、health、watcher、metrics 与告警编排；进程身份和进程树已提取，功能竞态已收敛，但结构拆分仍是后续维护任务。
-- **AI、通知、隧道与观测集成 (84/B)** — src/api/routes/ai.rs:402: ai.rs 约 1,495 行，仍集中 provider、Device Flow、模型发现、流式请求和设置路由；出站策略、上下文脱敏、大小上限与每流轮询凭据已收紧，但领域拆分仍有维护收益。
+- **AI、通知、隧道与观测集成 (84/B)** — src/api/routes/ai.rs:402: ai.rs 约 1,495 行，仍集中 provider、Device Flow、模型发现、流式请求和设置路由；出站策略、上下文脱敏、大小上限与每流凭据已收紧，但按领域拆分仍有维护收益。src/api/routes/ai_context.rs:400-404 已将模拟 provider/GitHub token 改为运行时拼接，stale 触发点已消除。未发现 P0-P2 功能或安全风险。
 - **认证与本机系统能力 API (85/B)** — src/config/env_file.rs:37: env 访问已限制到注册 cwd、直接子文件并拒绝最终符号链接；剩余父目录换位竞态仅能由具备同用户本机文件系统权限的进程触发，属于当前单用户威胁模型之外的平台限制。
-- **构建、发布与工程文档 (88/B)** — README.md:16: 根 README 与 docs/README.md 仍分别维护部分重叠的安装、构建和功能说明；当前内容已同步，但缺少自动一致性检查。
+- **构建、发布与工程文档 (88/B)** — README.md:16: 根 README 与 docs/README.md 仍分别维护部分重叠的安装、构建和功能说明；当前内容已同步，但缺少自动一致性检查。`.github/workflows/quality.yml:108-111` 新增 coverage 目录创建仅修复 LCOV 输出路径，不引入 P0-P2 风险。
 
 ## All findings
 
@@ -99,7 +99,7 @@ _LoC is the representative file/folder per module; folder-level modules overlap 
 - **前端设置、AI 与终端** · `web-ui/src/components/TerminalPanel.tsx:131` — TerminalPanel 约 1,208 行，同时处理 WebSocket 生命周期、xterm、输入历史、布局、标签页和连接状态；资源清理已补齐，但组件边界仍偏大。
 - **进程、项目与 Ecosystem API** · `src/api/routes/processes.rs:110` — processes.rs 约 1,354 行，生命周期、日志、通知、项目关联与批量操作路由仍在单模块内；副作用与持久化已增加补偿事务，但文件级回归面仍较大。
 - **进程监督与日志核心** · `src/process/manager.rs:62` — manager.rs 仍约 3,200 行并承载 registry、spawn、restart、cron、health、watcher、metrics 与告警编排；进程身份和进程树已提取，功能竞态已收敛，但结构拆分仍是后续维护任务。
-- **AI、通知、隧道与观测集成** · `src/api/routes/ai.rs:402` — ai.rs 约 1,495 行，仍集中 provider、Device Flow、模型发现、流式请求和设置路由；出站策略、上下文脱敏、大小上限与每流轮询凭据已收紧，但领域拆分仍有维护收益。
+- **AI、通知、隧道与观测集成** · `src/api/routes/ai.rs:402` — ai.rs 约 1,495 行，仍集中 provider、Device Flow、模型发现、流式请求和设置路由；出站策略、上下文脱敏、大小上限与每流凭据已收紧，但按领域拆分仍有维护收益。src/api/routes/ai_context.rs:400-404 已将模拟 provider/GitHub token 改为运行时拼接，stale 触发点已消除。未发现 P0-P2 功能或安全风险。
 
 ### LOW (7)
 
@@ -109,7 +109,7 @@ _LoC is the representative file/folder per module; folder-level modules overlap 
 - **认证与本机系统能力 API** · `src/api/routes/system.rs:84` — system.rs 约 837 行，仍同时承载健康、状态保存、受限文件访问、统计、重启和桌面打开等系统边界，后续可按能力分路由模块。
 - **进程监督与日志核心** · `src/process/identity.rs:103` — macOS/BSD 缺少可移植的稳定进程组句柄，验证身份后到数字 PGID signal 间仍存在极窄复用窗口；Linux pidfd 与 Windows HANDLE/Job 路径不受此限制。
 - **配置、模型与 JSON 持久化** · `src/config/auth_config.rs:15` — StoredPasskey 仍保留 raw JSON 兼容字段，但 API 与文档已明确 passkey 尚不支持；该占位结构只用于兼容读取，不代表已实现 WebAuthn。
-- **构建、发布与工程文档** · `README.md:16` — 根 README 与 docs/README.md 仍分别维护部分重叠的安装、构建和功能说明；当前内容已同步，但缺少自动一致性检查。
+- **构建、发布与工程文档** · `README.md:16` — 根 README 与 docs/README.md 仍分别维护部分重叠的安装、构建和功能说明；当前内容已同步，但缺少自动一致性检查。`.github/workflows/quality.yml:108-111` 新增 coverage 目录创建仅修复 LCOV 输出路径，不引入 P0-P2 风险。
 
 ## Cross-cutting themes
 

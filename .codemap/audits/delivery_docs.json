@@ -6,7 +6,7 @@
     {
       "sev": "LOW",
       "loc": "README.md:16",
-      "text": "根 README 与 docs/README.md 仍分别维护部分重叠的安装、构建和功能说明；当前内容已同步，但缺少自动一致性检查。"
+      "text": "根 README 与 docs/README.md 仍分别维护部分重叠的安装、构建和功能说明；当前内容已同步，但缺少自动一致性检查。`.github/workflows/quality.yml:108-111` 新增 coverage 目录创建仅修复 LCOV 输出路径，不引入 P0-P2 风险。"
     }
   ]
 }
