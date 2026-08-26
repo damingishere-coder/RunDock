@@ -12,5 +12,16 @@ pre-commit:
 
     # @group Validation : Check Rust formatting (fails if cargo fmt would change anything)
     - name: fmt-rust
-      glob: "src/**/*.rs"
-      run: cargo fmt -- --check
+      glob: "**/*.rs"
+      run: cargo fmt --all -- --check
+
+    # @group Validation : Minimum compile/type safety before a local commit.
+    # Full tests, coverage, audit, packaging and Sonar remain mandatory in CI.
+    - name: check-rust
+      glob: "{**/*.rs,Cargo.toml,Cargo.lock,rust-toolchain.toml}"
+      run: cargo check --all-targets --locked
+
+    - name: typecheck-ui
+      root: "web-ui/"
+      glob: "src/**/*.{ts,tsx}"
+      run: npm run typecheck

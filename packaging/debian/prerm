@@ -1,12 +1,41 @@
 #!/bin/bash
 set -e
 
-# @group Configuration : Pre-removal hook — stop daemon and disable systemd unit
-if command -v alter &>/dev/null; then
-    alter daemon stop 2>/dev/null || true
-fi
+# @group Configuration : Preserve service ownership across upgrades; stop/disable only on removal
+action="${1:-remove}"
+upgrade_state=/run/alter-daemon-package-upgrade
 
 if command -v systemctl &>/dev/null && [ -d /run/systemd/system ]; then
-    systemctl stop alter-daemon 2>/dev/null || true
-    systemctl disable alter-daemon 2>/dev/null || true
+    case "$action" in
+        upgrade|failed-upgrade)
+            was_enabled=no
+            was_active=no
+            systemctl is-enabled --quiet alter-daemon.service && was_enabled=yes
+            systemctl is-active --quiet alter-daemon.service && was_active=yes
+            umask 077
+            printf '%s %s\n' "$was_enabled" "$was_active" > "$upgrade_state"
+            if [ "$was_active" = yes ]; then
+                systemctl stop alter-daemon.service
+            fi
+            ;;
+        remove|deconfigure)
+            if systemctl is-active --quiet alter-daemon.service; then
+                systemctl stop alter-daemon.service
+            fi
+            if systemctl is-active --quiet alter-daemon.service; then
+                echo "alter-daemon is still running; refusing to remove its executable" >&2
+                exit 1
+            fi
+            systemctl disable alter-daemon.service >/dev/null 2>&1 || {
+                echo "failed to disable alter-daemon" >&2
+                exit 1
+            }
+            ;;
+    esac
+elif command -v alter &>/dev/null; then
+    # Non-systemd hosts may still have a manually started daemon. The CLI
+    # verifies shutdown and fails closed on authentication/ownership mismatch.
+    if [ "$action" = remove ] || [ "$action" = deconfigure ]; then
+        alter daemon stop
+    fi
 fi

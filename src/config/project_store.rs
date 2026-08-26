@@ -5,7 +5,6 @@ use crate::models::project::{ProjectKind, ProjectRecord, DEFAULT_PROJECT_CATEGOR
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::path::Path;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -26,59 +25,57 @@ impl ProjectStore {
             launch_uri: None,
         })
     }
+
+    pub fn validate(&self) -> Result<()> {
+        anyhow::ensure!(
+            self.projects.len() <= 1_000,
+            "project store contains too many projects"
+        );
+        for (id, project) in &self.projects {
+            anyhow::ensure!(
+                id == &project.id,
+                "project store key does not match record ID"
+            );
+            anyhow::ensure!(
+                !project.display_name.trim().is_empty() && project.display_name.len() <= 128,
+                "project display name must contain between 1 and 128 bytes"
+            );
+            anyhow::ensure!(
+                project.note.len() <= 4_096,
+                "project note cannot exceed 4096 bytes"
+            );
+            anyhow::ensure!(
+                !project.category.trim().is_empty() && project.category.len() <= 128,
+                "project category must contain between 1 and 128 bytes"
+            );
+            anyhow::ensure!(
+                project
+                    .launch_uri
+                    .as_deref()
+                    .is_none_or(|uri| uri.len() <= 2_048),
+                "project launch URI cannot exceed 2048 bytes"
+            );
+        }
+        Ok(())
+    }
 }
 
-pub fn load() -> ProjectStore {
+pub fn load() -> Result<ProjectStore> {
     let path = paths::projects_file();
-    std::fs::read_to_string(path)
-        .ok()
-        .and_then(|content| serde_json::from_str(&content).ok())
-        .unwrap_or_default()
+    crate::config::atomic_file::load_json_with_backup_validated(&path, ProjectStore::validate)
 }
 
 pub fn save(store: &ProjectStore) -> Result<()> {
+    store.validate()?;
     let path = paths::projects_file();
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    let content = serde_json::to_string_pretty(store)?;
-    let tmp = path.with_extension("json.tmp");
-    std::fs::write(&tmp, &content)?;
-    if let Err(error) = replace_file_atomically(&tmp, &path) {
-        let _ = std::fs::remove_file(&tmp);
-        return Err(error);
-    }
-    Ok(())
-}
-
-#[cfg(target_os = "windows")]
-fn replace_file_atomically(source: &Path, destination: &Path) -> Result<()> {
-    use std::os::windows::ffi::OsStrExt;
-    use windows::core::PCWSTR;
-    use windows::Win32::Storage::FileSystem::{
-        MoveFileExW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH,
-    };
-
-    let source_wide: Vec<u16> = source.as_os_str().encode_wide().chain(Some(0)).collect();
-    let destination_wide: Vec<u16> = destination
-        .as_os_str()
-        .encode_wide()
-        .chain(Some(0))
-        .collect();
-    unsafe {
-        MoveFileExW(
-            PCWSTR(source_wide.as_ptr()),
-            PCWSTR(destination_wide.as_ptr()),
-            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
-        )?;
-    }
-    Ok(())
-}
-
-#[cfg(not(target_os = "windows"))]
-fn replace_file_atomically(source: &Path, destination: &Path) -> Result<()> {
-    std::fs::rename(source, destination)?;
-    Ok(())
+    crate::config::atomic_file::write_json_with_backup_validated(
+        &path,
+        store,
+        ProjectStore::validate,
+    )
 }
 
 #[cfg(test)]
@@ -122,14 +119,11 @@ mod tests {
             std::env::temp_dir().join(format!("alter-project-store-{}", Uuid::new_v4()));
         std::fs::create_dir_all(&directory).unwrap();
         let destination = directory.join("projects.json");
-        let source = directory.join("projects.json.tmp");
         std::fs::write(&destination, "old").unwrap();
-        std::fs::write(&source, "new").unwrap();
 
-        replace_file_atomically(&source, &destination).unwrap();
+        crate::config::atomic_file::write_with_backup(&destination, b"new", None).unwrap();
 
         assert_eq!(std::fs::read_to_string(&destination).unwrap(), "new");
-        assert!(!source.exists());
         std::fs::remove_dir_all(&directory).unwrap();
     }
 }

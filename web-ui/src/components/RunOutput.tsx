@@ -13,62 +13,75 @@ interface Props {
   lines: OutputLine[]
   exitCode: number | null | undefined
   isRunning: boolean
+  error?: string
   onClear: () => void
   height?: number | string
 }
 
 // @group BusinessLogic > RunOutput : Terminal-style output panel with auto-scroll and exit pill
-export function RunOutput({ lines, exitCode, isRunning, onClear, height = 200 }: Props) {
+export function RunOutput({ lines, exitCode, isRunning, error, onClear, height = 200 }: Props) {
   const bottomRef = useRef<HTMLDivElement>(null)
 
   // @group Utilities > AutoScroll : Scroll to bottom whenever new lines arrive
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+    bottomRef.current?.scrollIntoView({ behavior: 'auto' })
   }, [lines.length])
 
   const isDone = !isRunning && exitCode !== undefined
   const exitSuccess = exitCode === 0
 
   return (
-    <div style={{
-      display: 'flex',
-      flexDirection: 'column',
-      border: '1px solid var(--color-border)',
-      borderRadius: 6,
-      overflow: 'hidden',
-      background: '#0d0d0d',
-      height,
-    }}>
-      {/* Terminal header */}
-      <div style={{
+    <div
+      style={{
         display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: '5px 12px',
-        background: '#111',
-        borderBottom: '1px solid var(--color-border)',
-        flexShrink: 0,
-      }}>
+        flexDirection: 'column',
+        border: '1px solid var(--color-border)',
+        borderRadius: 6,
+        overflow: 'hidden',
+        background: '#0d0d0d',
+        height,
+      }}
+    >
+      {/* Terminal header */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '5px 12px',
+          background: '#111',
+          borderBottom: '1px solid var(--color-border)',
+          flexShrink: 0,
+        }}
+      >
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontSize: 11, color: 'var(--color-muted-foreground)' }}>
-            输出
-          </span>
+          <span style={{ fontSize: 11, color: 'var(--color-muted-foreground)' }}>输出</span>
           {isRunning && (
-            <span style={{
-              display: 'inline-flex', alignItems: 'center', gap: 4,
-              fontSize: 10, fontWeight: 600,
-              color: 'var(--color-status-running)',
-            }}>
+            <span
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4,
+                fontSize: 10,
+                fontWeight: 600,
+                color: 'var(--color-status-running)',
+              }}
+            >
               <span style={{ animation: 'pulse 1s infinite' }}>●</span> 运行中
             </span>
           )}
           {isDone && (
-            <span style={{
-              display: 'inline-block', padding: '1px 7px', borderRadius: 4,
-              fontSize: 10, fontWeight: 700,
-              color: exitSuccess ? 'var(--color-status-running)' : 'var(--color-destructive)',
-              background: exitSuccess ? 'rgba(34,197,94,0.15)' : 'rgba(239,68,68,0.15)',
-            }}>
+            <span
+              style={{
+                display: 'inline-block',
+                padding: '1px 7px',
+                borderRadius: 4,
+                fontSize: 10,
+                fontWeight: 700,
+                color: exitSuccess ? 'var(--color-status-running)' : 'var(--color-destructive)',
+                background: exitSuccess ? 'rgba(34,197,94,0.15)' : 'rgba(239,68,68,0.15)',
+              }}
+            >
               退出码 {exitCode}
             </span>
           )}
@@ -77,9 +90,13 @@ export function RunOutput({ lines, exitCode, isRunning, onClear, height = 200 }:
           type="button"
           onClick={onClear}
           style={{
-            fontSize: 11, padding: '2px 8px',
-            background: 'transparent', border: '1px solid var(--color-border)',
-            borderRadius: 4, cursor: 'pointer', color: 'var(--color-muted-foreground)',
+            fontSize: 11,
+            padding: '2px 8px',
+            background: 'transparent',
+            border: '1px solid var(--color-border)',
+            borderRadius: 4,
+            cursor: 'pointer',
+            color: 'var(--color-muted-foreground)',
           }}
         >
           清空
@@ -87,17 +104,26 @@ export function RunOutput({ lines, exitCode, isRunning, onClear, height = 200 }:
       </div>
 
       {/* Output lines */}
-      <div style={{
-        flex: 1,
-        overflowY: 'auto',
-        padding: '8px 12px',
-        fontFamily: 'Consolas, "Cascadia Code", "Fira Code", monospace',
-        fontSize: 12,
-        lineHeight: '18px',
-        color: '#e4e4e7',
-      }}>
+      <div
+        style={{
+          flex: 1,
+          overflowY: 'auto',
+          padding: '8px 12px',
+          fontFamily: 'Consolas, "Cascadia Code", "Fira Code", monospace',
+          fontSize: 12,
+          lineHeight: '18px',
+          color: '#e4e4e7',
+        }}
+      >
         {lines.length === 0 && !isRunning && (
-          <span style={{ color: '#555', fontStyle: 'italic' }}>暂无输出 — 点击 ▶ 运行以执行脚本</span>
+          <span style={{ color: '#555', fontStyle: 'italic' }}>
+            暂无输出 — 点击 ▶ 运行以执行脚本
+          </span>
+        )}
+        {error && (
+          <div role="alert" style={{ color: 'var(--color-destructive)', marginBottom: 6 }}>
+            {error}
+          </div>
         )}
         {lines.map((line, i) => (
           <div

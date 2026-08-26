@@ -1,11 +1,12 @@
 // @group BusinessLogic : .env file viewer and editor — modal overlay variant
 // Used by ProcessDetailPage. Supports multiple env file tabs, color coding, and key sync.
 
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { RefreshCw } from 'lucide-react'
 import { api } from '@/lib/api'
 import type { EnvFileEntry } from '@/types'
 import { EnvEditor } from '@/components/EnvEditor'
+import { envFileBg, envFileColor } from '@/lib/envFiles'
 
 interface Props {
   processId: string
@@ -14,88 +15,95 @@ interface Props {
   onRestart: () => void
 }
 
-// @group Utilities > EnvColor : Color coding for env file types
-function envFileColor(name: string): string {
-  if (name === '.env') return '#4ade80'
-  if (name === '.env.example') return '#fbbf24'
-  if (name === '.env.local') return '#60a5fa'
-  if (name === '.env.production' || name === '.env.prod') return '#f87171'
-  if (name === '.env.development' || name === '.env.dev') return '#34d399'
-  if (name === '.env.test') return '#a78bfa'
-  if (name === '.env.staging') return '#fb923c'
-  return '#94a3b8'
-}
-
-function envFileBg(name: string): string {
-  if (name === '.env') return 'rgba(74,222,128,0.13)'
-  if (name === '.env.example') return 'rgba(251,191,36,0.13)'
-  if (name === '.env.local') return 'rgba(96,165,250,0.13)'
-  if (name === '.env.production' || name === '.env.prod') return 'rgba(248,113,113,0.13)'
-  if (name === '.env.development' || name === '.env.dev') return 'rgba(52,211,153,0.13)'
-  if (name === '.env.test') return 'rgba(167,139,250,0.13)'
-  if (name === '.env.staging') return 'rgba(251,146,60,0.13)'
-  return 'rgba(148,163,184,0.1)'
-}
-
 export function EnvFileModal({ processId, processName, onClose, onRestart }: Props) {
   // @group BusinessLogic > State : Tab and file management
-  const [files, setFiles]             = useState<EnvFileEntry[]>([])
-  const [activeTab, setActiveTab]     = useState<string>('.env')
-  const [content, setContent]         = useState('')
-  const [exists, setExists]           = useState(false)
+  const [files, setFiles] = useState<EnvFileEntry[]>([])
+  const [activeTab, setActiveTab] = useState<string>('.env')
+  const [content, setContent] = useState('')
+  const [exists, setExists] = useState(false)
   const [loadingList, setLoadingList] = useState(true)
+  const [listFailed, setListFailed] = useState(false)
+  const [listRetry, setListRetry] = useState(0)
   const [loadingFile, setLoadingFile] = useState(false)
-  const [saving, setSaving]           = useState(false)
-  const [syncing, setSyncing]         = useState(false)
-  const [saved, setSaved]             = useState(false)
-  const [dirty, setDirty]             = useState(false)
-  const [error, setError]             = useState('')
-  const [syncMsg, setSyncMsg]         = useState('')
-  const textareaRef                   = useRef<HTMLTextAreaElement>(null)
+  const [saving, setSaving] = useState(false)
+  const [syncing, setSyncing] = useState(false)
+  const [saved, setSaved] = useState(false)
+  const [dirty, setDirty] = useState(false)
+  const [error, setError] = useState('')
+  const [syncMsg, setSyncMsg] = useState('')
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const fileRequestRef = useRef(0)
+  const fileAbortRef = useRef<AbortController | null>(null)
+  const mutationRef = useRef(false)
+
+  const loadFile = useCallback(
+    (filename: string) => {
+      const requestId = ++fileRequestRef.current
+      fileAbortRef.current?.abort()
+      const controller = new AbortController()
+      fileAbortRef.current = controller
+      setLoadingFile(true)
+      setContent('')
+      setDirty(false)
+      setSaved(false)
+      setError('')
+      api
+        .getEnvFile(processId, filename, { signal: controller.signal })
+        .then(data => {
+          if (requestId !== fileRequestRef.current || controller.signal.aborted) return
+          setContent(data.content)
+          setExists(data.exists)
+          setLoadingFile(false)
+          setTimeout(() => textareaRef.current?.focus(), 50)
+        })
+        .catch((error: unknown) => {
+          if (requestId !== fileRequestRef.current || controller.signal.aborted) return
+          setError(error instanceof Error ? error.message : String(error))
+          setLoadingFile(false)
+        })
+    },
+    [processId]
+  )
 
   // @group BusinessLogic : Load file list when process changes
   useEffect(() => {
+    const controller = new AbortController()
     setLoadingList(true)
-    api.listEnvFiles(processId)
+    setListFailed(false)
+    setFiles([])
+    setContent('')
+    setDirty(false)
+    setSaved(false)
+    setError('')
+    setSyncMsg('')
+    api
+      .listEnvFiles(processId, { signal: controller.signal })
       .then(data => {
+        if (controller.signal.aborted) return
         setFiles(data.files)
+        setListFailed(false)
         const first = data.files[0]?.name ?? '.env'
         setActiveTab(first)
         setLoadingList(false)
         loadFile(first)
       })
-      .catch(() => {
-        setFiles([{ name: '.env', path: '' }])
-        setActiveTab('.env')
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) return
+        setFiles([])
         setLoadingList(false)
-        loadFile('.env')
+        setListFailed(true)
+        setError(error instanceof Error ? error.message : '无法读取环境文件列表')
       })
-  }, [processId])
-
-  // @group Utilities : Close on Escape key
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
-    window.addEventListener('keydown', handler)
-    return () => window.removeEventListener('keydown', handler)
-  }, [onClose])
-
-  function loadFile(filename: string) {
-    setLoadingFile(true)
-    setContent('')
-    setDirty(false)
-    setSaved(false)
-    setError('')
-    api.getEnvFile(processId, filename)
-      .then(data => {
-        setContent(data.content)
-        setExists(data.exists)
-        setLoadingFile(false)
-        setTimeout(() => textareaRef.current?.focus(), 50)
-      })
-      .catch(e => { setError(String(e.message ?? e)); setLoadingFile(false) })
-  }
+    return () => {
+      controller.abort()
+      fileRequestRef.current += 1
+      fileAbortRef.current?.abort()
+      fileAbortRef.current = null
+    }
+  }, [processId, loadFile, listRetry])
 
   function switchTab(name: string) {
+    if (mutationRef.current) return
     if (dirty) {
       if (!window.confirm('有未保存的更改。要放弃更改并切换文件吗？')) return
     }
@@ -103,30 +111,53 @@ export function EnvFileModal({ processId, processName, onClose, onRestart }: Pro
     loadFile(name)
   }
 
+  const requestClose = useCallback(() => {
+    if (mutationRef.current) return
+    if (dirty && !window.confirm('有未保存的更改。要放弃更改并关闭编辑器吗？')) return
+    onClose()
+  }, [dirty, onClose])
+
+  // @group Utilities : Close on Escape key
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') requestClose()
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [requestClose])
+
   async function handleSave(andRestart: boolean) {
+    if (mutationRef.current) return
+    mutationRef.current = true
     setSaving(true)
     setError('')
+    let fileSaved = false
     try {
       await api.saveEnvFile(processId, content, activeTab)
+      fileSaved = true
       setExists(true)
       setDirty(false)
       setSaved(true)
       if (andRestart) {
-        await api.restartProcess(processId).catch(() => {})
+        await api.restartProcess(processId)
         onRestart()
         onClose()
       } else {
         setTimeout(() => setSaved(false), 2500)
       }
-    } catch (e: any) {
-      setError(String(e.message ?? e))
+    } catch (e: unknown) {
+      const detail = e instanceof Error ? e.message : String(e)
+      setError(fileSaved && andRestart ? `.env 已保存，但进程重启失败：${detail}` : detail)
     } finally {
+      mutationRef.current = false
       setSaving(false)
     }
   }
 
   // @group BusinessLogic > Sync : Propagate keys from active file to all other env files
   async function handleSync() {
+    if (mutationRef.current) return
+    mutationRef.current = true
     setSyncing(true)
     setSyncMsg('')
     setError('')
@@ -134,29 +165,19 @@ export function EnvFileModal({ processId, processName, onClose, onRestart }: Pro
       await api.saveEnvFile(processId, content, activeTab)
       setExists(true)
       setDirty(false)
-    } catch (e: any) {
-      setError(String(e.message ?? e))
-      setSyncing(false)
-      return
-    }
-
-    const activeFile = files.find(f => f.name === activeTab)
-    if (!activeFile?.path) {
-      setError('无法同步：文件路径未知')
-      setSyncing(false)
-      return
-    }
-
-    try {
+      const activeFile = files.find(f => f.name === activeTab)
+      if (!activeFile?.path) throw new Error('无法同步：文件路径未知')
       const result = await api.syncEnvFiles(activeFile.path)
-      setSyncMsg(result.success
-        ? `✓ 已将键同步到 ${result.synced_files} 个文件`
-        : `已同步 ${result.synced_files} 个文件${result.errors?.length ? ` — ${result.errors.length} 个错误` : ''}`
+      setSyncMsg(
+        result.success
+          ? `✓ 已将键同步到 ${result.synced_files} 个文件`
+          : `已同步 ${result.synced_files} 个文件${result.errors?.length ? ` — ${result.errors.length} 个错误` : ''}`
       )
       setTimeout(() => setSyncMsg(''), 4000)
-    } catch (e: any) {
-      setError(String(e.message ?? e))
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : String(e))
     } finally {
+      mutationRef.current = false
       setSyncing(false)
     }
   }
@@ -164,53 +185,88 @@ export function EnvFileModal({ processId, processName, onClose, onRestart }: Pro
   const lineCount = content.split('\n').length
   const activeColor = envFileColor(activeTab)
   const hasMultipleFiles = files.length > 1
+  const mutating = saving || syncing
 
   return (
     <div
-      onClick={e => { if (e.target === e.currentTarget) onClose() }}
+      onClick={e => {
+        if (e.target === e.currentTarget) requestClose()
+      }}
+      role="dialog"
+      aria-modal="true"
+      aria-label={`编辑 ${processName} 的环境变量`}
       style={{
-        position: 'fixed', inset: 0, zIndex: 1000,
+        position: 'fixed',
+        inset: 0,
+        zIndex: 1000,
         background: 'rgba(0,0,0,0.45)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
       }}
     >
-      <div style={{
-        background: 'var(--color-card)',
-        border: '1px solid var(--color-border)',
-        borderRadius: 8,
-        width: 700, maxWidth: '94vw', maxHeight: '84vh',
-        display: 'flex', flexDirection: 'column',
-        boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
-      }}>
-
+      <div
+        style={{
+          background: 'var(--color-card)',
+          border: '1px solid var(--color-border)',
+          borderRadius: 8,
+          width: 700,
+          maxWidth: '94vw',
+          maxHeight: '84vh',
+          display: 'flex',
+          flexDirection: 'column',
+          boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
+        }}
+      >
         {/* Header */}
-        <div style={{
-          padding: '12px 16px 0',
-          borderBottom: '1px solid var(--color-border)',
-          flexShrink: 0,
-        }}>
+        <div
+          style={{
+            padding: '12px 16px 0',
+            borderBottom: '1px solid var(--color-border)',
+            flexShrink: 0,
+          }}
+        >
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, paddingBottom: 10 }}>
             <span style={{ fontSize: 16 }}>🔑</span>
             <div style={{ flex: 1, minWidth: 0 }}>
               <span style={{ fontWeight: 600, fontSize: 14 }}>环境变量</span>
-              <span style={{ marginLeft: 6, fontSize: 13, color: 'var(--color-muted-foreground)' }}>— {processName}</span>
+              <span style={{ marginLeft: 6, fontSize: 13, color: 'var(--color-muted-foreground)' }}>
+                — {processName}
+              </span>
             </div>
             {!loadingFile && (
-              <span style={{
-                fontSize: 11, padding: '2px 7px', borderRadius: 4, fontWeight: 600,
-                background: envFileBg(activeTab), color: activeColor,
-              }}>
+              <span
+                style={{
+                  fontSize: 11,
+                  padding: '2px 7px',
+                  borderRadius: 4,
+                  fontWeight: 600,
+                  background: envFileBg(activeTab),
+                  color: activeColor,
+                }}
+              >
                 {exists ? '● 已存在' : '○ 未找到'}
               </span>
             )}
             <button
-              onClick={onClose}
-              style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 18, lineHeight: 1, color: 'var(--color-muted-foreground)', padding: '0 2px' }}
-            >×</button>
+              onClick={requestClose}
+              aria-label="关闭环境变量编辑器"
+              style={{
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                fontSize: 18,
+                lineHeight: 1,
+                color: 'var(--color-muted-foreground)',
+                padding: '0 2px',
+              }}
+            >
+              ×
+            </button>
           </div>
 
           {/* Tabs */}
-          {!loadingList && (
+          {!loadingList && !listFailed && (
             <div style={{ display: 'flex', gap: 2, overflowX: 'auto' }}>
               {(files.length > 0 ? files : [{ name: '.env', path: '' }]).map(f => {
                 const isActive = f.name === activeTab
@@ -220,14 +276,19 @@ export function EnvFileModal({ processId, processName, onClose, onRestart }: Pro
                   <button
                     key={f.name}
                     onClick={() => switchTab(f.name)}
+                    disabled={mutating}
                     style={{
-                      padding: '5px 14px', fontSize: 12, fontWeight: isActive ? 700 : 500,
+                      padding: '5px 14px',
+                      fontSize: 12,
+                      fontWeight: isActive ? 700 : 500,
                       background: isActive ? bg : 'transparent',
-                      border: 'none', borderBottom: isActive ? `2px solid ${color}` : '2px solid transparent',
+                      border: 'none',
+                      borderBottom: isActive ? `2px solid ${color}` : '2px solid transparent',
                       borderRadius: '4px 4px 0 0',
                       cursor: 'pointer',
                       color: isActive ? color : 'var(--color-muted-foreground)',
-                      whiteSpace: 'nowrap', flexShrink: 0,
+                      whiteSpace: 'nowrap',
+                      flexShrink: 0,
                     }}
                   >
                     {f.name}
@@ -239,17 +300,47 @@ export function EnvFileModal({ processId, processName, onClose, onRestart }: Pro
         </div>
 
         {/* Body */}
-        <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', padding: '12px 16px', gap: 8 }}>
+        <div
+          style={{
+            flex: 1,
+            overflow: 'hidden',
+            display: 'flex',
+            flexDirection: 'column',
+            padding: '12px 16px',
+            gap: 8,
+          }}
+        >
           {loadingList || loadingFile ? (
-            <div style={{ color: 'var(--color-muted-foreground)', padding: 24, textAlign: 'center', fontSize: 13 }}>加载中…</div>
+            <div
+              style={{
+                color: 'var(--color-muted-foreground)',
+                padding: 24,
+                textAlign: 'center',
+                fontSize: 13,
+              }}
+            >
+              加载中…
+            </div>
+          ) : listFailed ? (
+            <div role="alert" style={{ padding: 16, color: 'var(--color-destructive)' }}>
+              <div>{error || '无法读取环境文件列表'}</div>
+              <button type="button" onClick={() => setListRetry(value => value + 1)}>
+                重试
+              </button>
+            </div>
           ) : (
             <>
               {!exists && (
-                <div style={{
-                  fontSize: 12, padding: '7px 10px', borderRadius: 4,
-                  background: 'var(--color-muted)', color: 'var(--color-muted-foreground)',
-                  borderLeft: `3px solid ${activeColor}`,
-                }}>
+                <div
+                  style={{
+                    fontSize: 12,
+                    padding: '7px 10px',
+                    borderRadius: 4,
+                    background: 'var(--color-muted)',
+                    color: 'var(--color-muted-foreground)',
+                    borderLeft: `3px solid ${activeColor}`,
+                  }}
+                >
                   在此进程的工作目录中未找到 <code>{activeTab}</code> 文件，保存时将创建该文件。
                 </div>
               )}
@@ -257,17 +348,28 @@ export function EnvFileModal({ processId, processName, onClose, onRestart }: Pro
               {/* Editor */}
               <EnvEditor
                 value={content}
-                onChange={v => { setContent(v); setDirty(true); setSaved(false) }}
+                onChange={v => {
+                  setContent(v)
+                  setDirty(true)
+                  setSaved(false)
+                }}
                 borderColor={dirty ? activeColor : 'var(--color-border)'}
                 placeholder={'KEY=value\nDATABASE_URL=postgres://...\nSECRET_KEY=...'}
                 textareaRef={textareaRef}
+                disabled={mutating}
               />
 
-              {syncMsg && (
-                <div style={{ fontSize: 12, color: activeColor }}>{syncMsg}</div>
-              )}
+              {syncMsg && <div style={{ fontSize: 12, color: activeColor }}>{syncMsg}</div>}
               {error && (
-                <div style={{ fontSize: 12, color: 'var(--color-destructive)', padding: '5px 8px', borderRadius: 4, background: 'rgba(255,100,100,0.1)' }}>
+                <div
+                  style={{
+                    fontSize: 12,
+                    color: 'var(--color-destructive)',
+                    padding: '5px 8px',
+                    borderRadius: 4,
+                    background: 'rgba(255,100,100,0.1)',
+                  }}
+                >
                   {error}
                 </div>
               )}
@@ -276,44 +378,66 @@ export function EnvFileModal({ processId, processName, onClose, onRestart }: Pro
         </div>
 
         {/* Footer */}
-        <div style={{
-          padding: '10px 16px',
-          borderTop: '1px solid var(--color-border)',
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0, gap: 8,
-        }}>
+        <div
+          style={{
+            padding: '10px 16px',
+            borderTop: '1px solid var(--color-border)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexShrink: 0,
+            gap: 8,
+          }}
+        >
           <span style={{ fontSize: 11, color: 'var(--color-muted-foreground)' }}>
-            {dirty ? <span style={{ color: activeColor }}>● 未保存的更改</span> : saved ? '✓ 已保存' : `${lineCount} 行`}
+            {dirty ? (
+              <span style={{ color: activeColor }}>● 未保存的更改</span>
+            ) : saved ? (
+              '✓ 已保存'
+            ) : (
+              `${lineCount} 行`
+            )}
           </span>
           <div style={{ display: 'flex', gap: 8 }}>
-            <button onClick={onClose} style={cancelBtnStyle}>取消</button>
+            <button onClick={onClose} style={cancelBtnStyle}>
+              取消
+            </button>
             {hasMultipleFiles && (
               <button
-                disabled={syncing || loadingFile}
+                disabled={mutating || loadingFile}
                 onClick={handleSync}
                 title="将此文件中的键同步到其他环境文件"
-                style={{ ...cancelBtnStyle, display: 'inline-flex', alignItems: 'center', gap: 5, opacity: syncing || loadingFile ? 0.6 : 1 }}
+                style={{
+                  ...cancelBtnStyle,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 5,
+                  opacity: mutating || loadingFile ? 0.6 : 1,
+                }}
               >
                 <RefreshCw size={12} strokeWidth={2} />
                 {syncing ? '同步中…' : '同步键'}
               </button>
             )}
             <button
-              disabled={saving || loadingFile}
+              disabled={mutating || loadingFile}
               onClick={() => handleSave(false)}
-              style={{ ...cancelBtnStyle, opacity: saving || loadingFile ? 0.6 : 1 }}
+              style={{ ...cancelBtnStyle, opacity: mutating || loadingFile ? 0.6 : 1 }}
             >
               {saving ? '保存中…' : '保存'}
             </button>
             <button
-              disabled={saving || loadingFile}
+              disabled={mutating || loadingFile}
               onClick={() => handleSave(true)}
-              style={{ ...primaryBtnStyle(activeColor), opacity: saving || loadingFile ? 0.6 : 1 }}
+              style={{
+                ...primaryBtnStyle(activeColor),
+                opacity: mutating || loadingFile ? 0.6 : 1,
+              }}
             >
               {saving ? '保存中…' : '保存并重启'}
             </button>
           </div>
         </div>
-
       </div>
     </div>
   )
@@ -321,15 +445,24 @@ export function EnvFileModal({ processId, processName, onClose, onRestart }: Pro
 
 // @group Utilities > Styles
 const cancelBtnStyle: React.CSSProperties = {
-  padding: '5px 14px', fontSize: 13, cursor: 'pointer',
-  background: 'var(--color-secondary)', border: '1px solid var(--color-border)',
-  borderRadius: 5, color: 'var(--color-foreground)',
+  padding: '5px 14px',
+  fontSize: 13,
+  cursor: 'pointer',
+  background: 'var(--color-secondary)',
+  border: '1px solid var(--color-border)',
+  borderRadius: 5,
+  color: 'var(--color-foreground)',
 }
 
 function primaryBtnStyle(color: string): React.CSSProperties {
   return {
-    padding: '5px 14px', fontSize: 13, fontWeight: 600, cursor: 'pointer',
-    background: color, border: `1px solid ${color}`,
-    borderRadius: 5, color: '#000',
+    padding: '5px 14px',
+    fontSize: 13,
+    fontWeight: 600,
+    cursor: 'pointer',
+    background: color,
+    border: `1px solid ${color}`,
+    borderRadius: 5,
+    color: '#000',
   }
 }

@@ -30,6 +30,12 @@ pub struct LogStatsState {
     pub history: VecDeque<LogStatsBucket>,
 }
 
+impl Default for LogStatsState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl LogStatsState {
     pub fn new() -> Self {
         Self {

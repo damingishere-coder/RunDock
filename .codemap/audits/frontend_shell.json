@@ -1,0 +1,12 @@
+{
+  "score": 77,
+  "grade": "B",
+  "tags": ["bloat", "god-component"],
+  "findings": [
+    {
+      "sev": "MED",
+      "loc": "web-ui/src/App.tsx:77",
+      "text": "Layout 仍在约 924 行的 App.tsx 中集中编排全局查询、通知、更新、路由和多个 overlay；侧栏、状态栏、服务器切换及认证已提取，但应用壳继续承担较高的变更耦合。"
+    }
+  ]
+}

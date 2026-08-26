@@ -39,7 +39,7 @@ function renderPage(reload = vi.fn()) {
     ...render(
       <MemoryRouter initialEntries={['/processes']}>
         <ProjectsPage projects={[project]} error={null} reload={reload} />
-      </MemoryRouter>,
+      </MemoryRouter>
     ),
   }
 }
@@ -76,7 +76,9 @@ describe('ProjectsPage project identity', () => {
     await user.type(input, '  新备注  ')
     await user.click(screen.getByRole('button', { name: '保存 AI JobPilot 备注' }))
 
-    await waitFor(() => expect(api.updateProject).toHaveBeenCalledWith('project-1', { note: '新备注' }))
+    await waitFor(() =>
+      expect(api.updateProject).toHaveBeenCalledWith('project-1', { note: '新备注' })
+    )
     expect(api.updateProject).toHaveBeenCalledTimes(1)
     expect(reload).toHaveBeenCalledTimes(1)
   })
@@ -107,18 +109,63 @@ describe('ProjectsPage project identity', () => {
     }
     vi.mocked(api.getPorts).mockResolvedValue({
       ports: [
-        { pid: 501, port: 8888, protocol: 'TCP', local_address: '127.0.0.1:8888', remote_address: '', state: 'LISTENING', process_name: 'java.exe', ancestor_pids: [101] },
-        { pid: 501, port: 35729, protocol: 'TCP', local_address: '127.0.0.1:35729', remote_address: '', state: 'LISTENING', process_name: 'java.exe', ancestor_pids: [101] },
-        { pid: 502, port: 61135, protocol: 'TCP', local_address: '127.0.0.1:61135', remote_address: '', state: 'LISTENING', process_name: 'java.exe', ancestor_pids: [101] },
-        { pid: 601, port: 6866, protocol: 'TCP', local_address: '127.0.0.1:6866', remote_address: '', state: 'LISTENING', process_name: 'node.exe', ancestor_pids: [202] },
-        { pid: 601, port: 63119, protocol: 'TCP', local_address: '127.0.0.1:63119', remote_address: '', state: 'LISTENING', process_name: 'node.exe', ancestor_pids: [202] },
+        {
+          pid: 501,
+          port: 8888,
+          protocol: 'TCP',
+          local_address: '127.0.0.1:8888',
+          remote_address: '',
+          state: 'LISTENING',
+          process_name: 'java.exe',
+          ancestor_pids: [101],
+        },
+        {
+          pid: 501,
+          port: 35729,
+          protocol: 'TCP',
+          local_address: '127.0.0.1:35729',
+          remote_address: '',
+          state: 'LISTENING',
+          process_name: 'java.exe',
+          ancestor_pids: [101],
+        },
+        {
+          pid: 502,
+          port: 61135,
+          protocol: 'TCP',
+          local_address: '127.0.0.1:61135',
+          remote_address: '',
+          state: 'LISTENING',
+          process_name: 'java.exe',
+          ancestor_pids: [101],
+        },
+        {
+          pid: 601,
+          port: 6866,
+          protocol: 'TCP',
+          local_address: '127.0.0.1:6866',
+          remote_address: '',
+          state: 'LISTENING',
+          process_name: 'node.exe',
+          ancestor_pids: [202],
+        },
+        {
+          pid: 601,
+          port: 63119,
+          protocol: 'TCP',
+          local_address: '127.0.0.1:63119',
+          remote_address: '',
+          state: 'LISTENING',
+          process_name: 'node.exe',
+          ancestor_pids: [202],
+        },
       ],
     })
 
     render(
       <MemoryRouter initialEntries={['/processes']}>
         <ProjectsPage projects={[runningProject]} error={null} reload={vi.fn()} />
-      </MemoryRouter>,
+      </MemoryRouter>
     )
 
     const link = await screen.findByRole('link', { name: '打开网页 http://127.0.0.1:6866/' })
@@ -152,13 +199,18 @@ describe('ProjectsPage project identity', () => {
     render(
       <MemoryRouter initialEntries={['/processes']}>
         <ProjectsPage projects={[desktopProject]} error={null} reload={vi.fn()} />
-      </MemoryRouter>,
+      </MemoryRouter>
     )
 
-    expect(screen.getByRole('link', { name: '打开软件 wanmotai://open' })).toHaveAttribute('href', 'wanmotai://open')
+    expect(screen.getByRole('link', { name: '打开软件 wanmotai://open' })).toHaveAttribute(
+      'href',
+      'wanmotai://open'
+    )
     expect(screen.getAllByText(/桌面软件/).length).toBeGreaterThan(0)
     expect(screen.queryByRole('link', { name: /打开网页/ })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /启动|停止|重启|启用|停用/ })).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: /启动|停止|重启|启用|停用/ })
+    ).not.toBeInTheDocument()
     expect(screen.queryByTitle('展开技术组件')).not.toBeInTheDocument()
     expect(screen.queryByText('CPU')).not.toBeInTheDocument()
     expect(screen.queryByText('内存')).not.toBeInTheDocument()

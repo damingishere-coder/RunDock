@@ -47,7 +47,12 @@ function highlightLine(line: string, i: number): React.ReactNode {
   }
 
   // Fallback — plain text
-  return <div key={i}>{exportPrefix}{rest}</div>
+  return (
+    <div key={i}>
+      {exportPrefix}
+      {rest}
+    </div>
+  )
 }
 
 // @group Utilities > HighlightValue : Color the value part of KEY=value
@@ -55,8 +60,7 @@ function highlightValue(val: string): React.ReactNode {
   if (val === '') return null
 
   // Quoted string — single or double
-  if ((val.startsWith('"') && val.endsWith('"')) ||
-      (val.startsWith("'") && val.endsWith("'"))) {
+  if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
     const q = val[0]
     const inner = val.slice(1, -1)
     return (
@@ -90,12 +94,20 @@ interface EnvEditorProps {
   borderColor: string
   placeholder?: string
   textareaRef?: React.RefObject<HTMLTextAreaElement | null>
+  disabled?: boolean
 }
 
-export function EnvEditor({ value, onChange, borderColor, placeholder, textareaRef: externalRef }: EnvEditorProps) {
+export function EnvEditor({
+  value,
+  onChange,
+  borderColor,
+  placeholder,
+  textareaRef: externalRef,
+  disabled = false,
+}: EnvEditorProps) {
   const internalRef = useRef<HTMLTextAreaElement>(null)
-  const preRef      = useRef<HTMLPreElement>(null)
-  const taRef       = externalRef ?? internalRef
+  const preRef = useRef<HTMLPreElement>(null)
+  const taRef = externalRef ?? internalRef
 
   // Sync scroll between textarea and highlight layer
   useEffect(() => {
@@ -103,12 +115,12 @@ export function EnvEditor({ value, onChange, borderColor, placeholder, textareaR
     const pre = preRef.current
     if (!ta || !pre) return
     const onScroll = () => {
-      pre.scrollTop  = ta.scrollTop
+      pre.scrollTop = ta.scrollTop
       pre.scrollLeft = ta.scrollLeft
     }
     ta.addEventListener('scroll', onScroll)
     return () => ta.removeEventListener('scroll', onScroll)
-  }, [])
+  }, [taRef])
 
   const lines = value.split('\n')
   // Add a trailing empty line so the pre height matches textarea height
@@ -128,31 +140,34 @@ export function EnvEditor({ value, onChange, borderColor, placeholder, textareaR
   }
 
   return (
-    <div style={{
-      flex: 1,
-      display: 'flex',
-      overflow: 'hidden',
-      border: `1px solid ${borderColor}`,
-      borderRadius: 4,
-      background: 'var(--color-background)',
-      position: 'relative',
-    }}>
-
+    <div
+      style={{
+        flex: 1,
+        display: 'flex',
+        overflow: 'hidden',
+        border: `1px solid ${borderColor}`,
+        borderRadius: 4,
+        background: 'var(--color-background)',
+        position: 'relative',
+      }}
+    >
       {/* Line numbers */}
-      <div style={{
-        padding: '8px 6px',
-        textAlign: 'right',
-        userSelect: 'none',
-        fontFamily: sharedStyle.fontFamily,
-        fontSize: sharedStyle.fontSize,
-        lineHeight: sharedStyle.lineHeight,
-        color: 'var(--color-muted-foreground)',
-        background: 'var(--color-muted)',
-        borderRight: '1px solid var(--color-border)',
-        minWidth: 32,
-        flexShrink: 0,
-        overflowY: 'hidden',
-      }}>
+      <div
+        style={{
+          padding: '8px 6px',
+          textAlign: 'right',
+          userSelect: 'none',
+          fontFamily: sharedStyle.fontFamily,
+          fontSize: sharedStyle.fontSize,
+          lineHeight: sharedStyle.lineHeight,
+          color: 'var(--color-muted-foreground)',
+          background: 'var(--color-muted)',
+          borderRight: '1px solid var(--color-border)',
+          minWidth: 32,
+          flexShrink: 0,
+          overflowY: 'hidden',
+        }}
+      >
         {renderLines.map((_, i) => (
           <div key={i}>{i + 1}</div>
         ))}
@@ -184,6 +199,7 @@ export function EnvEditor({ value, onChange, borderColor, placeholder, textareaR
         ref={taRef}
         value={value}
         onChange={e => onChange(e.target.value)}
+        disabled={disabled}
         spellCheck={false}
         placeholder={placeholder}
         style={{
@@ -198,6 +214,7 @@ export function EnvEditor({ value, onChange, borderColor, placeholder, textareaR
           resize: 'none',
           minHeight: 0,
           zIndex: 1,
+          cursor: disabled ? 'wait' : 'text',
         }}
       />
     </div>

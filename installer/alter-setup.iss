@@ -3,7 +3,7 @@
 ; https://github.com/damingishere-coder/RunDock
 
 #define AppName      "RunDock"
-#define AppVersion   "0.1.0"
+#define AppVersion   "1.1.0"
 #define AppPublisher "DAMING"
 #define AppURL       "https://github.com/damingishere-coder/RunDock"
 #define AppExeName   "alter.exe"
@@ -30,7 +30,7 @@ Compression=lzma2/ultra64
 SolidCompression=yes
 WizardStyle=modern
 PrivilegesRequired=admin
-PrivilegesRequiredOverridesAllowed=commandline
+ChangesEnvironment=yes
 
 ; Windows 10 1809+ required
 MinVersion=10.0.17763
@@ -79,19 +79,10 @@ begin
     exit;
   end;
   // Look for the path with or without trailing backslash
-  Result := Pos(';' + Uppercase(Param) + ';', ';' + Uppercase(OrigPath) + ';') = 0;
-end;
-
-// After install, broadcast WM_SETTINGCHANGE so PATH is live without a reboot
-procedure CurStepChanged(CurStep: TSetupStep);
-var
-  ResultCode: integer;
-begin
-  if CurStep = ssPostInstall then begin
-    Exec(ExpandConstant('{sys}\cmd.exe'),
-      '/C setx /M PATH "%PATH%"',
-      '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
-  end;
+  OrigPath := ';' + Uppercase(OrigPath) + ';';
+  Param := Uppercase(RemoveBackslashUnlessRoot(Param));
+  Result := (Pos(';' + Param + ';', OrigPath) = 0) and
+            (Pos(';' + Param + '\;', OrigPath) = 0);
 end;
 
 [UninstallRun]

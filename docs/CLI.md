@@ -51,7 +51,7 @@ alter start <SCRIPT> [OPTIONS] [-- <ARGS>...]
 | `--restart-delay-ms <MS>` | | `1000` | Base delay before restart (exponential backoff applied) |
 | `--watch` | `-w` | `false` | Enable watch mode (restart on file changes) |
 | `--watch-paths <PATHS>...` | | `[]` | Directories to watch (used with `--watch`) |
-| `--namespace <NS>` | | `default` | Logical group for the process |
+| `--cron <EXPR>` | | — | Run on a cron schedule; the process sleeps between runs |
 
 **Examples:**
 
@@ -59,8 +59,8 @@ alter start <SCRIPT> [OPTIONS] [-- <ARGS>...]
 # Basic process
 alter start python -- -m http.server 8080
 
-# Named process
-alter start node -- server.js --name api
+# Named process (all RunDock options must appear before `--`)
+alter start node --name api -- server.js
 
 # With working directory and env vars
 alter start python --name django --cwd C:\projects\api -e DJANGO_ENV=production -- manage.py runserver
@@ -70,6 +70,9 @@ alter start node --name worker --max-restarts 5 --restart-delay-ms 2000 -- worke
 
 # Watch mode (restart on source file changes)
 alter start go --name backend --watch --watch-paths src/ -- run main.go
+
+# Scheduled process
+alter start python --name hourly-report --cron "0 0 * * * *" -- report.py
 
 # Load ecosystem config
 alter start alter.config.toml
@@ -291,7 +294,8 @@ Saves all processes (running and stopped) to `%APPDATA%\alter-pm2\state.json` (W
 The saved state records:
 - Process config (name, script, args, cwd, env, etc.)
 - Restart count
-- Whether the process was running at save time (for `resurrect`)
+- Last PID and immutable process-start identity for safe re-adoption
+- Whether a cron scheduler was active
 
 > State is also auto-saved after every process change (start, stop, restart, delete, edit).
 
@@ -305,8 +309,9 @@ Restore the process list from the last saved state.
 alter resurrect
 ```
 
-- Processes that were **running** when saved are automatically restarted
-- Processes that were **stopped** are registered in the list but not started (you can start them manually or from the dashboard)
+- A still-live PID is re-adopted only when its saved start identity matches
+- Missing or mismatched ordinary processes are registered as stopped and are never guessed-restarted
+- Previously active cron schedules are restored in sleeping/scheduled state
 
 **Typical usage (after reboot):**
 
@@ -394,7 +399,7 @@ alter unstartup
 Outputs a PowerShell command to register a Scheduled Task that starts the daemon at login. Run the printed command in an elevated PowerShell prompt.
 
 **Linux:**
-Outputs a systemd unit file template. Copy to `/etc/systemd/system/alter.service` and run `sudo systemctl enable --now alter`.
+Outputs a systemd unit file template. Copy it to `/etc/systemd/system/alter-daemon.service`, then run `sudo systemctl daemon-reload` and `sudo systemctl enable --now alter-daemon.service`.
 
 **macOS:**
 Shows instructions for adding the daemon start command to your shell profile.
@@ -428,8 +433,8 @@ Shows instructions for adding the daemon start command to your shell profile.
 **Windows `.cmd` scripts:** Tools like `npm`, `yarn`, `npx`, `tsc`, and `nodemon` are batch scripts on Windows. alter automatically wraps them in `cmd /C`, so you can use them directly:
 
 ```powershell
-alter start npm -- run start --name my-app
-alter start npx -- nodemon index.js --name dev-server
+alter start npm --name my-app -- run start
+alter start npx --name dev-server -- nodemon index.js
 ```
 
 **JSON output for scripting:**

@@ -53,10 +53,10 @@ src/
 │   └── mod.rs
 ├── api/
 │   ├── routes/
-│   │   ├── processes.rs  # /processes/* endpoints
-│   │   ├── system.rs     # /system/* endpoints (health, save, shutdown)
-│   │   ├── ecosystem.rs  # /ecosystem endpoint
-│   │   └── logs.rs       # (reserved)
+│   │   ├── processes.rs, projects.rs, git.rs
+│   │   ├── auth.rs, system.rs, update.rs, ports.rs
+│   │   ├── ai.rs, telegram.rs, notifications.rs, log_alerts.rs
+│   │   └── tunnels.rs, terminal.rs, scripts.rs, metrics.rs
 │   ├── error.rs          # ApiError → HTTP response conversion
 │   ├── middleware.rs
 │   └── mod.rs
@@ -69,6 +69,9 @@ src/
 │   ├── manager.rs        # ProcessManager — high-level lifecycle API
 │   ├── instance.rs       # ManagedProcess — per-process state
 │   ├── runner.rs         # Spawn child + pipe stdout/stderr
+│   ├── identity.rs       # Immutable PID identity + verified termination
+│   ├── tree.rs           # Windows Job / Unix process-group ownership
+│   ├── health.rs         # Bounded loopback health probes
 │   ├── restarter.rs      # Auto-restart loop with exponential backoff
 │   ├── watcher.rs        # File system watcher (watch mode)
 │   └── mod.rs
@@ -80,6 +83,8 @@ src/
 ├── config/
 │   ├── ecosystem.rs      # AppConfig + EcosystemConfig structs
 │   ├── paths.rs          # Platform-aware data/log paths
+│   ├── atomic_file.rs     # Bounded atomic JSON + validated LKG recovery
+│   ├── state_transaction.rs # Crash-recoverable state/projects pair
 │   ├── daemon_config.rs  # DaemonConfig (port, host)
 │   └── mod.rs
 ├── models/
@@ -90,9 +95,9 @@ src/
 ├── client/
 │   ├── daemon_client.rs  # reqwest HTTP client (CLI → daemon)
 │   └── mod.rs
-├── web/
-│   ├── assets/           # index.html, app.js, style.css
-│   └── mod.rs            # rust-embed serving
+├── web/                   # rust-embed serving for web-ui/dist
+├── telegram/, tunnel/, notifications/
+├── web-ui/                # React/Vite dashboard source
 └── utils/
     ├── pid.rs, format.rs, table.rs
     └── mod.rs
@@ -133,14 +138,15 @@ DaemonClient::is_alive() → TCP connect to :2999
 DaemonState::new()
         │
         ├── ProcessManager::new()  (empty DashMap)
-        ├── load state.json if exists
-        │       └── restore() → restart previously-running processes
+        ├── recover and validate state.json + projects.json
+        │       └── restore() → re-adopt only a live process whose PID identity still matches;
+        │                       otherwise retain it as stopped/error state
         │
         ▼
 Server::start()
         ├── socket2: bind TCP with SO_REUSEADDR
         ├── Build Axum router (REST API + static assets)
-        ├── Add CORS layer (all origins/methods/headers)
+        ├── Add CORS allowlist (same origin + explicit loopback dashboard/dev origins)
         ├── Add tracing layer
         └── tokio::serve() → async loop
 ```
@@ -250,31 +256,34 @@ AsyncBufReadExt::lines()  (tokio)
 
 **File:** `%APPDATA%\alter-pm2\state.json` (Windows) or `~/.alter-pm2/state.json`
 
-**Format:**
+**Format (simplified):**
 ```json
 {
+  "schema_version": 1,
   "saved_at": "2026-02-22T10:00:00Z",
   "apps": [
     {
       "id": "uuid",
       "config": { /* full AppConfig */ },
       "restart_count": 2,
-      "autorestart_on_restore": true
+      "last_pid": 1234,
+      "process_identity": { "start_time_secs": 1771735200 },
+      "cron_was_active": false
     }
   ]
 }
 ```
 
-**Auto-save:** After every process state change (start, stop, restart, delete, edit), a background `tokio::spawn` calls `save_to_disk()`. This uses an atomic write: writes to `state.json.tmp` first, then renames — preventing corruption from partial writes.
+**Auto-save:** Lifecycle mutations are serialized with persistence and rollback. Individual JSON files use bounded temporary files, durable atomic replacement, semantic validation, and a validated last-known-good copy. Runtime state and logical projects additionally use a transaction marker so startup can deterministically roll forward or roll back an interrupted pair update.
 
 **Restore on startup:**
 ```rust
 for app in saved.apps {
-    if app.autorestart_on_restore {
-        manager.start(app.config).await   // restart it
-    } else {
-        manager.register_stopped(app.config).await  // show in list, don't start
-    }
+    // Re-adopt only when the saved PID is alive and its immutable start
+    // identity still matches. Never guess-restart an ordinary process.
+    if live_pid_identity_matches(&app) { adopt(app) }
+    else if app.cron_was_active { restore_sleeping_cron(app) }
+    else { register_stopped(app) }
 }
 ```
 

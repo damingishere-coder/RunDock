@@ -18,7 +18,7 @@ pub async fn wait_for_dependencies(
 ) -> Result<()> {
     for dep_name in depends_on {
         let dep_id = find_by_name(registry, dep_name)
-            .await
+            .await?
             .ok_or_else(|| anyhow!("dependency '{}' not found in registry", dep_name))?;
 
         let deadline = tokio::time::Instant::now() + timeout;
@@ -67,12 +67,18 @@ pub fn default_timeout() -> Duration {
     Duration::from_secs(DEPENDENCY_TIMEOUT_SECS)
 }
 
-async fn find_by_name(registry: &ProcessRegistry, name: &str) -> Option<Uuid> {
+async fn find_by_name(registry: &ProcessRegistry, name: &str) -> Result<Option<Uuid>> {
+    let mut matched = None;
     for entry in registry.iter() {
         let proc = entry.value().read().await;
         if proc.config.name == name {
-            return Some(*entry.key());
+            if matched.is_some() {
+                return Err(anyhow!(
+                    "multiple processes are named '{name}'; dependency targets must be unique"
+                ));
+            }
+            matched = Some(*entry.key());
         }
     }
-    None
+    Ok(matched)
 }

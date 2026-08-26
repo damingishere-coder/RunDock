@@ -29,6 +29,12 @@ pub struct StartRequest {
     pub log_alert: Option<crate::config::log_alert_config::LogAlertOverride>,
 }
 
+// @group Types > Request : Update only the per-process notification override
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProcessNotificationRequest {
+    pub notify: Option<crate::models::notification::NotificationConfig>,
+}
+
 // @group Types > Request : Load an ecosystem config file
 #[derive(Debug, Deserialize)]
 pub struct EcosystemRequest {

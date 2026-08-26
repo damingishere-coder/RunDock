@@ -13,7 +13,14 @@ interface Props {
 }
 
 // @group BusinessLogic > CodeEditor : Monospace editor with gutter, tab support, auto-scroll
-export function CodeEditor({ value, onChange, language, height = 300, readOnly = false, placeholder }: Props) {
+export function CodeEditor({
+  value,
+  onChange,
+  language,
+  height = 300,
+  readOnly = false,
+  placeholder,
+}: Props) {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const gutterRef = useRef<HTMLDivElement>(null)
 
@@ -25,49 +32,56 @@ export function CodeEditor({ value, onChange, language, height = 300, readOnly =
   }, [])
 
   // @group BusinessLogic > Tab : Insert 2 spaces on Tab key press
-  const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Tab') {
-      e.preventDefault()
-      const ta = e.currentTarget
-      const start = ta.selectionStart
-      const end = ta.selectionEnd
-      const next = value.substring(0, start) + '  ' + value.substring(end)
-      onChange(next)
-      // Restore cursor after state update
-      requestAnimationFrame(() => {
-        ta.selectionStart = ta.selectionEnd = start + 2
-      })
-    }
-  }, [value, onChange])
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      if (e.key === 'Tab') {
+        e.preventDefault()
+        const ta = e.currentTarget
+        const start = ta.selectionStart
+        const end = ta.selectionEnd
+        const next = value.substring(0, start) + '  ' + value.substring(end)
+        onChange(next)
+        // Restore cursor after state update
+        requestAnimationFrame(() => {
+          ta.selectionStart = ta.selectionEnd = start + 2
+        })
+      }
+    },
+    [value, onChange]
+  )
 
   const lineCount = value ? value.split('\n').length : 1
 
   return (
-    <div style={{
-      display: 'flex',
-      flexDirection: 'column',
-      border: '1px solid var(--color-border)',
-      borderRadius: 6,
-      overflow: 'hidden',
-      background: '#1a1a1a',
-      height,
-    }}>
-      {/* Header bar */}
-      <div style={{
+    <div
+      style={{
         display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: '5px 12px',
-        background: '#111',
-        borderBottom: '1px solid var(--color-border)',
-        flexShrink: 0,
-      }}>
-        <span style={{ fontSize: 11, color: 'var(--color-muted-foreground)', fontFamily: 'monospace' }}>
+        flexDirection: 'column',
+        border: '1px solid var(--color-border)',
+        borderRadius: 6,
+        overflow: 'hidden',
+        background: '#1a1a1a',
+        height,
+      }}
+    >
+      {/* Header bar */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '5px 12px',
+          background: '#111',
+          borderBottom: '1px solid var(--color-border)',
+          flexShrink: 0,
+        }}
+      >
+        <span
+          style={{ fontSize: 11, color: 'var(--color-muted-foreground)', fontFamily: 'monospace' }}
+        >
           {language ?? 'text'}
         </span>
-        <span style={{ fontSize: 11, color: 'var(--color-muted-foreground)' }}>
-          {lineCount} 行
-        </span>
+        <span style={{ fontSize: 11, color: 'var(--color-muted-foreground)' }}>{lineCount} 行</span>
       </div>
 
       {/* Editor area: gutter + textarea */}
@@ -123,7 +137,7 @@ export function CodeEditor({ value, onChange, language, height = 300, readOnly =
             tabSize: 2,
             overflowY: 'auto',
             whiteSpace: 'pre',
-            overflowWrap: 'off' as React.CSSProperties['overflowWrap'],
+            overflowWrap: 'normal',
             overflowX: 'auto',
           }}
         />

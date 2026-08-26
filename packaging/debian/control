@@ -3,7 +3,7 @@ Version: VERSION_PLACEHOLDER
 Architecture: ARCH_PLACEHOLDER
 Maintainer: damingishere-coder <damingishere-coder@users.noreply.github.com>
 Installed-Size: SIZE_PLACEHOLDER
-Depends: libc6 (>= 2.17)
+Depends: libc6 (>= 2.35)
 Section: utils
 Priority: optional
 Homepage: https://github.com/damingishere-coder/RunDock

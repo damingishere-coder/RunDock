@@ -1,9 +1,28 @@
 #!/bin/bash
 set -e
 
-# @group Configuration : Post-install hook — reload systemd and print usage hint
+# @group Configuration : Reload systemd and restore the pre-upgrade service state
 if command -v systemctl &>/dev/null && [ -d /run/systemd/system ]; then
-    systemctl daemon-reload || true
+    systemctl daemon-reload
+    upgrade_state=/run/alter-daemon-package-upgrade
+    if [ -f "$upgrade_state" ]; then
+        read -r was_enabled was_active < "$upgrade_state"
+        case "$was_enabled:$was_active" in
+            yes:yes|yes:no|no:yes|no:no) ;;
+            *)
+                echo "invalid saved alter-daemon upgrade state" >&2
+                exit 1
+                ;;
+        esac
+        if [ "$was_enabled" = yes ]; then
+            systemctl enable alter-daemon.service
+        fi
+        if [ "$was_active" = yes ]; then
+            systemctl start alter-daemon.service
+            systemctl is-active --quiet alter-daemon.service
+        fi
+        rm -f "$upgrade_state"
+    fi
 fi
 
 echo ""
@@ -13,5 +32,6 @@ echo "  Start the daemon:     alter daemon start"
 echo "  Start a process:      alter start node -- server.js"
 echo "  Open web dashboard:   alter web"
 echo ""
-echo "  To run on boot:       sudo systemctl enable --now alter-daemon"
+echo "  Sandboxed system mode: sudo systemctl enable --now alter-daemon"
+echo "  (System mode uses an isolated account and cannot access home directories.)"
 echo ""

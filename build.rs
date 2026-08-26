@@ -15,8 +15,17 @@ fn main() {
     if cfg!(windows) {
         let mut resource = winresource::WindowsResource::new();
         resource.set_icon("assets/rundock-icon.ico");
-        resource
-            .compile()
-            .expect("failed to embed the RunDock Windows icon");
+        if let Err(error) = resource.compile() {
+            let profile = std::env::var("PROFILE").unwrap_or_default();
+            let in_ci = std::env::var("CI")
+                .map(|value| value.eq_ignore_ascii_case("true") || value == "1")
+                .unwrap_or(false);
+            if profile == "release" || in_ci {
+                panic!("failed to embed the RunDock Windows icon: {error}");
+            }
+            println!(
+                "cargo:warning=Windows resource compiler unavailable; continuing the local {profile} build without an embedded icon: {error}"
+            );
+        }
     }
 }

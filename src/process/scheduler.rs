@@ -40,7 +40,9 @@ impl CronScheduler {
                 let next = match schedule.upcoming(Utc).next() {
                     Some(t) => t,
                     None => {
-                        tracing::warn!("cron schedule for {process_id} has no upcoming ticks — stopping");
+                        tracing::warn!(
+                            "cron schedule for {process_id} has no upcoming ticks — stopping"
+                        );
                         break;
                     }
                 };

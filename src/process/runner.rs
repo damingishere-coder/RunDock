@@ -2,18 +2,131 @@
 
 use crate::models::log_stats::LogStatsState;
 use crate::process::instance::{LogLine, LogStream};
+use crate::process::tree::ProcessTreeGuard;
 use anyhow::{Context, Result};
 use chrono::Utc;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::Arc;
-use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncRead, BufReader};
 use tokio::process::{Child, Command};
 use tokio::sync::broadcast;
 use tokio::sync::mpsc;
 use tokio::sync::Mutex;
 use uuid::Uuid;
+
+pub struct ManagedChild {
+    child: Child,
+    process_tree: Option<ProcessTreeGuard>,
+    reader_tasks: Vec<tokio::task::JoinHandle<()>>,
+}
+
+impl ManagedChild {
+    pub fn take_process_tree(&mut self) -> Option<ProcessTreeGuard> {
+        self.process_tree.take()
+    }
+}
+
+const MAX_LOG_LINE_BYTES: usize = 64 * 1024;
+
+async fn forward_bounded_output<R>(
+    source: R,
+    process_id: Uuid,
+    stream: LogStream,
+    log_tx: broadcast::Sender<LogLine>,
+    log_stats: Arc<Mutex<LogStatsState>>,
+) where
+    R: AsyncRead + Unpin,
+{
+    let mut reader = BufReader::new(source);
+    let mut line = Vec::with_capacity(8 * 1024);
+    let mut truncated = false;
+    loop {
+        let available = match reader.fill_buf().await {
+            Ok([]) => {
+                if !line.is_empty() || truncated {
+                    emit_log_line(
+                        process_id,
+                        stream.clone(),
+                        &mut line,
+                        truncated,
+                        &log_tx,
+                        &log_stats,
+                    )
+                    .await;
+                }
+                break;
+            }
+            Ok(bytes) => bytes,
+            Err(error) => {
+                tracing::warn!(%error, %process_id, "managed process output could not be read");
+                break;
+            }
+        };
+        let newline = available.iter().position(|byte| *byte == b'\n');
+        let consumed = newline.map_or(available.len(), |index| index + 1);
+        let content_len = newline.unwrap_or(consumed);
+        let remaining = MAX_LOG_LINE_BYTES.saturating_sub(line.len());
+        let copied = content_len.min(remaining);
+        line.extend_from_slice(&available[..copied]);
+        truncated |= copied < content_len;
+        reader.consume(consumed);
+
+        if newline.is_some() {
+            if line.last() == Some(&b'\r') {
+                line.pop();
+            }
+            emit_log_line(
+                process_id,
+                stream.clone(),
+                &mut line,
+                truncated,
+                &log_tx,
+                &log_stats,
+            )
+            .await;
+            truncated = false;
+        }
+    }
+}
+
+async fn emit_log_line(
+    process_id: Uuid,
+    stream: LogStream,
+    line: &mut Vec<u8>,
+    truncated: bool,
+    log_tx: &broadcast::Sender<LogLine>,
+    log_stats: &Arc<Mutex<LogStatsState>>,
+) {
+    let mut content = String::from_utf8_lossy(line).into_owned();
+    if truncated {
+        content.push_str(" … [line truncated at 64 KiB]");
+    }
+    line.clear();
+    let stdout = stream == LogStream::Stdout;
+    let _ = log_tx.send(LogLine {
+        timestamp: Utc::now(),
+        process_id,
+        stream,
+        content,
+    });
+    log_stats.lock().await.record(stdout);
+}
+
+impl std::ops::Deref for ManagedChild {
+    type Target = Child;
+
+    fn deref(&self) -> &Self::Target {
+        &self.child
+    }
+}
+
+impl std::ops::DerefMut for ManagedChild {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.child
+    }
+}
 
 // @group BusinessLogic > Windows : Process creation flags
 // CREATE_NO_WINDOW  — hides the console window for every spawned child.
@@ -51,9 +164,8 @@ fn configure_command(
 
 #[cfg(target_os = "windows")]
 fn windows_command(script: &str, args: &[String], creation_flags: u32) -> Command {
-    let is_native = script.to_lowercase().ends_with(".exe")
-        || script.contains('\\')
-        || script.contains('/');
+    let is_native =
+        script.to_lowercase().ends_with(".exe") || script.contains('\\') || script.contains('/');
     let mut command = if is_native {
         Command::new(script)
     } else {
@@ -76,9 +188,8 @@ pub async fn spawn_process(
     cwd: Option<&str>,
     env_vars: &HashMap<String, String>,
     log_tx: broadcast::Sender<LogLine>,
-    exit_tx: mpsc::Sender<RunResult>,
     log_stats: Arc<Mutex<LogStatsState>>,
-) -> Result<Child> {
+) -> Result<ManagedChild> {
     // @group BusinessLogic > Windows : npm/node/python etc. are .cmd batch scripts on Windows.
     // Wrap with cmd.exe /C so the shell resolves them correctly.
     // If the script is already a full path or ends in .exe, spawn directly.
@@ -88,6 +199,11 @@ pub async fn spawn_process(
     let mut cmd = {
         let mut c = Command::new(script);
         c.args(args);
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::CommandExt;
+            c.as_std_mut().process_group(0);
+        }
         c
     };
     configure_command(&mut cmd, cwd, env_vars)?;
@@ -120,46 +236,65 @@ pub async fn spawn_process(
     // @group BusinessLogic > Logging : Stream stdout to broadcast + disk + log stats counter
     let stdout_tx = log_tx.clone();
     let stats_out = Arc::clone(&log_stats);
-    tokio::spawn(async move {
-        let mut reader = BufReader::new(stdout).lines();
-        while let Ok(Some(line)) = reader.next_line().await {
-            let entry = LogLine {
-                timestamp: Utc::now(),
-                process_id,
-                stream: LogStream::Stdout,
-                content: line,
-            };
-            let _ = stdout_tx.send(entry);
-            stats_out.lock().await.record(true);
-        }
-    });
+    let stdout_task = tokio::spawn(forward_bounded_output(
+        stdout,
+        process_id,
+        LogStream::Stdout,
+        stdout_tx,
+        stats_out,
+    ));
 
     // @group BusinessLogic > Logging : Stream stderr to broadcast + disk + log stats counter
     let stderr_tx = log_tx.clone();
     let stats_err = Arc::clone(&log_stats);
-    tokio::spawn(async move {
-        let mut reader = BufReader::new(stderr).lines();
-        while let Ok(Some(line)) = reader.next_line().await {
-            let entry = LogLine {
-                timestamp: Utc::now(),
-                process_id,
-                stream: LogStream::Stderr,
-                content: line,
-            };
-            let _ = stderr_tx.send(entry);
-            stats_err.lock().await.record(false);
-        }
-    });
+    let stderr_task = tokio::spawn(forward_bounded_output(
+        stderr,
+        process_id,
+        LogStream::Stderr,
+        stderr_tx,
+        stats_err,
+    ));
 
-    Ok(child)
+    let pid = child
+        .id()
+        .ok_or_else(|| anyhow::anyhow!("spawned process did not expose a PID"))?;
+    let process_tree = match ProcessTreeGuard::new(pid, &process_id.to_string()) {
+        Ok(process_tree) => process_tree,
+        Err(error) => {
+            let _ = child.kill().await;
+            let _ = child.wait().await;
+            return Err(error).context("failed to establish process-tree ownership");
+        }
+    };
+
+    Ok(ManagedChild {
+        child,
+        process_tree: Some(process_tree),
+        reader_tasks: vec![stdout_task, stderr_task],
+    })
 }
 
 /// Wait for the child to exit and send the result through the channel.
-pub async fn wait_for_exit(mut child: Child, exit_tx: mpsc::Sender<RunResult>) {
+pub async fn wait_for_exit(child: ManagedChild, exit_tx: mpsc::Sender<RunResult>) {
+    let ManagedChild {
+        mut child,
+        process_tree,
+        reader_tasks,
+    } = child;
     let exit_code = match child.wait().await {
         Ok(status) => status.code(),
         Err(_) => None,
     };
+    // Ensure descendants are gone before autorestart observes the root exit.
+    drop(process_tree);
+    for mut task in reader_tasks {
+        if tokio::time::timeout(std::time::Duration::from_secs(2), &mut task)
+            .await
+            .is_err()
+        {
+            task.abort();
+        }
+    }
     let _ = exit_tx.send(RunResult { exit_code }).await;
 }
 
@@ -172,7 +307,6 @@ mod tests {
         let script = std::env::var("COMSPEC").unwrap_or_else(|_| "cmd.exe".to_string());
         let args = vec!["/C".to_string(), "exit 0".to_string()];
         let (log_tx, _) = broadcast::channel(8);
-        let (exit_tx, _) = mpsc::channel(1);
         let stats = Arc::new(Mutex::new(LogStatsState::new()));
 
         let mut child = spawn_process(
@@ -182,12 +316,122 @@ mod tests {
             None,
             &HashMap::new(),
             log_tx,
-            exit_tx,
             stats,
         )
         .await
         .unwrap();
         let status = child.wait().await.unwrap();
         assert!(status.success());
+    }
+
+    #[tokio::test]
+    async fn dropping_managed_child_terminates_windows_descendants() {
+        let directory = std::env::temp_dir().join(format!("alter-process-tree-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&directory).unwrap();
+        let pid_file = directory.join("descendant.pid");
+        let pid_path = pid_file.to_string_lossy().replace("'", "''");
+        let command = format!(
+            "$child = Start-Process -FilePath powershell.exe -ArgumentList @('-NoProfile', '-Command', 'Start-Sleep -Seconds 30') -PassThru; $child.Id | Set-Content -Encoding ascii '{pid_path}'; Start-Sleep -Seconds 30"
+        );
+        let args = vec!["-NoProfile".to_string(), "-Command".to_string(), command];
+        let (log_tx, _) = broadcast::channel(8);
+        let stats = Arc::new(Mutex::new(LogStatsState::new()));
+        let mut child = spawn_process(
+            Uuid::new_v4(),
+            "powershell.exe",
+            &args,
+            None,
+            &HashMap::new(),
+            log_tx,
+            stats,
+        )
+        .await
+        .unwrap();
+
+        for _ in 0..50 {
+            if pid_file.exists() {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+        let descendant_pid: u32 = std::fs::read_to_string(&pid_file)
+            .expect("descendant did not publish its PID")
+            .trim()
+            .parse()
+            .unwrap();
+
+        let _ = child.kill().await;
+        let _ = child.wait().await;
+        drop(child);
+        for _ in 0..30 {
+            if !crate::process::identity::is_pid_alive(descendant_pid) {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+        assert!(!crate::process::identity::is_pid_alive(descendant_pid));
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[tokio::test]
+    async fn named_job_handoff_preserves_process_until_final_owner_closes() {
+        let process_id = Uuid::new_v4();
+        let args = vec![
+            "-NoProfile".to_string(),
+            "-Command".to_string(),
+            "Start-Sleep -Seconds 30".to_string(),
+        ];
+        let (log_tx, _) = broadcast::channel(8);
+        let stats = Arc::new(Mutex::new(LogStatsState::new()));
+        let child = spawn_process(
+            process_id,
+            "powershell.exe",
+            &args,
+            None,
+            &HashMap::new(),
+            log_tx,
+            stats,
+        )
+        .await
+        .unwrap();
+        let pid = child.id().unwrap();
+        let replacement_owner = ProcessTreeGuard::new(pid, &process_id.to_string()).unwrap();
+
+        drop(child);
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        assert!(crate::process::identity::is_pid_alive(pid));
+
+        drop(replacement_owner);
+        for _ in 0..30 {
+            if !crate::process::identity::is_pid_alive(pid) {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+        assert!(!crate::process::identity::is_pid_alive(pid));
+    }
+}
+
+#[cfg(test)]
+mod output_tests {
+    use super::*;
+    use tokio::io::AsyncWriteExt;
+
+    #[tokio::test]
+    async fn oversized_output_line_is_truncated_before_broadcast() {
+        let (mut writer, reader) = tokio::io::duplex(8 * 1024);
+        let (log_tx, mut log_rx) = broadcast::channel(8);
+        let stats = Arc::new(Mutex::new(LogStatsState::new()));
+        let payload = vec![b'x'; MAX_LOG_LINE_BYTES * 2];
+        let write_task = tokio::spawn(async move {
+            writer.write_all(&payload).await.unwrap();
+            writer.write_all(b"\n").await.unwrap();
+        });
+
+        forward_bounded_output(reader, Uuid::new_v4(), LogStream::Stdout, log_tx, stats).await;
+        write_task.await.unwrap();
+        let line = log_rx.recv().await.unwrap();
+        assert!(line.content.contains("line truncated at 64 KiB"));
+        assert!(line.content.len() < MAX_LOG_LINE_BYTES + 64);
     }
 }

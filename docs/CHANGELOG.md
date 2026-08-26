@@ -26,13 +26,13 @@ Format: `[version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **Fixe
 - `enabled` flag preserved by clone and update operations; defaults to `true` for backward compatibility
 
 **Terminal Command History**
-- `GET /api/v1/terminal-history/:key` and `PUT /api/v1/terminal-history/:key` — per-process terminal history API
+- `GET /api/v1/terminals/history/:key` and `PUT /api/v1/terminals/history/:key` — per-process terminal history API
 - History persisted to `%APPDATA%\alter-pm2\terminal-history.json` across daemon restarts
 - Deduplication and frequency tracking per command
 
 **Daemon-side UI Settings**
-- `GET /api/v1/ui-settings` and `PUT /api/v1/ui-settings` — store UI preferences on the daemon
-- `GET/PUT /api/v1/ui-settings/view-mode` — view mode (table/card) now persisted server-side
+- `GET /api/v1/system/ui-settings` and `PUT /api/v1/system/ui-settings` — store UI preferences on the daemon
+- View mode (table/card) is persisted inside the daemon-side UI settings document
 - Settings stored in `%APPDATA%\alter-pm2\ui-settings.json`
 
 **Sidebar Namespace Groups**
@@ -64,7 +64,7 @@ Format: `[version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **Fixe
 - Master CLI token — persistent token stored in `auth.json`, read by the CLI only, never returned to the browser
 - Login / Setup page in the web UI — first launch shows a setup wizard; subsequent visits show the login form
 - Auth middleware protecting all API routes when a password is configured
-- Passkey / WebAuthn stubs (endpoints registered; return "not supported" until a full WebAuthn backend is wired up)
+- Passkey / WebAuthn remains explicitly unsupported (`passkeys_supported: false`); no registration or verification endpoints are exposed until a complete backend is implemented.
 - New REST API: `GET /api/v1/auth/status`, `POST /api/v1/auth/setup`, `POST /api/v1/auth/login`, `POST /api/v1/auth/pin/login`, `DELETE /api/v1/auth/session`, `POST /api/v1/auth/change-password`, `POST/DELETE /api/v1/auth/pin`, `PATCH /api/v1/auth/settings`
 - Settings stored in `%APPDATA%\alter-pm2\auth.json`
 

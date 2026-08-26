@@ -15,12 +15,20 @@ interface AiPanelProps {
 }
 
 const panelWidth = 360
+const MAX_CHAT_MESSAGES = 100
+const MAX_USER_MESSAGE_CHARS = 16_000
 
 const iconBtn: React.CSSProperties = {
-  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-  width: 28, height: 28,
-  background: 'transparent', border: 'none', cursor: 'pointer',
-  color: 'var(--color-muted-foreground)', borderRadius: 5,
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  width: 28,
+  height: 28,
+  background: 'transparent',
+  border: 'none',
+  cursor: 'pointer',
+  color: 'var(--color-muted-foreground)',
+  borderRadius: 5,
 }
 
 // @group Utilities > Markdown : Lightweight markdown-to-JSX renderer for AI responses
@@ -39,9 +47,26 @@ function MarkdownBlock({ text }: { text: string }) {
       if (m.index > last) parts.push(raw.slice(last, m.index))
       const token = m[0]
       if (token.startsWith('`')) {
-        parts.push(<code key={m.index} style={{ fontFamily: 'monospace', fontSize: '0.9em', background: 'rgba(255,255,255,0.08)', padding: '1px 4px', borderRadius: 3 }}>{token.slice(1, -1)}</code>)
+        parts.push(
+          <code
+            key={m.index}
+            style={{
+              fontFamily: 'monospace',
+              fontSize: '0.9em',
+              background: 'rgba(255,255,255,0.08)',
+              padding: '1px 4px',
+              borderRadius: 3,
+            }}
+          >
+            {token.slice(1, -1)}
+          </code>
+        )
       } else if (token.startsWith('**') || token.startsWith('__')) {
-        parts.push(<strong key={m.index} style={{ fontWeight: 600 }}>{token.slice(2, -2)}</strong>)
+        parts.push(
+          <strong key={m.index} style={{ fontWeight: 600 }}>
+            {token.slice(2, -2)}
+          </strong>
+        )
       } else {
         parts.push(<em key={m.index}>{token.slice(1, -1)}</em>)
       }
@@ -60,17 +85,33 @@ function MarkdownBlock({ text }: { text: string }) {
       const level = hm[1].length
       const sizes = [15, 13, 12]
       elements.push(
-        <div key={i} style={{ fontWeight: 700, fontSize: sizes[level - 1], marginTop: level === 1 ? 10 : 7, marginBottom: 3, color: 'var(--color-foreground)' }}>
+        <div
+          key={i}
+          style={{
+            fontWeight: 700,
+            fontSize: sizes[level - 1],
+            marginTop: level === 1 ? 10 : 7,
+            marginBottom: 3,
+            color: 'var(--color-foreground)',
+          }}
+        >
           {renderInline(hm[2])}
         </div>
       )
-      i++; continue
+      i++
+      continue
     }
 
     // Horizontal rule
     if (/^(-{3,}|\*{3,})$/.test(line.trim())) {
-      elements.push(<hr key={i} style={{ border: 'none', borderTop: '1px solid var(--color-border)', margin: '8px 0' }} />)
-      i++; continue
+      elements.push(
+        <hr
+          key={i}
+          style={{ border: 'none', borderTop: '1px solid var(--color-border)', margin: '8px 0' }}
+        />
+      )
+      i++
+      continue
     }
 
     // Unordered list: - item or * item
@@ -78,11 +119,17 @@ function MarkdownBlock({ text }: { text: string }) {
       const listItems: React.ReactNode[] = []
       while (i < lines.length && /^[\s]*[-*]\s/.test(lines[i])) {
         listItems.push(
-          <li key={i} style={{ marginBottom: 2 }}>{renderInline(lines[i].replace(/^[\s]*[-*]\s/, ''))}</li>
+          <li key={i} style={{ marginBottom: 2 }}>
+            {renderInline(lines[i].replace(/^[\s]*[-*]\s/, ''))}
+          </li>
         )
         i++
       }
-      elements.push(<ul key={`ul-${i}`} style={{ margin: '4px 0', paddingLeft: 18, listStyle: 'disc' }}>{listItems}</ul>)
+      elements.push(
+        <ul key={`ul-${i}`} style={{ margin: '4px 0', paddingLeft: 18, listStyle: 'disc' }}>
+          {listItems}
+        </ul>
+      )
       continue
     }
 
@@ -91,11 +138,17 @@ function MarkdownBlock({ text }: { text: string }) {
       const listItems: React.ReactNode[] = []
       while (i < lines.length && /^\d+\.\s/.test(lines[i])) {
         listItems.push(
-          <li key={i} style={{ marginBottom: 2 }}>{renderInline(lines[i].replace(/^\d+\.\s/, ''))}</li>
+          <li key={i} style={{ marginBottom: 2 }}>
+            {renderInline(lines[i].replace(/^\d+\.\s/, ''))}
+          </li>
         )
         i++
       }
-      elements.push(<ol key={`ol-${i}`} style={{ margin: '4px 0', paddingLeft: 18 }}>{listItems}</ol>)
+      elements.push(
+        <ol key={`ol-${i}`} style={{ margin: '4px 0', paddingLeft: 18 }}>
+          {listItems}
+        </ol>
+      )
       continue
     }
 
@@ -104,15 +157,27 @@ function MarkdownBlock({ text }: { text: string }) {
       const codeLines: string[] = []
       i++
       while (i < lines.length && !lines[i].startsWith('```')) {
-        codeLines.push(lines[i]); i++
+        codeLines.push(lines[i])
+        i++
       }
       i++ // consume closing ```
       elements.push(
-        <pre key={i} style={{
-          background: 'rgba(0,0,0,0.3)', borderRadius: 5, padding: '8px 10px',
-          fontSize: 11, fontFamily: 'monospace', overflowX: 'auto',
-          margin: '4px 0', whiteSpace: 'pre-wrap', wordBreak: 'break-all',
-        }}>{codeLines.join('\n')}</pre>
+        <pre
+          key={i}
+          style={{
+            background: 'rgba(0,0,0,0.3)',
+            borderRadius: 5,
+            padding: '8px 10px',
+            fontSize: 11,
+            fontFamily: 'monospace',
+            overflowX: 'auto',
+            margin: '4px 0',
+            whiteSpace: 'pre-wrap',
+            wordBreak: 'break-all',
+          }}
+        >
+          {codeLines.join('\n')}
+        </pre>
       )
       continue
     }
@@ -120,11 +185,16 @@ function MarkdownBlock({ text }: { text: string }) {
     // Blank line — small gap
     if (line.trim() === '') {
       elements.push(<div key={i} style={{ height: 6 }} />)
-      i++; continue
+      i++
+      continue
     }
 
     // Regular paragraph
-    elements.push(<div key={i} style={{ marginBottom: 1 }}>{renderInline(line)}</div>)
+    elements.push(
+      <div key={i} style={{ marginBottom: 1 }}>
+        {renderInline(line)}
+      </div>
+    )
     i++
   }
 
@@ -138,34 +208,70 @@ export function AiPanel({ open, processId, processName, onClose }: AiPanelProps)
   const [streaming, setStreaming] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const abortRef = useRef<AbortController | null>(null)
+  const requestIdRef = useRef(0)
   const bottomRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const [aiModel, setAiModel] = useState<string | undefined>(undefined)
   const [aiProvider, setAiProvider] = useState<string | undefined>(undefined)
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+    bottomRef.current?.scrollIntoView({ behavior: 'auto' })
   }, [messages])
 
   // Load current model/provider and focus input each time the panel opens
   useEffect(() => {
     if (!open) return
-    api.aiGetSettings().then(s => {
-      setAiModel(s.model)
-      setAiProvider(s.provider)
-    }).catch(() => {})
-    setTimeout(() => inputRef.current?.focus(), 80)
+    let active = true
+    api
+      .aiGetSettings()
+      .then(s => {
+        if (!active) return
+        setAiModel(s.model)
+        setAiProvider(s.provider)
+      })
+      .catch(loadError => {
+        if (active) {
+          setError(loadError instanceof Error ? loadError.message : '无法加载 AI 设置')
+        }
+      })
+    const focusTimer = window.setTimeout(() => inputRef.current?.focus(), 80)
+    return () => {
+      active = false
+      window.clearTimeout(focusTimer)
+    }
   }, [open])
 
   useEffect(() => {
+    if (open) return
+    requestIdRef.current += 1
+    abortRef.current?.abort()
+    abortRef.current = null
+    window.setTimeout(() => setStreaming(false), 0)
+  }, [open])
+
+  useEffect(
+    () => () => {
+      requestIdRef.current += 1
+      abortRef.current?.abort()
+    },
+    []
+  )
+
+  useEffect(() => {
     if (!open) return
-    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
   }, [open, onClose])
 
   function clearChat() {
-    if (streaming) { abortRef.current?.abort(); setStreaming(false) }
+    requestIdRef.current += 1
+    if (streaming) {
+      abortRef.current?.abort()
+      setStreaming(false)
+    }
     setMessages([])
     setError(null)
   }
@@ -173,83 +279,197 @@ export function AiPanel({ open, processId, processName, onClose }: AiPanelProps)
   async function sendMessage() {
     const text = input.trim()
     if (!text || streaming) return
+    if (text.length > MAX_USER_MESSAGE_CHARS) {
+      setError('单条消息不能超过 16000 个字符')
+      return
+    }
     setInput('')
     setError(null)
 
     const userMsg: AiChatMessage = { role: 'user', content: text }
-    setMessages(prev => [...prev, userMsg])
     const assistantMsg: AiChatMessage = { role: 'assistant', content: '' }
-    setMessages(prev => [...prev, assistantMsg])
+    setMessages(prev => [...prev, userMsg, assistantMsg].slice(-MAX_CHAT_MESSAGES))
     setStreaming(true)
 
-    const history = messages.concat(userMsg)
+    const history = [...messages, userMsg].slice(-MAX_CHAT_MESSAGES)
 
+    const requestId = ++requestIdRef.current
     const abort = api.aiChat(
-      { message: text, process_id: processId ?? undefined, history, model: aiModel, provider: aiProvider },
-      (delta) => {
+      {
+        message: text,
+        process_id: processId ?? undefined,
+        history,
+        model: aiModel,
+        provider: aiProvider,
+      },
+      delta => {
+        if (requestId !== requestIdRef.current) return
         setMessages(prev => {
           const copy = [...prev]
           const last = copy[copy.length - 1]
-          if (last?.role === 'assistant') copy[copy.length - 1] = { ...last, content: last.content + delta }
-          return copy
+          if (last?.role === 'assistant')
+            copy[copy.length - 1] = { ...last, content: last.content + delta }
+          return copy.slice(-MAX_CHAT_MESSAGES)
         })
       },
-      () => { setStreaming(false) },
-      (err) => { setError(err); setStreaming(false) },
+      () => {
+        if (requestId !== requestIdRef.current) return
+        abortRef.current = null
+        setStreaming(false)
+      },
+      err => {
+        if (requestId !== requestIdRef.current) return
+        abortRef.current = null
+        setError(err)
+        setStreaming(false)
+      }
     )
     abortRef.current = abort
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage() }
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      sendMessage()
+    }
   }
 
-  const providerLabel = aiProvider ? ({ ollama: 'Ollama', copilot: 'GitHub Copilot', github: 'GitHub Models', claude: 'Claude', openai: 'OpenAI' }[aiProvider] ?? aiProvider) : null
+  const providerLabel = aiProvider
+    ? ({
+        ollama: 'Ollama',
+        copilot: 'GitHub Copilot',
+        github: 'GitHub Models',
+        claude: 'Claude',
+        openai: 'OpenAI',
+      }[aiProvider] ?? aiProvider)
+    : null
 
   const panel = (
     <>
       {open && <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 199 }} />}
 
-      <div style={{
-        position: 'fixed', top: 0, right: 0, width: panelWidth, height: 'calc(100vh - 22px)', zIndex: 200,
-        background: 'var(--color-card)', borderLeft: '1px solid var(--color-border)',
-        display: 'flex', flexDirection: 'column', boxShadow: '-4px 0 24px rgba(0,0,0,0.35)',
-        transform: open ? 'translateX(0)' : `translateX(${panelWidth + 4}px)`,
-        transition: 'transform 0.22s cubic-bezier(0.4,0,0.2,1)',
-      }}>
-
+      <div
+        role="dialog"
+        aria-label="AI 助手"
+        aria-hidden={!open}
+        inert={!open}
+        style={{
+          position: 'fixed',
+          top: 0,
+          right: 0,
+          width: panelWidth,
+          height: 'calc(100vh - 22px)',
+          zIndex: 200,
+          background: 'var(--color-card)',
+          borderLeft: '1px solid var(--color-border)',
+          display: 'flex',
+          flexDirection: 'column',
+          boxShadow: '-4px 0 24px rgba(0,0,0,0.35)',
+          transform: open ? 'translateX(0)' : `translateX(${panelWidth + 4}px)`,
+          transition: 'transform 0.22s cubic-bezier(0.4,0,0.2,1)',
+          pointerEvents: open ? 'auto' : 'none',
+        }}
+      >
         {/* Header */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 14px', borderBottom: '1px solid var(--color-border)', flexShrink: 0 }}>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            padding: '12px 14px',
+            borderBottom: '1px solid var(--color-border)',
+            flexShrink: 0,
+          }}
+        >
           <Bot size={15} style={{ color: 'var(--color-primary)', flexShrink: 0 }} />
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-foreground)' }}>AI 助手</div>
-            <div style={{ fontSize: 10, color: 'var(--color-muted-foreground)', marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-foreground)' }}>
+              AI 助手
+            </div>
+            <div
+              style={{
+                fontSize: 10,
+                color: 'var(--color-muted-foreground)',
+                marginTop: 1,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+            >
               {processName ? `上下文：${processName}` : (providerLabel ?? 'AI')}
               {providerLabel && processName ? ` · ${providerLabel}` : ''}
             </div>
           </div>
-          <button title="清空聊天" onClick={clearChat} style={iconBtn}
-            onMouseEnter={e => { e.currentTarget.style.color = 'var(--color-foreground)' }}
-            onMouseLeave={e => { e.currentTarget.style.color = 'var(--color-muted-foreground)' }}>
+          <button
+            title="清空聊天"
+            onClick={clearChat}
+            style={iconBtn}
+            onMouseEnter={e => {
+              e.currentTarget.style.color = 'var(--color-foreground)'
+            }}
+            onMouseLeave={e => {
+              e.currentTarget.style.color = 'var(--color-muted-foreground)'
+            }}
+          >
             <Trash2 size={13} />
           </button>
-          <button title="关闭" onClick={onClose} style={iconBtn}
-            onMouseEnter={e => { e.currentTarget.style.color = 'var(--color-foreground)' }}
-            onMouseLeave={e => { e.currentTarget.style.color = 'var(--color-muted-foreground)' }}>
+          <button
+            title="关闭"
+            onClick={onClose}
+            style={iconBtn}
+            onMouseEnter={e => {
+              e.currentTarget.style.color = 'var(--color-foreground)'
+            }}
+            onMouseLeave={e => {
+              e.currentTarget.style.color = 'var(--color-muted-foreground)'
+            }}
+          >
             <X size={14} />
           </button>
         </div>
 
         {/* Messages */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <div
+          style={{
+            flex: 1,
+            overflowY: 'auto',
+            padding: '12px 14px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 10,
+          }}
+        >
           {messages.length === 0 && !error && (
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'var(--color-muted-foreground)', gap: 8, paddingBottom: 40 }}>
+            <div
+              style={{
+                flex: 1,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: 'var(--color-muted-foreground)',
+                gap: 8,
+                paddingBottom: 40,
+              }}
+            >
               <Bot size={28} style={{ opacity: 0.35 }} />
               <div style={{ fontSize: 12, textAlign: 'center', lineHeight: 1.5 }}>
-                可以询问进程、日志、<br />崩溃或配置相关问题。
+                可以询问进程、日志、
+                <br />
+                崩溃或配置相关问题。
               </div>
               {processName && (
-                <div style={{ fontSize: 11, marginTop: 4, padding: '4px 10px', background: 'var(--color-accent)', borderRadius: 12, color: 'var(--color-primary)', fontWeight: 500 }}>
+                <div
+                  style={{
+                    fontSize: 11,
+                    marginTop: 4,
+                    padding: '4px 10px',
+                    background: 'var(--color-accent)',
+                    borderRadius: 12,
+                    color: 'var(--color-primary)',
+                    fontWeight: 500,
+                  }}
+                >
                   进程上下文：{processName}
                 </div>
               )}
@@ -257,32 +477,51 @@ export function AiPanel({ open, processId, processName, onClose }: AiPanelProps)
           )}
 
           {messages.map((msg, i) => (
-            <div key={i} style={{ display: 'flex', justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start' }}>
-              <div style={{
-                maxWidth: '88%',
-                padding: '8px 11px',
-                borderRadius: msg.role === 'user' ? '12px 12px 3px 12px' : '12px 12px 12px 3px',
-                background: msg.role === 'user' ? 'var(--color-primary)' : 'var(--color-secondary)',
-                color: msg.role === 'user' ? '#fff' : 'var(--color-foreground)',
-                fontSize: 12, lineHeight: 1.6, wordBreak: 'break-word',
-              }}>
-                {msg.role === 'assistant'
-                  ? <>
-                      <MarkdownBlock text={msg.content} />
-                      {msg.content === '' && streaming && <span style={{ opacity: 0.5 }}>●</span>}
-                    </>
-                  : msg.content
-                }
+            <div
+              key={i}
+              style={{
+                display: 'flex',
+                justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start',
+              }}
+            >
+              <div
+                style={{
+                  maxWidth: '88%',
+                  padding: '8px 11px',
+                  borderRadius: msg.role === 'user' ? '12px 12px 3px 12px' : '12px 12px 12px 3px',
+                  background:
+                    msg.role === 'user' ? 'var(--color-primary)' : 'var(--color-secondary)',
+                  color: msg.role === 'user' ? '#fff' : 'var(--color-foreground)',
+                  fontSize: 12,
+                  lineHeight: 1.6,
+                  wordBreak: 'break-word',
+                }}
+              >
+                {msg.role === 'assistant' ? (
+                  <>
+                    <MarkdownBlock text={msg.content} />
+                    {msg.content === '' && streaming && <span style={{ opacity: 0.5 }}>●</span>}
+                  </>
+                ) : (
+                  msg.content
+                )}
               </div>
             </div>
           ))}
 
           {error && (
-            <div style={{
-              fontSize: 11, color: 'var(--color-destructive)', padding: '8px 10px',
-              background: 'color-mix(in srgb, var(--color-destructive) 10%, transparent)',
-              borderRadius: 6, border: '1px solid color-mix(in srgb, var(--color-destructive) 30%, transparent)',
-            }}>
+            <div
+              role="alert"
+              aria-live="polite"
+              style={{
+                fontSize: 11,
+                color: 'var(--color-destructive)',
+                padding: '8px 10px',
+                background: 'color-mix(in srgb, var(--color-destructive) 10%, transparent)',
+                borderRadius: 6,
+                border: '1px solid color-mix(in srgb, var(--color-destructive) 30%, transparent)',
+              }}
+            >
               {error}
             </div>
           )}
@@ -290,7 +529,16 @@ export function AiPanel({ open, processId, processName, onClose }: AiPanelProps)
         </div>
 
         {/* Input bar */}
-        <div style={{ padding: '10px 12px', borderTop: '1px solid var(--color-border)', flexShrink: 0, display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+        <div
+          style={{
+            padding: '10px 12px',
+            borderTop: '1px solid var(--color-border)',
+            flexShrink: 0,
+            display: 'flex',
+            gap: 8,
+            alignItems: 'flex-end',
+          }}
+        >
           <textarea
             ref={inputRef}
             value={input}
@@ -298,13 +546,22 @@ export function AiPanel({ open, processId, processName, onClose }: AiPanelProps)
             onKeyDown={handleKeyDown}
             placeholder="输入问题…（按 Enter 发送）"
             rows={1}
-            disabled={streaming}
+            disabled={streaming || !open}
             style={{
-              flex: 1, resize: 'none', padding: '7px 10px', fontSize: 12,
-              borderRadius: 6, border: '1px solid var(--color-border)',
-              background: 'var(--color-background)', color: 'var(--color-foreground)',
-              fontFamily: 'inherit', outline: 'none', lineHeight: 1.5,
-              maxHeight: 100, overflowY: 'auto', opacity: streaming ? 0.6 : 1,
+              flex: 1,
+              resize: 'none',
+              padding: '7px 10px',
+              fontSize: 12,
+              borderRadius: 6,
+              border: '1px solid var(--color-border)',
+              background: 'var(--color-background)',
+              color: 'var(--color-foreground)',
+              fontFamily: 'inherit',
+              outline: 'none',
+              lineHeight: 1.5,
+              maxHeight: 100,
+              overflowY: 'auto',
+              opacity: streaming ? 0.6 : 1,
             }}
             onInput={e => {
               const el = e.currentTarget
@@ -317,13 +574,26 @@ export function AiPanel({ open, processId, processName, onClose }: AiPanelProps)
             disabled={!input.trim() || streaming}
             title="发送（Enter）"
             style={{
-              width: 32, height: 32, flexShrink: 0, borderRadius: 6, border: 'none', cursor: 'pointer',
-              background: (!input.trim() || streaming) ? 'var(--color-secondary)' : 'var(--color-primary)',
-              color: (!input.trim() || streaming) ? 'var(--color-muted-foreground)' : '#fff',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background 0.15s',
+              width: 32,
+              height: 32,
+              flexShrink: 0,
+              borderRadius: 6,
+              border: 'none',
+              cursor: 'pointer',
+              background:
+                !input.trim() || streaming ? 'var(--color-secondary)' : 'var(--color-primary)',
+              color: !input.trim() || streaming ? 'var(--color-muted-foreground)' : '#fff',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              transition: 'background 0.15s',
             }}
           >
-            {streaming ? <Loader size={13} style={{ animation: 'spin 1s linear infinite' }} /> : <Send size={13} />}
+            {streaming ? (
+              <Loader size={13} style={{ animation: 'spin 1s linear infinite' }} />
+            ) : (
+              <Send size={13} />
+            )}
           </button>
         </div>
       </div>

@@ -1,0 +1,7 @@
+#!/bin/bash
+set -e
+
+# @group Configuration : Forget the removed unit after dpkg deletes its file
+if command -v systemctl &>/dev/null && [ -d /run/systemd/system ]; then
+    systemctl daemon-reload
+fi

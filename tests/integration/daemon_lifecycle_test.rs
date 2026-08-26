@@ -2,18 +2,47 @@
 
 #[cfg(test)]
 mod tests {
-    use alter::config::ecosystem::AppConfig;
     use alter::config::daemon_config::DaemonConfig;
+    use alter::config::ecosystem::AppConfig;
     use alter::daemon::state::DaemonState;
     use std::collections::HashMap;
-    use std::sync::Arc;
+    use std::sync::{Arc, Once};
+
+    fn isolate_data_paths() {
+        static INIT: Once = Once::new();
+        INIT.call_once(|| {
+            let path = std::env::temp_dir().join(format!(
+                "alter-integration-{}-{}",
+                std::process::id(),
+                uuid::Uuid::new_v4()
+            ));
+            // SAFETY: this process-wide variable is initialised exactly once
+            // before these integration tests start any child process work.
+            unsafe { std::env::set_var("ALTER_DATA_DIR", path) };
+        });
+    }
 
     fn test_config() -> AppConfig {
+        isolate_data_paths();
+        #[cfg(windows)]
+        let (script, args) = (
+            "powershell.exe".to_string(),
+            vec![
+                "-NoProfile".to_string(),
+                "-Command".to_string(),
+                "Start-Sleep -Seconds 30".to_string(),
+            ],
+        );
+        #[cfg(not(windows))]
+        let (script, args) = (
+            "sh".to_string(),
+            vec!["-c".to_string(), "sleep 30".to_string()],
+        );
         AppConfig {
-            name: "test-app".to_string(),
+            name: format!("test-app-{}", uuid::Uuid::new_v4()),
             project_id: None,
-            script: "echo".to_string(),
-            args: vec!["hello from alter".to_string()],
+            script,
+            args,
             cwd: None,
             instances: 1,
             autorestart: false,
@@ -47,33 +76,41 @@ mod tests {
     // @group IntegrationTests > Lifecycle : Start a process and verify it appears in the list
     #[tokio::test]
     async fn test_start_and_list() {
-        let state = Arc::new(DaemonState::new(DaemonConfig::default()));
-        let info = state.manager.start(test_config()).await.unwrap();
-        assert_eq!(info.name, "test-app");
+        isolate_data_paths();
+        let state = Arc::new(DaemonState::new_isolated(DaemonConfig::default()));
+        let config = test_config();
+        let expected_name = config.name.clone();
+        let info = state.manager.start(config).await.unwrap();
+        assert_eq!(info.name, expected_name);
 
         let list = state.manager.list().await;
         assert_eq!(list.len(), 1);
-        assert_eq!(list[0].name, "test-app");
+        assert_eq!(list[0].name, expected_name);
     }
 
     // @group IntegrationTests > Lifecycle : Stop a running process
     #[tokio::test]
     async fn test_start_and_stop() {
-        let state = Arc::new(DaemonState::new(DaemonConfig::default()));
+        isolate_data_paths();
+        let state = Arc::new(DaemonState::new_isolated(DaemonConfig::default()));
         let info = state.manager.start(test_config()).await.unwrap();
         let id = info.id;
 
         tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
 
-        let stopped = state.manager.stop(id).await;
-        // Echo exits quickly, so stop may already be stopped — either way no panic
-        assert!(stopped.is_ok() || stopped.is_err());
+        let stopped = state.manager.stop(id).await.unwrap();
+        assert_eq!(
+            stopped.status,
+            alter::models::process_status::ProcessStatus::Stopped
+        );
+        assert_eq!(state.manager.get(id).await.unwrap().pid, None);
     }
 
     // @group IntegrationTests > Lifecycle : Delete removes from registry
     #[tokio::test]
     async fn test_delete_removes_from_registry() {
-        let state = Arc::new(DaemonState::new(DaemonConfig::default()));
+        isolate_data_paths();
+        let state = Arc::new(DaemonState::new_isolated(DaemonConfig::default()));
         let info = state.manager.start(test_config()).await.unwrap();
         let id = info.id;
 

@@ -18,7 +18,7 @@ build-fast:
 
 # @group BuildDev : Full release build (CI / distribution)
 release:
-    cargo build --release
+    cargo build --release --locked
 
 # @group BuildDev : Watch + auto-rebuild on file changes (requires cargo-watch)
 watch:
@@ -28,13 +28,13 @@ watch:
 watch-run:
     cargo watch -x run
 
-# @group Testing : Run all Rust tests with nextest if available, fallback to cargo test
+# @group Testing : Run the same locked Rust test scope as CI
 test-rust:
-    cargo nextest run 2>/dev/null || cargo test
+    cargo test --all-targets --all-features --locked
 
 # @group Testing : Run cargo clippy with warnings-as-errors
 lint-rust:
-    cargo clippy -- -D warnings
+    cargo clippy --all-targets --all-features --locked -- -D warnings
 
 # @group Testing : Audit dependencies for known CVEs (requires cargo-audit)
 audit:
@@ -47,8 +47,8 @@ fmt-rust:
 # @group BuildDev : Build with tokio-console support (requires cargo-watch + unstable tokio)
 #   Run `tokio-console` in a separate terminal to connect
 console:
-    RUSTFLAGS="--cfg tokio_unstable" cargo build --features tokio-console
-    RUSTFLAGS="--cfg tokio_unstable" cargo run --features tokio-console -- daemon start
+    cargo --config 'build.rustflags=["--cfg","tokio_unstable"]' build --features tokio-console
+    cargo --config 'build.rustflags=["--cfg","tokio_unstable"]' run --features tokio-console -- daemon start
 
 # ─── Frontend ─────────────────────────────────────────────────────────────────
 
@@ -95,7 +95,7 @@ daemon-start:
 
 # @group Utilities : Stop the alter daemon
 daemon-stop:
-    curl -s -X POST http://127.0.0.1:2999/api/v1/system/shutdown || echo "daemon not running"
+    ./target/debug/alter daemon stop
 
 # @group Utilities : Show daemon status
 daemon-status:
@@ -103,7 +103,7 @@ daemon-status:
 
 # @group Utilities : Kill daemon so cargo build can replace the binary (Windows)
 kill:
-    curl -s -X POST http://127.0.0.1:2999/api/v1/system/shutdown || true
+    ./target/debug/alter daemon stop
 
 # ─── Install dev tools ────────────────────────────────────────────────────────
 

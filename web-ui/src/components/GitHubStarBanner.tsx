@@ -8,11 +8,20 @@ const REPO_URL = 'https://github.com/damingishere-coder/RunDock'
 
 // @group Utilities : Has the user already dismissed / acted on the banner?
 function isDismissed(): boolean {
-  return !!localStorage.getItem(STORAGE_KEY)
+  try {
+    return !!localStorage.getItem(STORAGE_KEY)
+  } catch {
+    return false
+  }
 }
 
 function dismiss(reason: 'later' | 'now' | 'done') {
-  localStorage.setItem(STORAGE_KEY, reason)
+  try {
+    localStorage.setItem(STORAGE_KEY, reason)
+  } catch {
+    // Storage is an optional persistence enhancement. The in-memory visible
+    // state still closes the banner when privacy settings disable storage.
+  }
 }
 
 // @group BusinessLogic > GitHubStarBanner : Floating bottom-right popup asking to star the repo
@@ -30,7 +39,7 @@ export function GitHubStarBanner() {
 
   function handleNow() {
     dismiss('now')
-    window.open(REPO_URL, '_blank', 'noreferrer')
+    window.open(REPO_URL, '_blank', 'noopener,noreferrer')
     setVisible(false)
   }
 
@@ -235,24 +244,32 @@ export function GitHubStarWidget() {
   const [stars, setStars] = useState<number | null>(null)
 
   useEffect(() => {
-    // Fetch the public star count. Failure is non-critical and leaves the chip at zero.
-    fetch('https://api.github.com/repos/damingishere-coder/RunDock')
-      .then(r => r.json())
+    const controller = new AbortController()
+    fetch('https://api.github.com/repos/damingishere-coder/RunDock', {
+      signal: controller.signal,
+    })
+      .then(response => {
+        if (!response.ok) throw new Error(`GitHub API returned HTTP ${response.status}`)
+        return response.json()
+      })
       .then((data: { stargazers_count?: number }) => {
         if (typeof data.stargazers_count === 'number') {
           setStars(data.stargazers_count)
         }
       })
-      .catch(() => {
-        /* silently ignore — not critical */
+      .catch(error => {
+        if ((error as Error)?.name !== 'AbortError') {
+          console.warn('GitHub star count is unavailable', error)
+        }
       })
+    return () => controller.abort()
   }, [])
 
   return (
     <a
       href={REPO_URL}
       target="_blank"
-      rel="noreferrer"
+      rel="noopener noreferrer"
       title="在 GitHub 为 RunDock 点星标"
       style={{
         display: 'flex',

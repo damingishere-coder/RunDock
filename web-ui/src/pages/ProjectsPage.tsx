@@ -1,6 +1,6 @@
 // @group BusinessLogic : Project-first list grouped into common and pending categories
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import {
   ChevronDown,
@@ -20,10 +20,11 @@ import {
   projectStatusLabel,
   sortProjects,
 } from '@/lib/projects'
-import { listeningPortsByManagedPid, type PortScanEntry } from '@/lib/processWeb'
-import { getActiveServer } from '@/lib/servers'
+import { isPortScanEntries, listeningPortsByManagedPid, type PortScanEntry } from '@/lib/processWeb'
+import { resolveActiveServer } from '@/lib/servers'
 import { formatBytes, processStatusLabel, statusColor } from '@/lib/utils'
 import { useDialog } from '@/hooks/useDialog'
+import { useSingleFlightPoll } from '@/hooks/useSingleFlightPoll'
 import { Dialog } from '@/components/Dialog'
 import { WebPortButton } from '@/components/WebPortButton'
 import { DesktopLaunchButton } from '@/components/DesktopLaunchButton'
@@ -96,20 +97,29 @@ export default function ProjectsPage({ projects, error, reload }: Props) {
     [projects]
   )
 
-  const loadPorts = useCallback(() => {
-    api
-      .getPorts()
-      .then(data => setPortData(data.ports ?? []))
-      .catch(() => {})
+  const loadPorts = useCallback(async (isCurrent: () => boolean, signal: AbortSignal) => {
+    try {
+      const data = await api.getPorts({ signal })
+      if (isCurrent()) {
+        if (!isPortScanEntries(data.ports)) throw new Error('端口扫描返回了无效数据')
+        setPortData(data.ports)
+      }
+    } catch (loadError) {
+      if (isCurrent()) {
+        setFeedback({
+          kind: 'error',
+          text: loadError instanceof Error ? loadError.message : '端口扫描失败',
+        })
+      }
+      throw loadError
+    }
   }, [])
 
   const hasActiveProjects = projects.some(project => project.active_process_count > 0)
-  useEffect(() => {
-    loadPorts()
-    if (!hasActiveProjects) return
-    const timer = window.setInterval(loadPorts, 5_000)
-    return () => window.clearInterval(timer)
-  }, [hasActiveProjects, loadPorts])
+  useSingleFlightPoll(loadPorts, {
+    intervalMs: 5_000,
+    enabled: hasActiveProjects,
+  })
 
   const portsByPid = useMemo(() => {
     const managedPids = projects.flatMap(project =>
@@ -135,7 +145,7 @@ export default function ProjectsPage({ projects, error, reload }: Props) {
     return result
   }, [portsByPid, projects])
 
-  const activeServer = getActiveServer()
+  const activeServer = resolveActiveServer()
 
   function toggleProject(id: string) {
     setExpanded(current => {
@@ -154,6 +164,7 @@ export default function ProjectsPage({ projects, error, reload }: Props) {
       setFeedback({ kind: 'success', text: message })
       reload()
     } catch (actionError) {
+      reload()
       setFeedback({
         kind: 'error',
         text: actionError instanceof Error ? actionError.message : '操作失败',
@@ -197,12 +208,23 @@ export default function ProjectsPage({ projects, error, reload }: Props) {
       if (!ok) return
     }
     await withBusy(project.id, enabled ? 'enable' : 'disable', async () => {
+      let stoppedBeforeDisable = false
       if (!enabled && project.active_process_count > 0) {
         const response = await api.stopProject(project.id)
         const stopError = projectActionError(response)
         if (stopError) throw new Error(`停止失败，项目没有被停用：${stopError}`)
+        stoppedBeforeDisable = true
       }
-      await api.updateProject(project.id, { enabled })
+      try {
+        await api.updateProject(project.id, { enabled })
+      } catch (updateError) {
+        if (stoppedBeforeDisable) {
+          throw new Error(
+            `项目组件已停止，但停用状态保存失败：${updateError instanceof Error ? updateError.message : '未知错误'}`
+          )
+        }
+        throw updateError
+      }
       return enabled
         ? `${project.display_name} 已启用，可以手动启动`
         : `${project.display_name} 已停止并停用`
@@ -282,6 +304,11 @@ export default function ProjectsPage({ projects, error, reload }: Props) {
             }}
           >
             {feedback.text}
+          </div>
+        )}
+        {activeServer.error && (
+          <div role="alert" style={{ ...feedbackStyle, color: 'var(--color-destructive)' }}>
+            {activeServer.error}；请使用左侧服务器切换器重置为本地服务器。
           </div>
         )}
         {error && (
@@ -526,7 +553,7 @@ export default function ProjectsPage({ projects, error, reload }: Props) {
                               <WebPortButton
                                 ports={projectPorts.get(project.id) ?? []}
                                 preferredPort={project.web_port}
-                                server={activeServer}
+                                server={activeServer.server}
                                 showLabel
                               />
                             )}
@@ -703,7 +730,7 @@ export default function ProjectsPage({ projects, error, reload }: Props) {
                     <WebPortButton
                       ports={projectPorts.get(selectedProject.id) ?? []}
                       preferredPort={selectedProject.web_port}
-                      server={activeServer}
+                      server={activeServer.server}
                       showLabel
                       ariaLabelPrefix="项目详情"
                     />

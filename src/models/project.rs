@@ -96,6 +96,7 @@ pub struct ProjectActionResponse {
     pub project_id: Uuid,
     pub action: String,
     pub success: bool,
+    pub persistence_error: Option<String>,
     pub results: Vec<ProjectActionMemberResult>,
 }
 

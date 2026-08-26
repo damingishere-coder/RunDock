@@ -1,0 +1,12 @@
+{
+  "score": 80,
+  "grade": "B",
+  "tags": ["bloat"],
+  "findings": [
+    {
+      "sev": "MED",
+      "loc": "src/api/routes/processes.rs:110",
+      "text": "processes.rs 约 1,354 行，生命周期、日志、通知、项目关联与批量操作路由仍在单模块内；副作用与持久化已增加补偿事务，但文件级回归面仍较大。"
+    }
+  ]
+}

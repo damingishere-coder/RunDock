@@ -6,7 +6,10 @@ use crate::models::cron_run::CronRun;
 use crate::models::log_stats::LogStatsState;
 use crate::models::process_info::{HealthCheckStatus, ProcessInfo};
 use crate::models::process_status::ProcessStatus;
+use crate::process::tree::ProcessTreeGuard;
+use crate::process::watcher::FileWatcher;
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::{broadcast, Mutex};
 use uuid::Uuid;
@@ -26,12 +29,24 @@ pub enum LogStream {
     Stderr,
 }
 
+/// Stable-enough OS identity used to reject a PID that has been recycled.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProcessIdentity {
+    pub executable: Option<String>,
+    pub command_line: Vec<String>,
+    pub cwd: Option<String>,
+    pub start_time_secs: u64,
+}
+
 /// Live in-memory state for a managed process
 pub struct ManagedProcess {
     pub id: Uuid,
     pub config: AppConfig,
     pub status: ProcessStatus,
     pub pid: Option<u32>,
+    pub process_identity: Option<ProcessIdentity>,
+    /// Re-opened process-tree ownership for a process adopted after daemon handoff.
+    pub process_tree: Option<ProcessTreeGuard>,
     pub restart_count: u32,
     pub created_at: DateTime<Utc>,
     pub started_at: Option<DateTime<Utc>>,
@@ -53,6 +68,8 @@ pub struct ManagedProcess {
     pub health_status: Option<HealthCheckStatus>,
     /// Handle to the running health check task — aborted on process stop
     pub health_check_handle: Option<tokio::task::JoinHandle<()>>,
+    /// Keep the native watcher alive for as long as this process is managed.
+    pub file_watcher: Option<FileWatcher>,
     /// Desired lifecycle state set by explicit user actions. Restart/watch
     /// events must not respawn a process after a manual stop.
     pub desired_running: bool,
@@ -72,12 +89,13 @@ impl ManagedProcess {
     /// Restore a process with its persisted UUID so IDs remain stable across daemon restarts.
     pub fn new_with_id(id: Uuid, config: AppConfig) -> Self {
         let (log_tx, _) = broadcast::channel(1024);
-        let git_branch = config.cwd.as_deref().and_then(read_git_branch);
         Self {
             id,
             config,
             status: ProcessStatus::Stopped,
             pid: None,
+            process_identity: None,
+            process_tree: None,
             restart_count: 0,
             created_at: Utc::now(),
             started_at: None,
@@ -91,11 +109,19 @@ impl ManagedProcess {
             memory_bytes: None,
             health_status: None,
             health_check_handle: None,
+            file_watcher: None,
             desired_running: false,
             generation: 0,
             log_stats: Arc::new(Mutex::new(LogStatsState::new())),
-            git_branch,
+            git_branch: None,
         }
+    }
+
+    pub async fn refresh_git_branch(&mut self) {
+        self.git_branch = match self.config.cwd.as_deref() {
+            Some(cwd) => read_git_branch(cwd).await,
+            None => None,
+        };
     }
 
     pub fn uptime_secs(&self) -> Option<u64> {
@@ -141,20 +167,23 @@ impl ManagedProcess {
 }
 
 // @group Utilities > Git : Read the active git branch from a directory path
-fn read_git_branch(cwd: &str) -> Option<String> {
-    let mut cmd = std::process::Command::new("git");
+async fn read_git_branch(cwd: &str) -> Option<String> {
+    let mut cmd = tokio::process::Command::new("git");
     cmd.args(["rev-parse", "--abbrev-ref", "HEAD"])
         .current_dir(cwd)
         .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null());
+        .stderr(std::process::Stdio::null())
+        .kill_on_drop(true);
     #[cfg(windows)]
     {
-        use std::os::windows::process::CommandExt;
         cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
     }
-    cmd.output()
+    tokio::time::timeout(std::time::Duration::from_secs(2), cmd.output())
+        .await
         .ok()
+        .and_then(Result::ok)
         .filter(|o| o.status.success())
+        .filter(|o| o.stdout.len() <= 4_096)
         .and_then(|o| String::from_utf8(o.stdout).ok())
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty() && s != "HEAD")

@@ -8,6 +8,7 @@ use crate::models::project::{
     ProjectActionMemberResult, ProjectActionResponse, ProjectInfo, ProjectKind, ProjectMemberInfo,
     ProjectPatch, ProjectRecord, ProjectStatus, DEFAULT_PROJECT_CATEGORY,
 };
+use crate::process::manager::ManagedProcessSnapshot;
 use axum::{
     extract::{Path, State},
     routing::{get, post},
@@ -28,14 +29,15 @@ pub fn router(state: Arc<DaemonState>) -> Router {
         .with_state(state)
 }
 
-fn is_active(status: &ProcessStatus) -> bool {
-    matches!(
-        status,
-        ProcessStatus::Starting
-            | ProcessStatus::Running
-            | ProcessStatus::Watching
-            | ProcessStatus::Sleeping
-    )
+fn is_active(process: &ProcessInfo) -> bool {
+    process.pid.is_some()
+        || matches!(
+            process.status,
+            ProcessStatus::Starting
+                | ProcessStatus::Running
+                | ProcessStatus::Watching
+                | ProcessStatus::Sleeping
+        )
 }
 
 fn effective_project_id(process: &ProcessInfo) -> Uuid {
@@ -116,10 +118,7 @@ async fn collect_projects(state: &DaemonState) -> Vec<ProjectInfo> {
                 return desktop_project_info(record);
             }
             let enabled = members.iter().all(|process| process.enabled);
-            let active_process_count = members
-                .iter()
-                .filter(|process| is_active(&process.status))
-                .count();
+            let active_process_count = members.iter().filter(|process| is_active(process)).count();
             let status = aggregate_status(&members, enabled, active_process_count);
 
             ProjectInfo {
@@ -194,6 +193,7 @@ async fn find_project(state: &DaemonState, id: Uuid) -> Result<ProjectInfo, ApiE
 }
 
 async fn list_projects(State(state): State<Arc<DaemonState>>) -> Json<Value> {
+    let _snapshot_guard = state.state_mutation_lock.lock().await;
     Json(json!({ "projects": collect_projects(&state).await }))
 }
 
@@ -201,6 +201,7 @@ async fn get_project(
     State(state): State<Arc<DaemonState>>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Value>, ApiError> {
+    let _snapshot_guard = state.state_mutation_lock.lock().await;
     Ok(Json(json!(find_project(&state, id).await?)))
 }
 
@@ -283,6 +284,7 @@ async fn update_project(
     Path(id): Path<Uuid>,
     Json(patch): Json<ProjectPatch>,
 ) -> Result<Json<Value>, ApiError> {
+    let _mutation_guard = state.state_mutation_lock.lock().await;
     validate_patch(&patch)?;
     let project = find_project(&state, id).await?;
     let effective_kind = patch.kind.unwrap_or(project.kind);
@@ -291,8 +293,15 @@ async fn update_project(
         .as_ref()
         .map(|uri| uri.trim().to_string())
         .or_else(|| project.launch_uri.clone());
+    let projects_before = state.projects.read().await.clone();
+    let requested_enabled = patch.enabled;
 
     if effective_kind == ProjectKind::Desktop {
+        if !project.members.is_empty() {
+            return Err(ApiError::conflict(
+                "managed project with process members cannot be converted to desktop",
+            ));
+        }
         if effective_launch_uri.is_none() {
             return Err(ApiError::bad_request("desktop project requires launch_uri"));
         }
@@ -346,18 +355,111 @@ async fn update_project(
         }
     }
 
-    if let Some(enabled) = patch.enabled {
+    let member_ids = project
+        .members
+        .iter()
+        .map(|member| member.id)
+        .collect::<HashSet<_>>();
+    let member_snapshots: HashMap<Uuid, ManagedProcessSnapshot> = state
+        .manager
+        .snapshot()
+        .await
+        .into_iter()
+        .filter(|snapshot| member_ids.contains(&snapshot.info.id))
+        .map(|snapshot| (snapshot.info.id, snapshot))
+        .collect();
+    let mut changed_members = Vec::new();
+    if let Some(enabled) = requested_enabled {
         for member in &project.members {
-            state
-                .manager
-                .set_enabled(member.id, enabled)
-                .await
-                .map_err(ApiError::from)?;
+            let Some(snapshot) = member_snapshots.get(&member.id) else {
+                *state.projects.write().await = projects_before;
+                return Err(ApiError::not_found("project member process not found"));
+            };
+            if snapshot.info.enabled != enabled
+                && matches!(
+                    snapshot.info.status,
+                    ProcessStatus::Starting | ProcessStatus::Stopping
+                )
+            {
+                *state.projects.write().await = projects_before;
+                return Err(ApiError::conflict(format!(
+                    "process '{}' is busy starting or stopping; retry the project update",
+                    member.name
+                )));
+            }
         }
-        state.save_to_disk().await.map_err(ApiError::from)?;
+        for member in &project.members {
+            let Some(snapshot) = member_snapshots.get(&member.id) else {
+                continue;
+            };
+            if snapshot.info.enabled == enabled {
+                continue;
+            }
+            match state.manager.set_enabled(member.id, enabled).await {
+                Ok(_) => changed_members.push(member.id),
+                Err(error) => {
+                    let mut rollback_errors = Vec::new();
+                    for member_id in changed_members.iter().rev() {
+                        let Some(snapshot) = member_snapshots.get(member_id).cloned() else {
+                            rollback_errors.push(format!("{member_id}: snapshot missing"));
+                            continue;
+                        };
+                        if let Err(rollback_error) =
+                            state.manager.restore_enabled_snapshot(snapshot).await
+                        {
+                            rollback_errors.push(format!("{member_id}: {rollback_error}"));
+                        }
+                    }
+                    *state.projects.write().await = projects_before;
+                    if let Err(rollback_error) = state.save_state_and_projects_rollback().await {
+                        rollback_errors.push(format!(
+                            "state/project rollback persistence: {rollback_error}"
+                        ));
+                    }
+                    if rollback_errors.is_empty() {
+                        return Err(ApiError::from(error));
+                    }
+                    let detail = format!(
+                        "project member update failed ({error}); rollback is incomplete: {}",
+                        rollback_errors.join("; ")
+                    );
+                    *state.background_persistence_error.write().await = Some(detail.clone());
+                    return Err(ApiError::internal(detail));
+                }
+            }
+        }
     }
 
-    state.save_projects().await.map_err(ApiError::from)?;
+    let persist_result = state.save_state_and_projects().await;
+    if let Err(error) = persist_result {
+        let mut rollback_errors = Vec::new();
+        for member_id in &changed_members {
+            let Some(snapshot) = member_snapshots.get(member_id).cloned() else {
+                rollback_errors.push(format!("member {member_id}: snapshot missing"));
+                continue;
+            };
+            if let Err(rollback_error) = state.manager.restore_enabled_snapshot(snapshot).await {
+                rollback_errors.push(format!("member {member_id}: {rollback_error}"));
+            }
+        }
+        *state.projects.write().await = projects_before;
+        if let Err(rollback_error) = state.save_state_and_projects_rollback().await {
+            rollback_errors.push(format!(
+                "state/project rollback persistence: {rollback_error}"
+            ));
+        }
+        if !rollback_errors.is_empty() {
+            let detail = format!(
+                "project update persistence failed ({error}); rollback is incomplete: {}",
+                rollback_errors.join("; ")
+            );
+            *state.background_persistence_error.write().await = Some(detail.clone());
+            return Err(ApiError::internal(detail));
+        }
+        return Err(ApiError::internal(format!(
+            "project update could not be persisted and was rolled back: {error}"
+        )));
+    }
     Ok(Json(json!(find_project(&state, id).await?)))
 }
 
@@ -383,6 +485,7 @@ async fn run_project_action(
     project_id: Uuid,
     action: ProjectAction,
 ) -> Result<ProjectActionResponse, ApiError> {
+    let _mutation_guard = state.state_mutation_lock.lock().await;
     let project = find_project(state, project_id).await?;
     if project.kind == ProjectKind::Desktop {
         return Err(ApiError::conflict(
@@ -395,9 +498,24 @@ async fn run_project_action(
         ));
     }
 
+    let member_ids = project
+        .members
+        .iter()
+        .map(|member| member.id)
+        .collect::<HashSet<_>>();
+    let before: HashMap<Uuid, ManagedProcessSnapshot> = state
+        .manager
+        .snapshot()
+        .await
+        .into_iter()
+        .filter(|snapshot| member_ids.contains(&snapshot.info.id))
+        .map(|snapshot| (snapshot.info.id, snapshot))
+        .collect();
     let mut results = Vec::with_capacity(project.members.len());
-    for member in project.members {
-        let active = is_active(&member.status);
+    let mut changed_members = HashSet::new();
+    for member in &project.members {
+        let current = state.manager.get(member.id).await.map_err(ApiError::from)?;
+        let active = is_active(&current);
         let result = match action {
             ProjectAction::Start if active => Ok(()),
             ProjectAction::Start => state.manager.start_existing(member.id).await.map(|_| ()),
@@ -405,20 +523,73 @@ async fn run_project_action(
             ProjectAction::Stop => state.manager.stop(member.id).await.map(|_| ()),
             ProjectAction::Restart => state.manager.restart(member.id).await.map(|_| ()),
         };
+        if result.is_ok()
+            && match action {
+                ProjectAction::Start => !active,
+                ProjectAction::Stop => active,
+                ProjectAction::Restart => true,
+            }
+        {
+            changed_members.insert(member.id);
+        }
         results.push(ProjectActionMemberResult {
             process_id: member.id,
-            name: member.name,
+            name: member.name.clone(),
             success: result.is_ok(),
             error: result.err().map(|error| error.to_string()),
         });
     }
 
-    state.save_to_disk().await.map_err(ApiError::from)?;
-    let success = results.iter().all(|result| result.success);
+    let persistence_error = if changed_members.is_empty() {
+        None
+    } else {
+        match state.save_to_disk().await {
+            Ok(()) => None,
+            Err(error) => {
+                let mut rollback_errors = Vec::new();
+                for result in &results {
+                    if !result.success || !changed_members.contains(&result.process_id) {
+                        continue;
+                    }
+                    let Some(snapshot) = before.get(&result.process_id).cloned() else {
+                        continue;
+                    };
+                    if let Err(rollback_error) = state.manager.restore_snapshot(snapshot).await {
+                        rollback_errors.push(format!("{}: {rollback_error}", result.name));
+                    }
+                }
+                if let Err(rollback_error) = state.save_state_rollback().await {
+                    rollback_errors.push(format!("rollback persistence failed: {rollback_error}"));
+                }
+                for result in &mut results {
+                    if result.success && changed_members.contains(&result.process_id) {
+                        result.success = false;
+                        result.error = Some(
+                        "operation was rolled back because runtime state could not be persisted"
+                            .to_string(),
+                    );
+                    }
+                }
+                let detail = if rollback_errors.is_empty() {
+                    format!("{error}; runtime rollback completed")
+                } else {
+                    format!("{error}; rollback issues: {}", rollback_errors.join("; "))
+                };
+                if !rollback_errors.is_empty() {
+                    *state.background_persistence_error.write().await = Some(format!(
+                        "project {project_id} persistence rollback is incomplete: {detail}"
+                    ));
+                }
+                Some(detail)
+            }
+        }
+    };
+    let success = results.iter().all(|result| result.success) && persistence_error.is_none();
     Ok(ProjectActionResponse {
         project_id,
         action: action.as_str().to_string(),
         success,
+        persistence_error,
         results,
     })
 }
@@ -426,28 +597,33 @@ async fn run_project_action(
 async fn start_project(
     State(state): State<Arc<DaemonState>>,
     Path(id): Path<Uuid>,
-) -> Result<Json<Value>, ApiError> {
-    Ok(Json(json!(
-        run_project_action(&state, id, ProjectAction::Start).await?
-    )))
+) -> Result<(axum::http::StatusCode, Json<Value>), ApiError> {
+    project_action_response(run_project_action(&state, id, ProjectAction::Start).await?)
 }
 
 async fn stop_project(
     State(state): State<Arc<DaemonState>>,
     Path(id): Path<Uuid>,
-) -> Result<Json<Value>, ApiError> {
-    Ok(Json(json!(
-        run_project_action(&state, id, ProjectAction::Stop).await?
-    )))
+) -> Result<(axum::http::StatusCode, Json<Value>), ApiError> {
+    project_action_response(run_project_action(&state, id, ProjectAction::Stop).await?)
 }
 
 async fn restart_project(
     State(state): State<Arc<DaemonState>>,
     Path(id): Path<Uuid>,
-) -> Result<Json<Value>, ApiError> {
-    Ok(Json(json!(
-        run_project_action(&state, id, ProjectAction::Restart).await?
-    )))
+) -> Result<(axum::http::StatusCode, Json<Value>), ApiError> {
+    project_action_response(run_project_action(&state, id, ProjectAction::Restart).await?)
+}
+
+fn project_action_response(
+    response: ProjectActionResponse,
+) -> Result<(axum::http::StatusCode, Json<Value>), ApiError> {
+    let status = if response.success {
+        axum::http::StatusCode::OK
+    } else {
+        axum::http::StatusCode::MULTI_STATUS
+    };
+    Ok((status, Json(json!(response))))
 }
 
 #[cfg(test)]
@@ -589,5 +765,12 @@ mod tests {
             aggregate_status(&members, false, 0),
             ProjectStatus::Disabled
         );
+    }
+
+    #[test]
+    fn errored_process_with_a_pid_is_still_active() {
+        let mut member = process("owned-tree", None, ProcessStatus::Errored, true);
+        member.pid = Some(4242);
+        assert!(is_active(&member));
     }
 }

@@ -120,6 +120,9 @@ TZ = "UTC"
 | `watch_paths` | string[] | no | `[]` | Directories or files to watch. Relative paths resolved from `cwd` |
 | `watch_ignore` | string[] | no | `[]` | Glob patterns to exclude from watching |
 | `max_log_size_mb` | integer | no | `10` | Rotate log file when it exceeds this size (in megabytes) |
+| `cron` | string | no | null | Cron schedule; when set, the process sleeps between scheduled runs |
+| `cron_last_run` | timestamp | no | null | Runtime metadata persisted by RunDock; normally omit from authored configs |
+| `cron_next_run` | timestamp | no | null | Runtime metadata persisted by RunDock; normally omit from authored configs |
 | `instances` | integer | no | `1` | Reserved — parsed but not yet active |
 | `log_file` | string | no | auto | Custom path for stdout log. Defaults to `%APPDATA%\alter-pm2\logs\<name>\out.log` |
 | `error_file` | string | no | auto | Custom path for stderr log. Defaults to `%APPDATA%\alter-pm2\logs\<name>\err.log` |

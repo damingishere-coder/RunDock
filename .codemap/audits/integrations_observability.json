@@ -1,0 +1,12 @@
+{
+  "score": 84,
+  "grade": "B",
+  "tags": ["bloat"],
+  "findings": [
+    {
+      "sev": "MED",
+      "loc": "src/api/routes/ai.rs:402",
+      "text": "ai.rs 约 1,495 行，仍集中 provider、Device Flow、模型发现、流式请求和设置路由；出站策略、上下文脱敏、大小上限与每流轮询凭据已收紧，但领域拆分仍有维护收益。"
+    }
+  ]
+}

@@ -14,18 +14,18 @@ pub enum ProcessStatus {
     Crashed,
     Errored,
     Watching,
-    Sleeping,  // cron job waiting for next scheduled run
+    Sleeping, // cron job waiting for next scheduled run
 }
 
 impl fmt::Display for ProcessStatus {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ProcessStatus::Stopped  => write!(f, "stopped"),
+            ProcessStatus::Stopped => write!(f, "stopped"),
             ProcessStatus::Starting => write!(f, "starting"),
-            ProcessStatus::Running  => write!(f, "running"),
+            ProcessStatus::Running => write!(f, "running"),
             ProcessStatus::Stopping => write!(f, "stopping"),
-            ProcessStatus::Crashed  => write!(f, "crashed"),
-            ProcessStatus::Errored  => write!(f, "errored"),
+            ProcessStatus::Crashed => write!(f, "crashed"),
+            ProcessStatus::Errored => write!(f, "errored"),
             ProcessStatus::Watching => write!(f, "watching"),
             ProcessStatus::Sleeping => write!(f, "sleeping"),
         }
@@ -41,12 +41,12 @@ mod tests {
     #[test]
     fn test_display_all_variants() {
         let cases = [
-            (ProcessStatus::Stopped,  "stopped"),
+            (ProcessStatus::Stopped, "stopped"),
             (ProcessStatus::Starting, "starting"),
-            (ProcessStatus::Running,  "running"),
+            (ProcessStatus::Running, "running"),
             (ProcessStatus::Stopping, "stopping"),
-            (ProcessStatus::Crashed,  "crashed"),
-            (ProcessStatus::Errored,  "errored"),
+            (ProcessStatus::Crashed, "crashed"),
+            (ProcessStatus::Errored, "errored"),
             (ProcessStatus::Watching, "watching"),
             (ProcessStatus::Sleeping, "sleeping"),
         ];

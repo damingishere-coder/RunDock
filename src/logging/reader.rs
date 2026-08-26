@@ -4,19 +4,46 @@
 use anyhow::Result;
 use chrono::{Local, NaiveDate, TimeZone, Utc};
 use std::fs::File;
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
 use std::path::Path;
+
+pub const MAX_LOG_LINES: usize = 5_000;
+const MAX_TAIL_BYTES: u64 = 8 * 1024 * 1024;
+const TAIL_CHUNK_BYTES: u64 = 64 * 1024;
+const MAX_STATS_SCAN_BYTES: u64 = 64 * 1024 * 1024;
 
 /// Read the last `n` lines from a single log file.
 pub fn read_last_lines(path: &Path, n: usize) -> Result<Vec<String>> {
     if !path.exists() {
         return Ok(vec![]);
     }
-    let file = File::open(path)?;
-    let reader = BufReader::new(file);
-    let mut lines: Vec<String> = Vec::new();
-    for line in reader.lines() {
-        lines.push(line?);
+    let n = n.clamp(1, MAX_LOG_LINES);
+    let mut file = File::open(path)?;
+    let file_len = file.metadata()?.len();
+    let mut position = file_len;
+    let mut chunks = Vec::new();
+    let mut newline_count = 0usize;
+    let mut bytes_read = 0u64;
+
+    while position > 0 && newline_count <= n && bytes_read < MAX_TAIL_BYTES {
+        let chunk_len = position
+            .min(TAIL_CHUNK_BYTES)
+            .min(MAX_TAIL_BYTES - bytes_read);
+        position -= chunk_len;
+        file.seek(SeekFrom::Start(position))?;
+        let mut chunk = vec![0; chunk_len as usize];
+        file.read_exact(&mut chunk)?;
+        newline_count += chunk.iter().filter(|byte| **byte == b'\n').count();
+        bytes_read += chunk_len;
+        chunks.push(chunk);
+    }
+
+    chunks.reverse();
+    let bytes: Vec<u8> = chunks.into_iter().flatten().collect();
+    let text = String::from_utf8_lossy(&bytes);
+    let mut lines: Vec<String> = text.lines().map(ToString::to_string).collect();
+    if position > 0 && !lines.is_empty() {
+        lines.remove(0);
     }
     let start = lines.len().saturating_sub(n);
     Ok(lines[start..].to_vec())
@@ -26,11 +53,7 @@ pub fn read_last_lines(path: &Path, n: usize) -> Result<Vec<String>> {
 /// Returns tuples of (stream, timestamp, content).
 /// This is today's live logs (current files only).
 pub fn read_merged_logs(log_dir: &Path, n: usize) -> Result<Vec<(String, String, String)>> {
-    read_merged_logs_for_paths(
-        &log_dir.join("out.log"),
-        &log_dir.join("err.log"),
-        n,
-    )
+    read_merged_logs_for_paths(&log_dir.join("out.log"), &log_dir.join("err.log"), n)
 }
 
 /// Read logs for a specific date from the dated rotation files:
@@ -81,8 +104,9 @@ pub struct DayLogBucket {
 }
 
 // @group BusinessLogic > LogStats : Read today's out.log + err.log, bucket lines by 5-min intervals
-/// Scans the full log files (no line limit) so the chart covers the entire day even
-/// across daemon restarts. Lines whose timestamp does not match today are ignored.
+/// Scans at most the newest 64 MiB from each current log file. This keeps the
+/// request bounded if a noisy process produces an unexpectedly large log.
+/// Lines whose timestamp does not match today are ignored.
 pub fn read_log_stats_today(log_dir: &Path) -> Result<Vec<DayLogBucket>> {
     use std::collections::BTreeMap;
 
@@ -99,10 +123,27 @@ pub fn read_log_stats_today(log_dir: &Path) -> Result<Vec<DayLogBucket>> {
         if !path.exists() {
             continue;
         }
-        let file = File::open(&path)?;
-        let reader = BufReader::new(file);
+        let mut file = File::open(&path)?;
+        let file_len = file.metadata()?.len();
+        let was_truncated = file_len > MAX_STATS_SCAN_BYTES;
+        if was_truncated {
+            file.seek(SeekFrom::Start(file_len - MAX_STATS_SCAN_BYTES))?;
+        }
+        let mut reader = BufReader::new(file);
+        if was_truncated {
+            // The seek point may be in the middle of a UTF-8 log line. Discard
+            // that partial line before parsing the bounded tail.
+            let mut partial = Vec::new();
+            reader.read_until(b'\n', &mut partial)?;
+            tracing::warn!(
+                path = %path.display(),
+                max_bytes = MAX_STATS_SCAN_BYTES,
+                "log stats scan was truncated to its bounded tail"
+            );
+        }
 
-        for raw in reader.lines().map_while(Result::ok) {
+        for raw in reader.lines() {
+            let raw = raw?;
             let (ts_str, _) = parse_log_line(&raw);
             if ts_str.is_empty() {
                 continue;
@@ -192,7 +233,7 @@ mod tests {
     #[test]
     fn test_parse_log_line_valid() {
         let (ts, content) = parse_log_line("[2026-03-30T12:00:00Z] hello world");
-        assert_eq!(ts,      "2026-03-30T12:00:00Z");
+        assert_eq!(ts, "2026-03-30T12:00:00Z");
         assert_eq!(content, "hello world");
     }
 
@@ -224,7 +265,7 @@ mod tests {
     #[test]
     fn test_parse_log_line_content_with_brackets() {
         let (ts, content) = parse_log_line("[2026-01-01T00:00:00Z] [INFO] server started");
-        assert_eq!(ts,      "2026-01-01T00:00:00Z");
+        assert_eq!(ts, "2026-01-01T00:00:00Z");
         assert_eq!(content, "[INFO] server started");
     }
 
@@ -266,6 +307,24 @@ mod tests {
         let path = tmp_path("alter_test_empty.log");
         let lines = read_last_lines(&path, 10).unwrap();
         assert!(lines.is_empty());
+        let _ = std::fs::remove_file(&path);
+    }
+
+    // @group UnitTests > ReadLastLines : Untrusted line counts are capped to prevent memory blowups
+    #[test]
+    fn test_read_last_lines_clamps_large_request() {
+        let name = format!("alter_test_clamp_{}.log", uuid::Uuid::new_v4());
+        let path = tmp_path(&name);
+        let mut tmp = std::fs::File::create(&path).unwrap();
+        for index in 0..=MAX_LOG_LINES {
+            writeln!(tmp, "line {index}").unwrap();
+        }
+        drop(tmp);
+
+        let lines = read_last_lines(&path, usize::MAX).unwrap();
+        assert_eq!(lines.len(), MAX_LOG_LINES);
+        assert_eq!(lines.first().map(String::as_str), Some("line 1"));
+        assert_eq!(lines.last().map(String::as_str), Some("line 5000"));
         let _ = std::fs::remove_file(&path);
     }
 

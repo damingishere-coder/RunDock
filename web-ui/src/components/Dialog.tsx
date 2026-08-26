@@ -30,13 +30,19 @@ export function Dialog({
   onCancel,
 }: DialogProps) {
   const confirmBtnRef = useRef<HTMLButtonElement>(null)
+  const dialogRef = useRef<HTMLDivElement>(null)
+  const previousFocusRef = useRef<HTMLElement | null>(null)
 
   // @group Utilities > Focus : Auto-focus confirm button on open
   useEffect(() => {
     if (open) {
+      previousFocusRef.current = document.activeElement as HTMLElement | null
       // Slight delay so the portal has rendered
       const t = setTimeout(() => confirmBtnRef.current?.focus(), 30)
-      return () => clearTimeout(t)
+      return () => {
+        clearTimeout(t)
+        previousFocusRef.current?.focus()
+      }
     }
   }, [open])
 
@@ -44,20 +50,36 @@ export function Dialog({
   useEffect(() => {
     if (!open) return
     function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') { e.preventDefault(); onCancel?.() }
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        onCancel?.()
+      } else if (e.key === 'Enter' && !(e.target instanceof HTMLButtonElement)) {
+        e.preventDefault()
+        onConfirm()
+      } else if (e.key === 'Tab') {
+        const buttons = dialogRef.current?.querySelectorAll<HTMLButtonElement>('button')
+        if (!buttons?.length) return
+        const first = buttons[0]
+        const last = buttons[buttons.length - 1]
+        if (e.shiftKey && document.activeElement === first) {
+          e.preventDefault()
+          last.focus()
+        } else if (!e.shiftKey && document.activeElement === last) {
+          e.preventDefault()
+          first.focus()
+        }
+      }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [open, onCancel])
+  }, [open, onCancel, onConfirm])
 
   if (!open) return null
 
   const isAlert = variant === 'alert'
   const isDanger = variant === 'danger'
 
-  const confirmColor = isDanger
-    ? 'var(--color-destructive)'
-    : 'var(--color-primary)'
+  const confirmColor = isDanger ? 'var(--color-destructive)' : 'var(--color-primary)'
 
   const defaultConfirmLabel = isAlert ? '确定' : isDanger ? '删除' : '确认'
   const defaultCancelLabel = '取消'
@@ -66,35 +88,58 @@ export function Dialog({
     // @group BusinessLogic > Overlay : Dark backdrop
     <div
       role="dialog"
+      ref={dialogRef}
       aria-modal="true"
       aria-labelledby="dialog-title"
-      onClick={e => { if (e.target === e.currentTarget) onCancel?.() }}
+      onClick={e => {
+        if (e.target === e.currentTarget) onCancel?.()
+      }}
       style={{
-        position: 'fixed', inset: 0, zIndex: 9999,
+        position: 'fixed',
+        inset: 0,
+        zIndex: 9999,
         background: 'rgba(0,0,0,0.55)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
         backdropFilter: 'blur(2px)',
         animation: 'dialogFadeIn 0.12s ease',
       }}
     >
       {/* Dialog box */}
-      <div style={{
-        background: 'var(--color-card)',
-        border: '1px solid var(--color-border)',
-        borderRadius: 10,
-        padding: '24px 28px 20px',
-        width: 380,
-        maxWidth: 'calc(100vw - 32px)',
-        boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
-        animation: 'dialogSlideIn 0.15s ease',
-      }}>
+      <div
+        style={{
+          background: 'var(--color-card)',
+          border: '1px solid var(--color-border)',
+          borderRadius: 10,
+          padding: '24px 28px 20px',
+          width: 380,
+          maxWidth: 'calc(100vw - 32px)',
+          boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
+          animation: 'dialogSlideIn 0.15s ease',
+        }}
+      >
         {/* Icon + title */}
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: message ? 10 : 20 }}>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: 12,
+            marginBottom: message ? 10 : 20,
+          }}
+        >
           {isDanger && (
-            <span style={{
-              fontSize: 22, lineHeight: 1, flexShrink: 0, marginTop: 1,
-              color: 'var(--color-destructive)',
-            }}>⚠</span>
+            <span
+              style={{
+                fontSize: 22,
+                lineHeight: 1,
+                flexShrink: 0,
+                marginTop: 1,
+                color: 'var(--color-destructive)',
+              }}
+            >
+              ⚠
+            </span>
           )}
           {isAlert && (
             <span style={{ fontSize: 22, lineHeight: 1, flexShrink: 0, marginTop: 1 }}>ℹ</span>
@@ -109,13 +154,15 @@ export function Dialog({
 
         {/* Message body */}
         {message && (
-          <p style={{
-            margin: '0 0 20px',
-            fontSize: 13,
-            color: 'var(--color-muted-foreground)',
-            lineHeight: 1.55,
-            paddingLeft: isDanger || isAlert ? 34 : 0,
-          }}>
+          <p
+            style={{
+              margin: '0 0 20px',
+              fontSize: 13,
+              color: 'var(--color-muted-foreground)',
+              lineHeight: 1.55,
+              paddingLeft: isDanger || isAlert ? 34 : 0,
+            }}
+          >
             {message}
           </p>
         )}
@@ -130,10 +177,13 @@ export function Dialog({
               type="button"
               onClick={onCancel}
               style={{
-                padding: '7px 18px', fontSize: 13, fontWeight: 500,
+                padding: '7px 18px',
+                fontSize: 13,
+                fontWeight: 500,
                 background: 'var(--color-secondary)',
                 border: '1px solid var(--color-border)',
-                borderRadius: 6, cursor: 'pointer',
+                borderRadius: 6,
+                cursor: 'pointer',
                 color: 'var(--color-foreground)',
               }}
               onMouseEnter={e => (e.currentTarget.style.background = 'var(--color-accent)')}
@@ -147,10 +197,13 @@ export function Dialog({
             type="button"
             onClick={onConfirm}
             style={{
-              padding: '7px 18px', fontSize: 13, fontWeight: 600,
+              padding: '7px 18px',
+              fontSize: 13,
+              fontWeight: 600,
               background: isDanger ? 'rgba(239,68,68,0.15)' : 'var(--color-primary)',
               border: `1px solid ${confirmColor}`,
-              borderRadius: 6, cursor: 'pointer',
+              borderRadius: 6,
+              cursor: 'pointer',
               color: isDanger ? 'var(--color-destructive)' : 'var(--color-primary-foreground)',
             }}
             onMouseEnter={e => (e.currentTarget.style.opacity = '0.85')}

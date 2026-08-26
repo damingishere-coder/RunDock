@@ -20,6 +20,21 @@
 Download the latest `RunDock-x.x.x-windows-x64-setup.exe` from [Releases](https://github.com/damingishere-coder/RunDock/releases) and run it.
 RunDock is the product name; the compatible `alter.exe` command is added to your `PATH` automatically.
 
+### Debian / Ubuntu (signed APT repository)
+
+Download the public key, inspect its fingerprint against the key attached to the matching [GitHub Release](https://github.com/damingishere-coder/RunDock/releases), then install it:
+
+```bash
+curl -fsSL https://damingishere-coder.github.io/RunDock/gpg-key.asc -o rundock-release-key.asc
+gpg --show-keys --fingerprint rundock-release-key.asc
+sudo gpg --dearmor --yes -o /usr/share/keyrings/rundock-archive-keyring.gpg rundock-release-key.asc
+echo "deb [signed-by=/usr/share/keyrings/rundock-archive-keyring.gpg] https://damingishere-coder.github.io/RunDock/apt stable main" | sudo tee /etc/apt/sources.list.d/rundock.list
+sudo apt update
+sudo apt install alter
+```
+
+The packaged service is opt-in: `sudo systemctl enable --now alter-daemon.service`. System mode uses `/var/lib/alter-pm2` and `/var/log/alter-pm2`; it is isolated from per-user data.
+
 ---
 
 ## Features
@@ -45,12 +60,17 @@ RunDock is the product name; the compatible `alter.exe` command is added to your
 
 ### Build from source
 
-Requires [Rust](https://rustup.rs/).
+Requires [Rust 1.98](https://rustup.rs/), Node.js 24, and npm. The dashboard
+must be built before Rust embeds `web-ui/dist` into the binary.
 
 ```powershell
 git clone https://github.com/damingishere-coder/RunDock
 cd RunDock
-cargo build --release
+cd web-ui
+npm ci
+npm run build
+cd ..
+cargo build --release --locked
 # Binary: target\release\alter.exe
 ```
 
@@ -65,7 +85,7 @@ alter daemon start
 # Start processes
 alter start python -- -m http.server 8080
 alter start node --name api -- server.js
-alter start "go run main.go" --name backend --cwd C:\projects\api
+alter start go --name backend --cwd C:\projects\api -- run main.go
 
 # List processes
 alter list
