@@ -83,7 +83,7 @@ _LoC is the representative file/folder per module; folder-level modules overlap 
 - **进程监督与日志核心 (82/B)** — src/process/manager.rs:62: manager.rs 仍约 3,200 行并承载 registry、spawn、restart、cron、health、watcher、metrics 与告警编排；进程身份和进程树已提取，功能竞态已收敛，但结构拆分仍是后续维护任务。
 - **AI、通知、隧道与观测集成 (84/B)** — src/api/routes/ai.rs:402: ai.rs 约 1,495 行，仍集中 provider、Device Flow、模型发现、流式请求和设置路由；出站策略、上下文脱敏、大小上限与每流凭据已收紧，但按领域拆分仍有维护收益。src/api/routes/ai_context.rs:400-404 已将模拟 provider/GitHub token 改为运行时拼接，stale 触发点已消除。未发现 P0-P2 功能或安全风险。
 - **认证与本机系统能力 API (85/B)** — src/config/env_file.rs:37: env 访问已限制到注册 cwd、直接子文件并拒绝最终符号链接；剩余父目录换位竞态仅能由具备同用户本机文件系统权限的进程触发，属于当前单用户威胁模型之外的平台限制。
-- **构建、发布与工程文档 (88/B)** — README.md:16: 根 README 与 docs/README.md 仍分别维护部分重叠的安装、构建和功能说明；当前内容已同步，但缺少自动一致性检查。`.github/workflows/quality.yml:108-111` 新增 coverage 目录创建仅修复 LCOV 输出路径，不引入 P0-P2 风险。
+- **构建、发布与工程文档 (88/B)** — README.md:16: 根 README 与 docs/README.md 仍分别维护部分重叠的安装、构建和功能说明；当前内容已同步，但缺少自动一致性检查。quality.yml:145-153 改为显式 bash 调用仅修复脚本执行权限问题，不引入 P0-P2 风险。
 
 ## All findings
 
@@ -109,7 +109,7 @@ _LoC is the representative file/folder per module; folder-level modules overlap 
 - **认证与本机系统能力 API** · `src/api/routes/system.rs:84` — system.rs 约 837 行，仍同时承载健康、状态保存、受限文件访问、统计、重启和桌面打开等系统边界，后续可按能力分路由模块。
 - **进程监督与日志核心** · `src/process/identity.rs:103` — macOS/BSD 缺少可移植的稳定进程组句柄，验证身份后到数字 PGID signal 间仍存在极窄复用窗口；Linux pidfd 与 Windows HANDLE/Job 路径不受此限制。
 - **配置、模型与 JSON 持久化** · `src/config/auth_config.rs:15` — StoredPasskey 仍保留 raw JSON 兼容字段，但 API 与文档已明确 passkey 尚不支持；该占位结构只用于兼容读取，不代表已实现 WebAuthn。
-- **构建、发布与工程文档** · `README.md:16` — 根 README 与 docs/README.md 仍分别维护部分重叠的安装、构建和功能说明；当前内容已同步，但缺少自动一致性检查。`.github/workflows/quality.yml:108-111` 新增 coverage 目录创建仅修复 LCOV 输出路径，不引入 P0-P2 风险。
+- **构建、发布与工程文档** · `README.md:16` — 根 README 与 docs/README.md 仍分别维护部分重叠的安装、构建和功能说明；当前内容已同步，但缺少自动一致性检查。quality.yml:145-153 改为显式 bash 调用仅修复脚本执行权限问题，不引入 P0-P2 风险。
 
 ## Cross-cutting themes
 

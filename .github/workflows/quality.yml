@@ -149,7 +149,7 @@ jobs:
           chmod 755 "$temp_dir/alter"
           (
             cd "$temp_dir"
-            "$GITHUB_WORKSPACE/scripts/build-deb.sh" ./alter 0.0.0 amd64
+            bash "$GITHUB_WORKSPACE/scripts/build-deb.sh" ./alter 0.0.0 amd64
           )
           dpkg-deb --info "$temp_dir/alter_0.0.0_amd64.deb"
           package_contents="$(dpkg-deb --contents "$temp_dir/alter_0.0.0_amd64.deb")"

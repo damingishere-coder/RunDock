@@ -624,7 +624,7 @@
    ],
    "desc": "定义依赖、质量命令、Windows/Linux 构建安装、GitHub Release 和面向维护者/用户的文档。",
    "loc": 16842,
-   "contentHash": "fd2a97313e88683e327ba0d107cb267667ac1f0e175565a5c46e93ffc853ea11",
+   "contentHash": "3471dd8faf89f3e05f43ae59ca02d2673a9bb464deaebbd992da4a8d3db58e44",
    "score": 88,
    "grade": "B",
    "tags": [
@@ -634,12 +634,12 @@
     {
      "sev": "LOW",
      "loc": "README.md:16",
-     "text": "根 README 与 docs/README.md 仍分别维护部分重叠的安装、构建和功能说明；当前内容已同步，但缺少自动一致性检查。`.github/workflows/quality.yml:108-111` 新增 coverage 目录创建仅修复 LCOV 输出路径，不引入 P0-P2 风险。"
+     "text": "根 README 与 docs/README.md 仍分别维护部分重叠的安装、构建和功能说明；当前内容已同步，但缺少自动一致性检查。quality.yml:145-153 改为显式 bash 调用仅修复脚本执行权限问题，不引入 P0-P2 风险。"
     }
    ],
-   "auditedHash": "fd2a97313e88683e327ba0d107cb267667ac1f0e175565a5c46e93ffc853ea11",
+   "auditedHash": "3471dd8faf89f3e05f43ae59ca02d2673a9bb464deaebbd992da4a8d3db58e44",
    "auditedAt": "2026-08-26",
-   "auditedRev": "c2de2b1d889d6f9d9bcd464cf205c0bfa88e61f1"
+   "auditedRev": "c6f5ca18f89ea5e72a61a12fb02d9578ce060a14"
   }
  ]
 }
