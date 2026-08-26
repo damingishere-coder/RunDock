@@ -1,5 +1,6 @@
 // @group Utilities : PID file management — prevents duplicate daemon instances
 
+use crate::process::instance::ProcessIdentity;
 use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
 use std::io::Write;
@@ -170,30 +171,29 @@ fn is_daemon_running_result() -> Result<bool> {
 }
 
 fn daemon_identity_matches(expected: &DaemonPidRecord) -> bool {
-    crate::process::identity::capture_process_identity(expected.pid).is_some_and(|identity| {
-        if !identity
-            .command_line
-            .iter()
-            .any(|part| part == "--internal-daemon")
-        {
-            return false;
-        }
-        if expected.start_time_secs != 0 && identity.start_time_secs != expected.start_time_secs {
-            return false;
-        }
-        let Some(executable) = identity.executable else {
-            return false;
-        };
-        let actual = canonical_path_string(std::path::Path::new(&executable));
-        let expected_executable = if expected.executable.is_empty() {
-            std::env::current_exe()
-                .map(|path| canonical_path_string(&path))
-                .unwrap_or_default()
-        } else {
-            expected.executable.clone()
-        };
-        path_strings_equal(&actual, &expected_executable)
-    })
+    crate::process::identity::capture_process_identity(expected.pid)
+        .is_some_and(|identity| daemon_record_matches_identity(expected, &identity))
+}
+
+fn daemon_record_matches_identity(expected: &DaemonPidRecord, identity: &ProcessIdentity) -> bool {
+    // Command-line metadata is not a stable ownership signal and may be empty on
+    // Windows GNU builds. The PID record already pins the immutable process start
+    // time and canonical executable path, which together reject PID reuse.
+    if expected.start_time_secs != 0 && identity.start_time_secs != expected.start_time_secs {
+        return false;
+    }
+    let Some(executable) = identity.executable.as_deref() else {
+        return false;
+    };
+    let actual = canonical_path_string(std::path::Path::new(executable));
+    let expected_executable = if expected.executable.is_empty() {
+        std::env::current_exe()
+            .map(|path| canonical_path_string(&path))
+            .unwrap_or_default()
+    } else {
+        expected.executable.clone()
+    };
+    path_strings_equal(&actual, &expected_executable)
 }
 
 fn canonical_path_string(path: &std::path::Path) -> String {
@@ -211,4 +211,44 @@ fn path_strings_equal(left: &str, right: &str) -> bool {
 #[cfg(not(windows))]
 fn path_strings_equal(left: &str, right: &str) -> bool {
     left == right
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn matching_record_and_identity() -> (DaemonPidRecord, ProcessIdentity) {
+        let executable = canonical_path_string(&std::env::current_exe().unwrap());
+        (
+            DaemonPidRecord {
+                pid: std::process::id(),
+                start_time_secs: 42,
+                executable: executable.clone(),
+                owner_token: "owner".to_string(),
+            },
+            ProcessIdentity {
+                executable: Some(executable),
+                command_line: Vec::new(),
+                cwd: None,
+                start_time_secs: 42,
+            },
+        )
+    }
+
+    #[test]
+    fn daemon_identity_does_not_require_command_line_metadata() {
+        let (record, identity) = matching_record_and_identity();
+        assert!(daemon_record_matches_identity(&record, &identity));
+    }
+
+    #[test]
+    fn daemon_identity_rejects_pid_reuse_and_executable_changes() {
+        let (record, mut identity) = matching_record_and_identity();
+        identity.start_time_secs += 1;
+        assert!(!daemon_record_matches_identity(&record, &identity));
+
+        identity.start_time_secs = record.start_time_secs;
+        identity.executable = Some("different-alter.exe".to_string());
+        assert!(!daemon_record_matches_identity(&record, &identity));
+    }
 }

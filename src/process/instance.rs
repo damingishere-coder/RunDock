@@ -167,7 +167,7 @@ impl ManagedProcess {
 }
 
 // @group Utilities > Git : Read the active git branch from a directory path
-async fn read_git_branch(cwd: &str) -> Option<String> {
+pub(crate) async fn read_git_branch(cwd: &str) -> Option<String> {
     let mut cmd = tokio::process::Command::new("git");
     cmd.args(["rev-parse", "--abbrev-ref", "HEAD"])
         .current_dir(cwd)

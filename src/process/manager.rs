@@ -13,7 +13,7 @@ use crate::process::identity::{
     capture_process_identity_with_retry, kill_process_verified, kill_spawned_process,
     process_identity_matches, stable_identity_matches,
 };
-use crate::process::instance::{LogLine, ManagedProcess, ProcessIdentity};
+use crate::process::instance::{read_git_branch, LogLine, ManagedProcess, ProcessIdentity};
 use crate::process::restarter::{watch_and_restart, RestartEvent, RestartPolicy};
 use crate::process::runner::{spawn_process, wait_for_exit, ManagedChild};
 use crate::process::scheduler::{next_run, CronScheduler};
@@ -251,13 +251,27 @@ impl ProcessManager {
         cron_run_history: Vec<CronRun>,
     ) -> ProcessInfo {
         let mut process = ManagedProcess::new_with_id(id, config);
-        process.refresh_git_branch().await;
         process.restart_count = restart_count;
         process.cron_run_history = cron_run_history;
         let info = process.to_info();
         let arc = Arc::new(RwLock::new(process));
-        self.registry.insert(id, arc);
+        self.registry.insert(id, Arc::clone(&arc));
+        Self::refresh_git_branch_in_background(arc);
         info
+    }
+
+    fn refresh_git_branch_in_background(process: Arc<RwLock<ManagedProcess>>) {
+        tokio::spawn(async move {
+            let cwd = { process.read().await.config.cwd.clone() };
+            let branch = match cwd.as_deref() {
+                Some(cwd) => read_git_branch(cwd).await,
+                None => None,
+            };
+            let mut current = process.write().await;
+            if current.config.cwd == cwd {
+                current.git_branch = branch;
+            }
+        });
     }
 
     // @group BusinessLogic > Lifecycle : Re-adopt an already-running OS process after a daemon crash.
@@ -273,7 +287,6 @@ impl ProcessManager {
         cron_run_history: Vec<CronRun>,
     ) -> ProcessInfo {
         let mut process = ManagedProcess::new_with_id(saved_id, config.clone());
-        process.refresh_git_branch().await;
         let mut process_tree = match crate::process::tree::ProcessTreeGuard::new(
             pid,
             &saved_id.to_string(),
@@ -320,6 +333,7 @@ impl ProcessManager {
         let info = process.to_info();
         let arc = Arc::new(RwLock::new(process));
         self.registry.insert(id, Arc::clone(&arc));
+        Self::refresh_git_branch_in_background(Arc::clone(&arc));
 
         // A running cron process may be adopted mid-run. Arm its scheduler now;
         // cron_trigger_loop ignores ticks until the process transitions to Sleeping.
@@ -341,11 +355,11 @@ impl ProcessManager {
         let log_dir = crate::config::paths::process_log_dir(&config.name);
         match std::fs::create_dir_all(&log_dir) {
             Ok(()) => {
-                match LogWriter::new(
-                    &log_dir,
-                    arc.read().await.log_tx.clone(),
-                    config.max_log_size_mb,
-                ) {
+                // Drop the read guard before acquiring the write guard below.
+                // Keeping `arc.read().await` inside the match scrutinee extends
+                // the temporary guard through the match and deadlocks restore.
+                let log_tx = { arc.read().await.log_tx.clone() };
+                match LogWriter::new(&log_dir, log_tx, config.max_log_size_mb) {
                     Ok(writer) => arc.write().await.log_writer = Some(writer),
                     Err(error) => tracing::warn!(
                         "failed to restore log writer for adopted process {id}: {error}"
@@ -503,7 +517,6 @@ impl ProcessManager {
         cron_run_history: Vec<CronRun>,
     ) -> Result<ProcessInfo> {
         let mut process = ManagedProcess::new_with_id(id, config.clone());
-        process.refresh_git_branch().await;
         process.status = ProcessStatus::Sleeping;
         process.desired_running = true;
         process.generation = 1;
@@ -516,6 +529,7 @@ impl ProcessManager {
         let info = process.to_info();
         let arc = Arc::new(RwLock::new(process));
         self.registry.insert(id, Arc::clone(&arc));
+        Self::refresh_git_branch_in_background(Arc::clone(&arc));
 
         // Start the scheduler so it fires at the right time
         if let Some(expr) = &config.cron {
