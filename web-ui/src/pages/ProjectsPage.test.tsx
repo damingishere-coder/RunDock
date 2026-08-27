@@ -95,6 +95,39 @@ describe('ProjectsPage project identity', () => {
     expect(screen.queryByRole('textbox', { name: '编辑 AI JobPilot 备注' })).not.toBeInTheDocument()
   })
 
+  it('does not report the Windows TIME_WAIT PID 0 sentinel as invalid port data', async () => {
+    const runningProject: ProjectInfo = {
+      ...project,
+      status: 'running',
+      process_count: 1,
+      active_process_count: 1,
+      members: [{ id: 'backend', name: 'Backend', status: 'running', pid: 101, enabled: true }],
+    }
+    vi.mocked(api.getPorts).mockResolvedValue({
+      ports: [
+        {
+          pid: 0,
+          port: 2999,
+          protocol: 'TCP',
+          local_address: '127.0.0.1:2999',
+          remote_address: '127.0.0.1:50000',
+          state: 'TIME_WAIT',
+          process_name: 'Idle',
+          ancestor_pids: [],
+        },
+      ],
+    })
+
+    render(
+      <MemoryRouter initialEntries={['/processes']}>
+        <ProjectsPage projects={[runningProject]} error={null} reload={vi.fn()} />
+      </MemoryRouter>
+    )
+
+    await waitFor(() => expect(api.getPorts).toHaveBeenCalled())
+    expect(screen.queryByText('端口扫描返回了无效数据')).not.toBeInTheDocument()
+  })
+
   it('opens only the configured web port and keeps all listeners in technical details', async () => {
     const user = userEvent.setup()
     const runningProject: ProjectInfo = {

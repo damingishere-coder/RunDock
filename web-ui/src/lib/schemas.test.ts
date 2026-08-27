@@ -158,6 +158,16 @@ describe('daemon response schemas', () => {
             process_name: 'alter',
             ancestor_pids: [1],
           },
+          {
+            port: 2999,
+            protocol: 'TCP',
+            local_address: '127.0.0.1:2999',
+            remote_address: '127.0.0.1:50000',
+            state: 'TIME_WAIT',
+            pid: 0,
+            process_name: 'Idle',
+            ancestor_pids: [],
+          },
         ],
       })
     ).toBe(true)

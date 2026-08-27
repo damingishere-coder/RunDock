@@ -35,6 +35,24 @@ describe('project web links', () => {
     ).toBe(true)
   })
 
+  it('accepts the Windows TIME_WAIT PID 0 sentinel without assigning it to a project', () => {
+    const timeWait = {
+      pid: 0,
+      port: 2999,
+      protocol: 'TCP',
+      local_address: '127.0.0.1:2999',
+      state: 'TIME_WAIT',
+      ancestor_pids: [],
+    }
+
+    expect(isPortScanEntries([timeWait])).toBe(true)
+    expect(isPortScanEntries([{ ...timeWait, pid: -1 }])).toBe(false)
+    expect(isPortScanEntries([{ ...timeWait, pid: 0.5 }])).toBe(false)
+    expect(isPortScanEntries([{ ...timeWait, pid: '0' }])).toBe(false)
+    expect(listeningPortsByManagedPid([timeWait], [0])).toEqual(new Map())
+    expect(listeningPortsByManagedPid([{ ...timeWait, state: 'LISTEN' }], [0])).toEqual(new Map())
+  })
+
   it('keeps only TCP listeners as web candidates', () => {
     expect(
       isListeningTcpPort({

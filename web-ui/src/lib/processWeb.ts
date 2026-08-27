@@ -21,7 +21,7 @@ export function isPortScanEntries(value: unknown): value is PortScanEntry[] {
       if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) return false
       const port = entry as Record<string, unknown>
       return (
-        (port.pid === null || (Number.isInteger(port.pid) && (port.pid as number) > 0)) &&
+        (port.pid === null || (Number.isInteger(port.pid) && (port.pid as number) >= 0)) &&
         Number.isInteger(port.port) &&
         (port.port as number) >= 1 &&
         (port.port as number) <= 65_535 &&
