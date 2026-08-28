@@ -3,6 +3,7 @@
 use anyhow::{anyhow, Context, Result};
 use reqwest::Client;
 use serde_json::Value;
+use std::net::SocketAddr;
 
 const MAX_DAEMON_RESPONSE_BYTES: usize = 8 * 1024 * 1024;
 const MAX_HEALTH_RESPONSE_BYTES: usize = 64 * 1024;
@@ -70,15 +71,45 @@ fn plaintext_loopback_authority(host: &str) -> Result<String> {
     })
 }
 
-fn health_payload_is_alive(health: &Value) -> bool {
-    matches!(
-        health.get("status").and_then(Value::as_str),
-        Some("ok" | "degraded")
-    ) && health.get("version").and_then(Value::as_str).is_some()
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DaemonHealth {
+    pub pid: u32,
+    pub status: String,
+    pub version: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DaemonProbe {
+    Offline,
+    Ready(DaemonHealth),
+    Occupied { detail: String },
+}
+
+fn parse_health_payload(health: &Value) -> Option<DaemonHealth> {
+    let status = health.get("status")?.as_str()?;
+    if !matches!(status, "ok" | "degraded") {
+        return None;
+    }
+    let version = health.get("version")?.as_str()?;
+    let pid = health
+        .get("pid")?
+        .as_u64()
+        .and_then(|value| u32::try_from(value).ok())?;
+    health.get("persistence_healthy")?.as_bool()?;
+    match health.get("persistence_error")? {
+        Value::Null | Value::String(_) => {}
+        _ => return None,
+    }
+    Some(DaemonHealth {
+        pid,
+        status: status.to_string(),
+        version: version.to_string(),
+    })
 }
 
 pub struct DaemonClient {
     base_url: String,
+    socket_addr: SocketAddr,
     client: Client,
     probe_client: Client,
     stream_client: Client,
@@ -92,6 +123,7 @@ impl DaemonClient {
         let authority = plaintext_loopback_authority(host)?;
         let base_url = format!("http://{authority}:{port}");
         reqwest::Url::parse(&base_url).context("invalid daemon URL")?;
+        let socket_addr = crate::daemon::server::loopback_socket_addr(host, port)?;
 
         // @group Authentication : Inject master token so the CLI authenticates with the daemon
         let token = crate::config::auth_config::load().master_token;
@@ -102,6 +134,7 @@ impl DaemonClient {
 
         Ok(Self {
             base_url,
+            socket_addr,
             client: Client::builder()
                 .default_headers(headers.clone())
                 .timeout(std::time::Duration::from_secs(10))
@@ -128,35 +161,132 @@ impl DaemonClient {
     }
 
     pub async fn is_alive_with_timeout(&self, timeout: std::time::Duration) -> bool {
-        let probe = async {
-            let response = self
-                .probe_client
-                .get(format!("{}/api/v1/system/health", self.base_url))
-                .send()
-                .await
-                .ok()?;
-            if !response.status().is_success() {
-                return None;
+        matches!(self.probe_readiness(timeout).await, DaemonProbe::Ready(_))
+    }
+
+    /// Distinguish an unused port from a verified RunDock daemon and an
+    /// occupied/incompatible listener. Callers must only spawn on `Offline`.
+    pub async fn probe_readiness(&self, timeout: std::time::Duration) -> DaemonProbe {
+        let connect = tokio::time::timeout(
+            timeout.min(std::time::Duration::from_millis(500)),
+            tokio::net::TcpStream::connect(self.socket_addr),
+        )
+        .await;
+        match connect {
+            Ok(Ok(stream)) => drop(stream),
+            Ok(Err(error))
+                if matches!(
+                    error.kind(),
+                    std::io::ErrorKind::ConnectionRefused
+                        | std::io::ErrorKind::AddrNotAvailable
+                        | std::io::ErrorKind::NotConnected
+                ) =>
+            {
+                return DaemonProbe::Offline;
             }
-            let body = read_bounded_response(response, MAX_HEALTH_RESPONSE_BYTES)
-                .await
-                .ok()?;
-            serde_json::from_slice::<Value>(&body).ok()
+            Ok(Err(error)) => {
+                return match crate::daemon::server::loopback_port_is_available(self.socket_addr) {
+                    Ok(true) => DaemonProbe::Offline,
+                    Ok(false) => DaemonProbe::Occupied {
+                        detail: format!(
+                            "port {} could not be verified and is not available: {error}",
+                            self.socket_addr
+                        ),
+                    },
+                    Err(bind_error) => DaemonProbe::Occupied {
+                        detail: format!(
+                            "port {} could not be verified ({error}) or safely probed ({bind_error})",
+                            self.socket_addr
+                        ),
+                    },
+                };
+            }
+            Err(_) => {
+                return match crate::daemon::server::loopback_port_is_available(self.socket_addr) {
+                    Ok(true) => DaemonProbe::Offline,
+                    Ok(false) => DaemonProbe::Occupied {
+                        detail: format!(
+                            "port {} did not accept a verification connection in time and is not available",
+                            self.socket_addr
+                        ),
+                    },
+                    Err(error) => DaemonProbe::Occupied {
+                        detail: format!(
+                            "port {} timed out and could not be safely probed: {error}",
+                            self.socket_addr
+                        ),
+                    },
+                };
+            }
+        }
+
+        let response = match tokio::time::timeout(
+            timeout,
+            self.probe_client
+                .get(format!("{}/api/v1/system/health", self.base_url))
+                .send(),
+        )
+        .await
+        {
+            Ok(Ok(response)) => response,
+            Ok(Err(error)) => {
+                return DaemonProbe::Occupied {
+                    detail: format!(
+                        "port {} is listening but RunDock health is unavailable: {error}",
+                        self.socket_addr
+                    ),
+                };
+            }
+            Err(_) => {
+                return DaemonProbe::Occupied {
+                    detail: format!(
+                        "port {} is listening but RunDock health timed out",
+                        self.socket_addr
+                    ),
+                };
+            }
         };
-        tokio::time::timeout(timeout, probe)
-            .await
+        if !response.status().is_success() {
+            return DaemonProbe::Occupied {
+                detail: format!(
+                    "port {} returned HTTP {} instead of RunDock health",
+                    self.socket_addr,
+                    response.status()
+                ),
+            };
+        }
+        let body = match read_bounded_response(response, MAX_HEALTH_RESPONSE_BYTES).await {
+            Ok(body) => body,
+            Err(error) => {
+                return DaemonProbe::Occupied {
+                    detail: format!("RunDock health response was rejected: {error}"),
+                };
+            }
+        };
+        let health = match serde_json::from_slice::<Value>(&body)
             .ok()
-            .flatten()
-            .is_some_and(|health| {
-                let health_pid = health
-                    .get("pid")
-                    .and_then(Value::as_u64)
-                    .and_then(|pid| u32::try_from(pid).ok());
-                health_payload_is_alive(&health)
-                    && health_pid.is_some()
-                    && health_pid == crate::utils::pid::read_pid()
-                    && crate::utils::pid::is_daemon_running()
-            })
+            .as_ref()
+            .and_then(parse_health_payload)
+        {
+            Some(health) => health,
+            None => {
+                return DaemonProbe::Occupied {
+                    detail: "port is listening but the RunDock health contract is incompatible"
+                        .to_string(),
+                };
+            }
+        };
+        if Some(health.pid) != crate::utils::pid::read_pid()
+            || !crate::utils::pid::is_daemon_running()
+        {
+            return DaemonProbe::Occupied {
+                detail: format!(
+                    "RunDock health reported PID {}, but local daemon ownership could not be verified",
+                    health.pid
+                ),
+            };
+        }
+        DaemonProbe::Ready(health)
     }
 
     // @group APIEndpoints > Client : GET request helper
@@ -263,7 +393,7 @@ impl DaemonClient {
 
 #[cfg(test)]
 mod tests {
-    use super::{drain_sse_lines, health_payload_is_alive, plaintext_loopback_authority};
+    use super::{drain_sse_lines, parse_health_payload, plaintext_loopback_authority};
 
     #[test]
     fn plaintext_daemon_credentials_are_loopback_only() {
@@ -282,18 +412,26 @@ mod tests {
 
     #[test]
     fn degraded_daemon_health_still_proves_liveness() {
-        assert!(health_payload_is_alive(
-            &serde_json::json!({ "status": "ok", "version": "1.1.0" })
-        ));
-        assert!(health_payload_is_alive(
-            &serde_json::json!({ "status": "degraded", "version": "1.1.0" })
-        ));
-        assert!(!health_payload_is_alive(
-            &serde_json::json!({ "status": "failed", "version": "1.1.0" })
-        ));
-        assert!(!health_payload_is_alive(
-            &serde_json::json!({ "status": "ok" })
-        ));
+        let base = serde_json::json!({
+            "pid": 123,
+            "version": "1.1.0",
+            "persistence_healthy": true,
+            "persistence_error": null
+        });
+        let mut healthy = base.clone();
+        healthy["status"] = serde_json::json!("ok");
+        assert!(parse_health_payload(&healthy).is_some());
+        healthy["status"] = serde_json::json!("degraded");
+        assert!(parse_health_payload(&healthy).is_some());
+        healthy["status"] = serde_json::json!("failed");
+        assert!(parse_health_payload(&healthy).is_none());
+        let mut missing_contract = base;
+        missing_contract["status"] = serde_json::json!("ok");
+        missing_contract
+            .as_object_mut()
+            .unwrap()
+            .remove("persistence_error");
+        assert!(parse_health_payload(&missing_contract).is_none());
     }
 
     #[test]

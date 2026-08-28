@@ -23,8 +23,27 @@ pub struct ManagedChild {
 }
 
 impl ManagedChild {
+    pub fn preserve_process_tree(&mut self) -> Result<()> {
+        self.process_tree
+            .as_mut()
+            .ok_or_else(|| anyhow::anyhow!("managed child has no process-tree ownership"))?
+            .preserve_on_drop()
+    }
+
     pub fn take_process_tree(&mut self) -> Option<ProcessTreeGuard> {
         self.process_tree.take()
+    }
+
+    pub async fn terminate_process_tree(&mut self) -> Result<()> {
+        let process_tree = self
+            .process_tree
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("managed child has no process-tree ownership"))?;
+        let (tree_result, child_result) =
+            tokio::join!(process_tree.terminate_and_wait(), self.child.wait());
+        tree_result?;
+        child_result.context("failed to reap terminated managed child")?;
+        Ok(())
     }
 }
 

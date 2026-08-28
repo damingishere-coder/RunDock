@@ -23,7 +23,7 @@ impl ProcessTreeGuard {
         use windows::Win32::Foundation::{CloseHandle, BOOL};
         use windows::Win32::System::JobObjects::{
             AssignProcessToJobObject, CreateJobObjectW, IsProcessInJob,
-            JobObjectExtendedLimitInformation, SetInformationJobObject,
+            JobObjectExtendedLimitInformation, QueryInformationJobObject, SetInformationJobObject,
             JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
         };
         use windows::Win32::System::Threading::{
@@ -40,7 +40,17 @@ impl ProcessTreeGuard {
             .context("failed to create or open named process-tree job")?;
         let configure = (|| -> anyhow::Result<()> {
             let mut limits = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
-            limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+            unsafe {
+                QueryInformationJobObject(
+                    job,
+                    JobObjectExtendedLimitInformation,
+                    std::ptr::from_mut(&mut limits).cast(),
+                    std::mem::size_of_val(&limits) as u32,
+                    None,
+                )
+                .context("failed to inspect named process-tree job")?;
+            }
+            limits.BasicLimitInformation.LimitFlags |= JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
             unsafe {
                 SetInformationJobObject(
                     job,
@@ -109,13 +119,47 @@ impl ProcessTreeGuard {
         })
     }
 
-    /// Keep a daemon-owned Unix process group alive if the daemon unwinds or
+    /// Keep a daemon-owned process tree alive if the daemon unwinds, exits, or
     /// crashes. Explicit stop/delete paths still use `terminate_and_wait`.
-    pub fn preserve_on_drop(&mut self) {
+    pub fn preserve_on_drop(&mut self) -> anyhow::Result<()> {
+        #[cfg(windows)]
+        {
+            use anyhow::Context;
+            use windows::Win32::Foundation::HANDLE;
+            use windows::Win32::System::JobObjects::{
+                JobObjectExtendedLimitInformation, QueryInformationJobObject,
+                SetInformationJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+                JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+            };
+
+            let job = HANDLE(self.job as *mut std::ffi::c_void);
+            let mut limits = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
+            unsafe {
+                QueryInformationJobObject(
+                    job,
+                    JobObjectExtendedLimitInformation,
+                    std::ptr::from_mut(&mut limits).cast(),
+                    std::mem::size_of_val(&limits) as u32,
+                    None,
+                )
+            }
+            .context("failed to inspect managed process tree preservation flags")?;
+            limits.BasicLimitInformation.LimitFlags &= !JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+            unsafe {
+                SetInformationJobObject(
+                    job,
+                    JobObjectExtendedLimitInformation,
+                    std::ptr::from_ref(&limits).cast(),
+                    std::mem::size_of_val(&limits) as u32,
+                )
+            }
+            .context("failed to preserve managed process tree after daemon exit")?;
+        }
         #[cfg(unix)]
         {
             self.terminate_on_drop = false;
         }
+        Ok(())
     }
 
     #[cfg(unix)]
@@ -296,7 +340,50 @@ mod tests {
             .unwrap();
         let mut guard = ProcessTreeGuard::new(child.id(), "test-crash-survival").unwrap();
 
-        guard.preserve_on_drop();
+        guard.preserve_on_drop().unwrap();
+        drop(guard);
+
+        assert!(child.try_wait().unwrap().is_none());
+        child.kill().unwrap();
+        child.wait().unwrap();
+    }
+}
+
+#[cfg(all(test, windows))]
+mod windows_tests {
+    use super::ProcessTreeGuard;
+    use std::os::windows::process::CommandExt;
+
+    #[test]
+    fn preserved_windows_guard_does_not_kill_the_owned_job() {
+        const CREATE_BREAKAWAY_FROM_JOB: u32 = 0x0100_0000;
+        const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+        let owner = format!("test-crash-survival-{}", uuid::Uuid::new_v4());
+        let spawn = |flags| {
+            std::process::Command::new("powershell.exe")
+                .args([
+                    "-NoLogo",
+                    "-NoProfile",
+                    "-NonInteractive",
+                    "-Command",
+                    "Start-Sleep -Seconds 30",
+                ])
+                .creation_flags(flags)
+                .spawn()
+        };
+        let mut child =
+            match spawn(CREATE_BREAKAWAY_FROM_JOB | CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW) {
+                Ok(child) => child,
+                Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => {
+                    spawn(CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW).unwrap()
+                }
+                Err(error) => panic!("failed to spawn Windows preservation test child: {error}"),
+            };
+        let mut guard = ProcessTreeGuard::new(child.id(), &owner).unwrap();
+
+        guard.preserve_on_drop().unwrap();
         drop(guard);
 
         assert!(child.try_wait().unwrap().is_none());

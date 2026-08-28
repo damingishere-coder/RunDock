@@ -10,8 +10,8 @@ use crate::models::process_info::ProcessInfo;
 use crate::models::process_status::ProcessStatus;
 use crate::notifications::sender::{fire_event, ProcessEvent};
 use crate::process::identity::{
-    capture_process_identity_with_retry, kill_process_verified, kill_spawned_process,
-    process_identity_matches, stable_identity_matches,
+    capture_process_identity_with_retry, kill_process_verified, process_identity_matches,
+    stable_identity_matches,
 };
 use crate::process::instance::{read_git_branch, LogLine, ManagedProcess, ProcessIdentity};
 use crate::process::restarter::{watch_and_restart, RestartEvent, RestartPolicy};
@@ -313,7 +313,29 @@ impl ProcessManager {
                     .await;
             }
         };
-        process_tree.preserve_on_drop();
+        if let Err(error) = process_tree.preserve_on_drop() {
+            tracing::error!(%error, %saved_id, pid, "adopted process tree could not be preserved after daemon exit");
+            drop(process_tree);
+            if process_identity_matches(pid, &identity) {
+                if let Err(kill_error) = kill_process_verified(pid, Some(&identity)).await {
+                    tracing::error!(%kill_error, %saved_id, pid, "failed to stop adopted process after process-tree preservation failed");
+                    process.status = ProcessStatus::Errored;
+                    process.pid = Some(pid);
+                    process.process_identity = Some(identity);
+                    process.desired_running = false;
+                    process.generation = 1;
+                    process.restart_count = restart_count;
+                    process.cron_run_history = cron_run_history;
+                    let info = process.to_info();
+                    self.registry
+                        .insert(saved_id, Arc::new(RwLock::new(process)));
+                    return info;
+                }
+            }
+            return self
+                .register_stopped_restored(saved_id, config, restart_count, cron_run_history)
+                .await;
+        }
         process.status = if config.watch {
             ProcessStatus::Watching
         } else {
@@ -549,17 +571,7 @@ impl ProcessManager {
     // @group BusinessLogic > Lifecycle : Stop a running process
     pub async fn stop(&self, id: Uuid) -> Result<ProcessInfo> {
         let arc = self.get_arc(id)?;
-        let (
-            pid,
-            identity,
-            is_cron,
-            pre_stop,
-            cwd,
-            env,
-            previous_status,
-            previous_generation,
-            stop_generation,
-        ) = {
+        let (is_cron, pre_stop, cwd, env, previous_status, previous_generation, stop_generation) = {
             let mut proc = arc.write().await;
             let stoppable = matches!(
                 proc.status,
@@ -589,8 +601,6 @@ impl ProcessManager {
             proc.status = ProcessStatus::Stopping;
 
             (
-                proc.pid,
-                proc.process_identity.clone(),
                 proc.config.cron.is_some(),
                 proc.config.pre_stop.clone(),
                 proc.config.cwd.clone(),
@@ -607,24 +617,17 @@ impl ProcessManager {
             }
         }
 
-        if let Some(pid) = pid {
-            if let Err(error) = kill_process_verified(pid, identity.as_ref()).await {
-                if let Err(tree_error) =
-                    Self::terminate_retained_process_tree(&arc, stop_generation).await
-                {
-                    let mut proc = arc.write().await;
-                    if proc.generation != stop_generation {
-                        return Err(error);
-                    }
-                    proc.status = previous_status;
-                    proc.desired_running = true;
-                    proc.generation = previous_generation;
-                    return Err(anyhow!(
-                        "failed to stop verified PID {pid} ({error}); owned tree cleanup also failed ({tree_error})"
-                    ));
-                }
-                tracing::warn!(%id, pid, %error, "root-PID cleanup failed, but the owned process tree was terminated and confirmed empty");
+        if let Err(error) = Self::terminate_retained_process_tree(&arc, stop_generation).await {
+            let mut proc = arc.write().await;
+            if proc.generation != stop_generation {
+                return Err(error);
             }
+            proc.status = previous_status;
+            proc.desired_running = true;
+            proc.generation = previous_generation;
+            return Err(anyhow!(
+                "failed to terminate the complete owned process tree for {id}: {error}"
+            ));
         }
 
         if is_cron {
@@ -1506,6 +1509,18 @@ impl ProcessManager {
             }
         };
 
+        if let Err(error) = child.preserve_process_tree() {
+            let cleanup_error = self
+                .cleanup_failed_spawn(Arc::clone(&arc), child, pid, Some(identity), generation)
+                .await;
+            return Err(match cleanup_error {
+                Some(cleanup_error) => anyhow!(
+                    "failed to preserve managed process tree ({error}); cleanup also failed: {cleanup_error}"
+                ),
+                None => anyhow!("failed to preserve managed process tree: {error}"),
+            });
+        }
+
         {
             let mut proc = arc.write().await;
             if !proc.config.enabled || proc.generation != generation || !proc.desired_running {
@@ -1721,9 +1736,6 @@ impl ProcessManager {
                     "process-tree ownership was lost before lifecycle commit"
                 ));
             }
-            if let Some(process_tree) = proc.process_tree.as_mut() {
-                process_tree.preserve_on_drop();
-            }
             proc.to_info()
         };
 
@@ -1779,7 +1791,8 @@ impl ProcessManager {
         identity: Option<ProcessIdentity>,
         generation: u64,
     ) -> Option<String> {
-        let cleanup_error = kill_spawned_process(&mut child, pid)
+        let cleanup_error = child
+            .terminate_process_tree()
             .await
             .err()
             .map(|error| error.to_string());
@@ -1816,7 +1829,7 @@ impl ProcessManager {
                 let mut retained_identity = identity;
                 loop {
                     attempt = attempt.saturating_add(1);
-                    match kill_spawned_process(&mut child, pid).await {
+                    match child.terminate_process_tree().await {
                         Ok(()) => {
                             break;
                         }
@@ -1886,7 +1899,7 @@ impl ProcessManager {
 
                     tokio::spawn(async move {
                         let _lifecycle_permit = lifecycle_permit;
-                        let (pid, identity, previous_status) = {
+                        let previous_status = {
                             let mut proc = arc.write().await;
                             if !proc.config.enabled
                                 || !proc.desired_running
@@ -1897,31 +1910,23 @@ impl ProcessManager {
                             }
                             let previous_status = proc.status.clone();
                             proc.status = ProcessStatus::Stopping;
-                            (proc.pid, proc.process_identity.clone(), previous_status)
+                            previous_status
                         };
 
-                        if let Some(pid) = pid {
-                            if let Err(error) = kill_process_verified(pid, identity.as_ref()).await
-                            {
-                                if let Err(tree_error) =
-                                    Self::terminate_retained_process_tree(&arc, generation).await
-                                {
-                                    tracing::warn!(
-                                        "failed to stop process {process_id} before restart: {error}; owned tree cleanup also failed: {tree_error}"
-                                    );
-                                    let mut proc = arc.write().await;
-                                    if proc.generation == generation {
-                                        // The old process is still alive and owned. Restore its
-                                        // operable state and resources so Stop/Delete can retry.
-                                        proc.status = previous_status;
-                                        let _ = restart_manager.persistence_tx.send(());
-                                    }
-                                    return;
-                                }
-                                tracing::warn!(
-                                    "root-PID cleanup failed for process {process_id}, but the owned tree was terminated and confirmed empty: {error}"
-                                );
+                        if let Err(error) =
+                            Self::terminate_retained_process_tree(&arc, generation).await
+                        {
+                            tracing::warn!(
+                                "failed to stop the complete owned process tree for {process_id} before restart: {error}"
+                            );
+                            let mut proc = arc.write().await;
+                            if proc.generation == generation {
+                                // The old process is still alive and owned. Restore its
+                                // operable state and resources so Stop/Delete can retry.
+                                proc.status = previous_status;
+                                let _ = restart_manager.persistence_tx.send(());
                             }
+                            return;
                         }
 
                         {
@@ -2447,7 +2452,27 @@ impl ProcessManager {
                                 }
                                 return;
                             };
-                            let Some(mut process_tree) = child.take_process_tree() else {
+                            if let Err(error) = child.preserve_process_tree() {
+                                let cleanup_error = manager
+                                    .cleanup_failed_spawn(
+                                        Arc::clone(&arc),
+                                        child,
+                                        pid,
+                                        Some(identity),
+                                        generation,
+                                    )
+                                    .await;
+                                tracing::error!(
+                                    "cron: failed to preserve managed process tree for PID {pid}: {error}; cleanup error: {cleanup_error:?}"
+                                );
+                                if let Some(scheduler) =
+                                    cron_schedulers.lock().await.remove(&process_id)
+                                {
+                                    scheduler.abort();
+                                }
+                                return;
+                            }
+                            let Some(process_tree) = child.take_process_tree() else {
                                 let cleanup_error = manager
                                     .cleanup_failed_spawn(
                                         Arc::clone(&arc),
@@ -2478,7 +2503,6 @@ impl ProcessManager {
                                         .await;
                                     return;
                                 }
-                                process_tree.preserve_on_drop();
                                 proc.pid = Some(pid);
                                 proc.process_identity = Some(identity.clone());
                                 proc.process_tree = Some(process_tree);
@@ -3164,7 +3188,9 @@ mod lifecycle_tests {
 
         let error = manager.set_enabled(id, false).await.unwrap_err();
 
-        assert!(error.to_string().contains("no saved process identity"));
+        assert!(error
+            .to_string()
+            .contains("no owned process-tree handle is available"));
         assert!(manager.cron_schedulers.lock().await.contains_key(&id));
         let entry = manager.registry.get(&id).unwrap();
         let process = entry.read().await;
@@ -3321,6 +3347,73 @@ mod lifecycle_tests {
 
         let error = manager.start_existing(id).await.unwrap_err();
         assert!(error.to_string().contains("still cleaning up"));
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn explicit_stop_terminates_preserved_windows_descendants() {
+        let manager = ProcessManager::new(Arc::new(RwLock::new(NotificationsStore::default())));
+        let id = Uuid::new_v4();
+        let directory = std::env::temp_dir().join(format!("rundock-stop-tree-{id}"));
+        std::fs::create_dir_all(&directory).unwrap();
+        let pid_file = directory.join("descendant.pid");
+        let pid_path = pid_file.to_string_lossy().replace("'", "''");
+        let command = format!(
+            "$child = Start-Process -FilePath powershell.exe -ArgumentList @('-NoProfile', '-Command', 'Start-Sleep -Seconds 30') -PassThru; $child.Id | Set-Content -Encoding ascii '{pid_path}'; Start-Sleep -Seconds 30"
+        );
+        let mut config = test_config(format!("stop-tree-{id}"));
+        config.script = "powershell.exe".to_string();
+        config.args = vec![
+            "-NoLogo".to_string(),
+            "-NoProfile".to_string(),
+            "-NonInteractive".to_string(),
+            "-Command".to_string(),
+            command,
+        ];
+        config.autorestart = false;
+
+        let started = manager.start(config).await.unwrap();
+        let root_pid = started.pid.unwrap();
+        let root_identity = crate::process::identity::capture_process_identity(root_pid)
+            .expect("managed root process has no identity");
+        for _ in 0..50 {
+            if pid_file.exists() {
+                break;
+            }
+            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+        }
+        let descendant_pid: u32 = std::fs::read_to_string(&pid_file)
+            .expect("descendant did not publish its PID")
+            .trim()
+            .parse()
+            .unwrap();
+        let descendant_identity =
+            crate::process::identity::capture_process_identity(descendant_pid)
+                .expect("managed descendant process has no identity");
+
+        let stopped = manager.stop(started.id).await.unwrap();
+
+        assert_eq!(stopped.status, ProcessStatus::Stopped);
+        for _ in 0..50 {
+            if !crate::process::identity::process_identity_matches(root_pid, &root_identity)
+                && !crate::process::identity::process_identity_matches(
+                    descendant_pid,
+                    &descendant_identity,
+                )
+            {
+                break;
+            }
+            tokio::time::sleep(tokio::time::Duration::from_millis(20)).await;
+        }
+        assert!(!crate::process::identity::process_identity_matches(
+            root_pid,
+            &root_identity
+        ));
+        assert!(!crate::process::identity::process_identity_matches(
+            descendant_pid,
+            &descendant_identity
+        ));
+        std::fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]

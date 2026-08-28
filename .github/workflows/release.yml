@@ -15,6 +15,7 @@ permissions:
 env:
   CARGO_TERM_COLOR: always
   BINARY_NAME: alter
+  DESKTOP_BINARY_NAME: rundock
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   NPM_VERSION: 11.12.1
 
@@ -88,7 +89,7 @@ jobs:
           npm ci
           npm run build
 
-      - name: Build release binary
+      - name: Build release binaries
         env:
           GH_OAUTH_CLIENT_ID: ${{ secrets.GH_OAUTH_CLIENT_ID }}
           ALTER_UPDATE_PUBLISHER_SHA256: ${{ vars.WINDOWS_SIGNER_SHA256 }}
@@ -104,15 +105,33 @@ jobs:
             throw "WINDOWS_SIGNER_SHA256 repository variable must contain the 64-character publisher certificate SHA-256."
           }
           cargo build --release --locked --target x86_64-pc-windows-msvc
-          if ($LASTEXITCODE -ne 0) { throw "release binary build failed" }
+          if ($LASTEXITCODE -ne 0) { throw "alter release binary build failed" }
+          cargo build --manifest-path desktop-shell\Cargo.toml --release --locked --target x86_64-pc-windows-msvc
+          if ($LASTEXITCODE -ne 0) { throw "desktop shell release binary build failed" }
 
-      # Copy binary to target/release/ where Inno Setup script expects it
-      - name: Stage binary
+      # Copy binaries to the stable paths consumed by Inno Setup.
+      - name: Stage binaries
         run: |
           New-Item -ItemType Directory -Force -Path target\release | Out-Null
+          New-Item -ItemType Directory -Force -Path desktop-shell\target\release | Out-Null
           Copy-Item target\x86_64-pc-windows-msvc\release\alter.exe target\release\alter.exe
+          Copy-Item desktop-shell\target\x86_64-pc-windows-msvc\release\rundock.exe desktop-shell\target\release\rundock.exe
+          $loader = 'desktop-shell\target\x86_64-pc-windows-msvc\release\WebView2Loader.dll'
+          if (-not (Test-Path -LiteralPath $loader)) {
+            $loader = Get-ChildItem 'desktop-shell\target\x86_64-pc-windows-msvc\release\build' -Filter WebView2Loader.dll -File -Recurse |
+              Where-Object FullName -Match '[\\/]out[\\/]x64[\\/]WebView2Loader\.dll$' |
+              Sort-Object LastWriteTimeUtc -Descending |
+              Select-Object -First 1 -ExpandProperty FullName
+          }
+          if (-not $loader) { throw 'WebView2Loader.dll was not produced by the desktop build' }
+          $signature = Get-AuthenticodeSignature -LiteralPath $loader
+          if ($signature.Status -ne 'Valid' -or
+              $signature.SignerCertificate.Subject -notmatch '(^|,\s*)O=Microsoft Corporation(,|$)') {
+            throw 'WebView2Loader.dll does not have the expected Microsoft signature'
+          }
+          Copy-Item $loader desktop-shell\target\release\WebView2Loader.dll
 
-      - name: Sign and verify binary (required)
+      - name: Sign and verify binaries (required)
         shell: pwsh
         env:
           WINDOWS_SIGNING_CERT_BASE64: ${{ secrets.WINDOWS_SIGNING_CERT_BASE64 }}
@@ -136,21 +155,28 @@ jobs:
           $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" |
             Sort-Object FullName -Descending | Select-Object -First 1
           if (-not $signtool) { throw "signtool.exe was not found" }
-          & $signtool.FullName sign /fd SHA256 /td SHA256 /tr https://timestamp.digicert.com /f $pfx /p $env:WINDOWS_SIGNING_CERT_PASSWORD target\release\alter.exe
-          if ($LASTEXITCODE -ne 0) { throw "binary signing failed" }
-          & $signtool.FullName verify /pa /all target\release\alter.exe
-          if ($LASTEXITCODE -ne 0) { throw "binary signature verification failed" }
+          $binaries = @('target\release\alter.exe', 'desktop-shell\target\release\rundock.exe')
+          foreach ($binary in $binaries) {
+            & $signtool.FullName sign /fd SHA256 /td SHA256 /tr https://timestamp.digicert.com /f $pfx /p $env:WINDOWS_SIGNING_CERT_PASSWORD $binary
+            if ($LASTEXITCODE -ne 0) { throw "binary signing failed: $binary" }
+            & $signtool.FullName verify /pa /all $binary
+            if ($LASTEXITCODE -ne 0) { throw "binary signature verification failed: $binary" }
+          }
 
       - name: Remove signing material
         if: always()
         shell: pwsh
         run: Remove-Item -LiteralPath (Join-Path $env:RUNNER_TEMP "rundock-signing.pfx") -Force -ErrorAction SilentlyContinue
 
-      - name: Upload binary artifact
+      - name: Upload binary artifacts
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: rundock-windows-x64
-          path: target/release/alter.exe
+          path: |
+            target/release/alter.exe
+            desktop-shell/target/release/rundock.exe
+            desktop-shell/target/release/WebView2Loader.dll
+          if-no-files-found: error
 
   # ─────────────────────────────────────────────────────────────────────────────
   # Package: Inno Setup installer
@@ -168,7 +194,11 @@ jobs:
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: rundock-windows-x64
-          path: target/release
+          path: .
+
+      - name: Stage verified WebView2 bootstrapper
+        shell: pwsh
+        run: .\scripts\stage-webview2.ps1
 
       - name: Extract version from tag
         id: version

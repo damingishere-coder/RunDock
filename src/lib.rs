@@ -120,7 +120,12 @@ pub async fn run_cli(cli: Cli) -> anyhow::Result<()> {
                                     app.id
                                 )
                             })?;
-                    process_tree.preserve_on_drop();
+                    process_tree.preserve_on_drop().map_err(|error| {
+                        anyhow::anyhow!(
+                            "failed to preserve process tree {} during restart: {error}",
+                            app.id
+                        )
+                    })?;
                     _restart_process_trees.push(process_tree);
                 }
             }
@@ -194,6 +199,8 @@ pub async fn run_cli(cli: Cli) -> anyhow::Result<()> {
         Commands::Unstartup => cli::commands::startup::run_unstartup().await?,
 
         Commands::Web => {
+            let daemon_exe = std::env::current_exe()?;
+            crate::daemon::lifecycle::ensure_daemon(&daemon_exe, &cli.host, cli.port).await?;
             let url = format!("http://{}:{}/", cli.host, cli.port);
             println!("[alter] dashboard: {url}");
             #[cfg(target_os = "windows")]
@@ -202,6 +209,17 @@ pub async fn run_cli(cli: Cli) -> anyhow::Result<()> {
             let _ = std::process::Command::new("open").arg(&url).spawn();
             #[cfg(target_os = "linux")]
             let _ = std::process::Command::new("xdg-open").arg(&url).spawn();
+        }
+
+        Commands::InternalUninstallPreflight => {
+            crate::daemon::lifecycle::ensure_uninstall_safe(&client).await?;
+        }
+
+        Commands::InternalUpgradeHandoff => {
+            #[cfg(windows)]
+            crate::daemon::lifecycle::prepare_upgrade_handoff(&client).await?;
+            #[cfg(not(windows))]
+            anyhow::bail!("internal upgrade handoff is supported only on Windows");
         }
     }
 

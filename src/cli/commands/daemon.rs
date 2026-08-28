@@ -5,7 +5,6 @@ use crate::client::daemon_client::DaemonClient;
 use anyhow::{Context, Result};
 use std::time::{Duration, Instant};
 
-const DAEMON_START_TIMEOUT: Duration = Duration::from_secs(10);
 const DAEMON_STOP_TIMEOUT: Duration = Duration::from_secs(15);
 const DAEMON_RESTART_TIMEOUT: Duration = Duration::from_secs(45);
 const DAEMON_PROBE_TIMEOUT: Duration = Duration::from_millis(500);
@@ -23,69 +22,16 @@ pub async fn run(client: &DaemonClient, action: DaemonAction, host: &str, port: 
 
 // @group BusinessLogic > Daemon : Spawn daemon as detached background process and wait for it to bind
 async fn start_daemon(host: &str, port: u16) -> Result<()> {
-    crate::daemon::server::loopback_socket_addr(host, port)?;
-    let probe_client = DaemonClient::new(host, port)?;
-    // Check if a real daemon is running — TCP connect + HTTP health check.
-    // A zombie socket will accept TCP but won't respond to HTTP, so we treat that as dead.
-    if probe_client.is_alive().await {
-        println!("[alter] daemon is already running on {host}:{port}");
-        return Ok(());
-    }
-
     let exe = std::env::current_exe()?;
-
-    #[cfg(target_os = "windows")]
-    let mut child = {
-        use std::os::windows::process::CommandExt;
-        const CREATE_NO_WINDOW: u32 = 0x08000000;
-        const DETACHED_PROCESS: u32 = 0x00000008;
-
-        std::process::Command::new(&exe)
-            .arg("--internal-daemon")
-            .arg("--host")
-            .arg(host)
-            .arg("--port")
-            .arg(port.to_string())
-            .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .creation_flags(CREATE_NO_WINDOW | DETACHED_PROCESS)
-            .spawn()?
-    };
-
-    #[cfg(not(target_os = "windows"))]
-    let mut child = {
-        std::process::Command::new(&exe)
-            .arg("--internal-daemon")
-            .arg("--host")
-            .arg(host)
-            .arg("--port")
-            .arg(port.to_string())
-            .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .spawn()?
-    };
-
-    if wait_until_alive(&probe_client, DAEMON_START_TIMEOUT).await {
-        println!("[alter] daemon started  →  http://{host}:{port}");
-        return Ok(());
+    match crate::daemon::lifecycle::ensure_daemon(&exe, host, port).await? {
+        crate::daemon::lifecycle::EnsureDaemonOutcome::AlreadyRunning => {
+            println!("[alter] daemon is already running on {host}:{port}");
+        }
+        crate::daemon::lifecycle::EnsureDaemonOutcome::Started => {
+            println!("[alter] daemon started  →  http://{host}:{port}");
+        }
     }
-
-    let pid = child.id();
-    let status = child.try_wait()?;
-    eprintln!(
-        "[alter] daemon did not become healthy within 10s (pid={pid}, status={status:?}). Check: {}",
-        crate::config::paths::daemon_log_file().display()
-    );
-    crate::daemon::terminate_failed_replacement(child)
-        .await
-        .context("daemon startup timed out and the spawned process could not be terminated")?;
-    anyhow::ensure!(
-        crate::process::identity::capture_process_identity(pid).is_none(),
-        "daemon startup timed out and PID {pid} is still alive after cleanup"
-    );
-    anyhow::bail!("daemon startup health check timed out; the spawned process was terminated");
+    Ok(())
 }
 
 async fn stop_daemon(client: &DaemonClient) -> Result<()> {
@@ -104,8 +50,8 @@ async fn stop_daemon(client: &DaemonClient) -> Result<()> {
     anyhow::bail!("daemon acknowledged shutdown but remained healthy after 15s");
 }
 
-// @group BusinessLogic > Daemon : Stop daemon then start it again; managed processes survive
-// because runner.rs uses CREATE_BREAKAWAY_FROM_JOB on Windows.
+// @group BusinessLogic > Daemon : Stop daemon then start it again; managed process trees are
+// explicitly configured to survive daemon exit and are re-adopted by the replacement.
 async fn restart_daemon(client: &DaemonClient, host: &str, port: u16) -> Result<()> {
     if client.is_alive().await {
         let old_pid = crate::utils::pid::read_pid_result()?;
@@ -149,27 +95,6 @@ async fn wait_until_restarted(
         let remaining = deadline.saturating_duration_since(Instant::now());
         if remaining.is_zero() {
             return Ok(false);
-        }
-        tokio::time::sleep(remaining.min(DAEMON_POLL_INTERVAL)).await;
-    }
-}
-
-async fn wait_until_alive(client: &DaemonClient, timeout: Duration) -> bool {
-    let deadline = Instant::now() + timeout;
-    loop {
-        let remaining = deadline.saturating_duration_since(Instant::now());
-        if remaining.is_zero() {
-            return false;
-        }
-        if client
-            .is_alive_with_timeout(remaining.min(DAEMON_PROBE_TIMEOUT))
-            .await
-        {
-            return true;
-        }
-        let remaining = deadline.saturating_duration_since(Instant::now());
-        if remaining.is_zero() {
-            return false;
         }
         tokio::time::sleep(remaining.min(DAEMON_POLL_INTERVAL)).await;
     }

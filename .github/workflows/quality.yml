@@ -183,7 +183,31 @@ jobs:
           rustup toolchain install 1.98.0 --profile minimal
           rustup default 1.98.0
       - name: Build real Windows release binary
-        run: cargo build --release --locked
+        shell: pwsh
+        run: |
+          cargo build --release --locked
+          if ($LASTEXITCODE -ne 0) { throw "alter release build failed" }
+          cargo test --manifest-path desktop-shell\Cargo.toml --all-targets --locked
+          if ($LASTEXITCODE -ne 0) { throw "desktop shell tests failed" }
+          cargo build --manifest-path desktop-shell\Cargo.toml --release --locked
+          if ($LASTEXITCODE -ne 0) { throw "desktop shell release build failed" }
+          $loader = 'desktop-shell\target\release\WebView2Loader.dll'
+          if (-not (Test-Path -LiteralPath $loader)) {
+            $loaderSource = Get-ChildItem 'desktop-shell\target\release\build' -Filter WebView2Loader.dll -File -Recurse |
+              Where-Object FullName -Match '[\\/]out[\\/]x64[\\/]WebView2Loader\.dll$' |
+              Sort-Object LastWriteTimeUtc -Descending |
+              Select-Object -First 1
+            if (-not $loaderSource) { throw 'WebView2Loader.dll was not produced by the desktop build' }
+            Copy-Item -LiteralPath $loaderSource.FullName -Destination $loader
+          }
+          $signature = Get-AuthenticodeSignature -LiteralPath $loader
+          if ($signature.Status -ne 'Valid' -or
+              $signature.SignerCertificate.Subject -notmatch '(^|,\s*)O=Microsoft Corporation(,|$)') {
+            throw 'WebView2Loader.dll does not have the expected Microsoft signature'
+          }
+      - name: Stage verified WebView2 bootstrapper
+        shell: pwsh
+        run: .\scripts\stage-webview2.ps1
       - name: Install pinned Inno Setup
         run: choco install innosetup --version=6.7.1 --no-progress -y
       - name: Compile installer with the real release binary
@@ -202,6 +226,105 @@ jobs:
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer\alter-setup.iss
           if ($LASTEXITCODE -ne 0) { throw "Inno Setup validation failed" }
           Get-Item -LiteralPath "dist\RunDock-$version-windows-x64-setup.exe" -ErrorAction Stop | Out-Null
+      - name: Install and smoke the packaged desktop app
+        shell: pwsh
+        run: |
+          $metadata = cargo metadata --no-deps --format-version 1 | ConvertFrom-Json
+          $version = ($metadata.packages | Where-Object name -eq 'alter').version
+          $installer = (Resolve-Path "dist\RunDock-$version-windows-x64-setup.exe").Path
+          $installDir = Join-Path $env:RUNNER_TEMP 'RunDockInstallSmoke'
+          $install = Start-Process -FilePath $installer -ArgumentList @(
+            '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/DIR=$installDir"
+          ) -Wait -PassThru
+          if ($install.ExitCode -ne 0) { throw "silent install failed: $($install.ExitCode)" }
+
+          $shell = Join-Path $installDir 'rundock.exe'
+          $daemon = Join-Path $installDir 'alter.exe'
+          $loader = Join-Path $installDir 'WebView2Loader.dll'
+          Get-Item -LiteralPath $shell, $daemon, $loader -ErrorAction Stop | Out-Null
+          $shortcut = Join-Path $env:ProgramData 'Microsoft\Windows\Start Menu\Programs\RunDock\RunDock.lnk'
+          Get-Item -LiteralPath $shortcut -ErrorAction Stop | Out-Null
+
+          Start-Process -FilePath $shell -ArgumentList '--background' | Out-Null
+          $deadline = [DateTime]::UtcNow.AddSeconds(20)
+          do {
+            Start-Sleep -Milliseconds 250
+            try { $health = Invoke-RestMethod 'http://127.0.0.1:2999/api/v1/system/health' -TimeoutSec 1 }
+            catch { $health = $null }
+          } until (($health.status -in @('ok', 'degraded')) -or [DateTime]::UtcNow -ge $deadline)
+          if ($health.status -notin @('ok', 'degraded')) { throw 'installed daemon did not become healthy' }
+
+          $firstShell = @(Get-Process rundock -ErrorAction SilentlyContinue)
+          if ($firstShell.Count -ne 1) { throw "expected one desktop shell, found $($firstShell.Count)" }
+          Start-Process -FilePath $shell -PassThru | Wait-Process
+          Start-Sleep -Milliseconds 500
+          $secondShell = @(Get-Process rundock -ErrorAction SilentlyContinue)
+          if ($secondShell.Count -ne 1 -or $secondShell[0].Id -ne $firstShell[0].Id) {
+            throw 'second launch did not reuse the existing desktop shell'
+          }
+
+          $runValues = Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
+          if (($runValues.PSObject.Properties.Value -join "`n") -notmatch 'rundock\.exe.*--background') {
+            throw 'default login autostart was not registered with --background'
+          }
+
+          $ping = Join-Path $env:SystemRoot 'System32\PING.EXE'
+          & $daemon start $ping --name ci-upgrade-survivor -- -t 127.0.0.1
+          if ($LASTEXITCODE -ne 0) { throw 'failed to start upgrade survivor process' }
+          $beforeUpgrade = (& $daemon --json list | ConvertFrom-Json).processes |
+            Where-Object name -eq 'ci-upgrade-survivor'
+          if (-not $beforeUpgrade.pid) { throw 'upgrade survivor has no PID' }
+
+          $upgrade = Start-Process -FilePath $installer -ArgumentList @(
+            '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/DIR=$installDir"
+          ) -Wait -PassThru
+          if ($upgrade.ExitCode -ne 0) { throw "in-place upgrade failed: $($upgrade.ExitCode)" }
+          if (-not (Get-Process -Id $beforeUpgrade.pid -ErrorAction SilentlyContinue)) {
+            throw 'in-place upgrade stopped the managed child process'
+          }
+          if (Get-Process rundock -ErrorAction SilentlyContinue) {
+            throw 'silent upgrade unexpectedly left the desktop shell running'
+          }
+
+          Start-Process -FilePath $shell -ArgumentList '--background' | Out-Null
+          $deadline = [DateTime]::UtcNow.AddSeconds(20)
+          do {
+            Start-Sleep -Milliseconds 250
+            try { $health = Invoke-RestMethod 'http://127.0.0.1:2999/api/v1/system/health' -TimeoutSec 1 }
+            catch { $health = $null }
+          } until (($health.status -in @('ok', 'degraded')) -or [DateTime]::UtcNow -ge $deadline)
+          if ($health.status -notin @('ok', 'degraded')) { throw 'upgraded daemon did not become healthy' }
+          $afterUpgrade = (& $daemon --json list | ConvertFrom-Json).processes |
+            Where-Object name -eq 'ci-upgrade-survivor'
+          if ($afterUpgrade.id -ne $beforeUpgrade.id -or $afterUpgrade.pid -ne $beforeUpgrade.pid) {
+            throw 'in-place upgrade did not re-adopt the exact managed process'
+          }
+          & $daemon stop ci-upgrade-survivor
+          if ($LASTEXITCODE -ne 0) { throw 'failed to stop upgrade survivor before uninstall' }
+
+          Start-Process -FilePath $shell -ArgumentList '--quit' -PassThru | Wait-Process
+          $deadline = [DateTime]::UtcNow.AddSeconds(10)
+          while ((Get-Process rundock -ErrorAction SilentlyContinue) -and [DateTime]::UtcNow -lt $deadline) {
+            Start-Sleep -Milliseconds 200
+          }
+          if (Get-Process rundock -ErrorAction SilentlyContinue) { throw 'desktop shell did not exit' }
+          $healthAfterShellExit = Invoke-RestMethod 'http://127.0.0.1:2999/api/v1/system/health' -TimeoutSec 2
+          if ($healthAfterShellExit.status -notin @('ok', 'degraded')) { throw 'daemon stopped with desktop shell' }
+          if (Get-NetTCPConnection -State Listen -LocalPort 5173 -ErrorAction SilentlyContinue) {
+            throw 'production smoke unexpectedly found a 5173 listener'
+          }
+
+          $dataDir = Join-Path $env:APPDATA 'alter-pm2'
+          New-Item -ItemType Directory -Force -Path $dataDir | Out-Null
+          $retentionMarker = Join-Path $dataDir 'ci-data-retention.txt'
+          Set-Content -LiteralPath $retentionMarker -Value 'preserve'
+          $uninstaller = Get-Item -LiteralPath (Join-Path $installDir 'unins000.exe') -ErrorAction Stop
+          $uninstall = Start-Process -FilePath $uninstaller.FullName -ArgumentList @(
+            '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART'
+          ) -Wait -PassThru
+          if ($uninstall.ExitCode -ne 0) { throw "silent uninstall failed: $($uninstall.ExitCode)" }
+          if (-not (Test-Path -LiteralPath $retentionMarker)) { throw 'uninstall removed user data' }
+          if (Test-Path -LiteralPath $shell) { throw 'desktop shell remained after uninstall' }
 
   sonarqube:
     name: SonarQube quality gate

@@ -1,5 +1,6 @@
 // @group Exports : Daemon module re-exports
 
+pub mod lifecycle;
 pub mod server;
 pub mod signals;
 pub mod state;

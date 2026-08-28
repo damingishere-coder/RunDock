@@ -98,6 +98,9 @@ src/
 ├── web/                   # rust-embed serving for web-ui/dist
 ├── telegram/, tunnel/, notifications/
 ├── web-ui/                # React/Vite dashboard source
+├── desktop-shell/          # Windows-only Tauri 2/WebView2 desktop shell
+│   ├── src/                # Tray, single-instance, startup and navigation policy
+│   └── ui/                 # Local startup/error page (no daemon IPC capability)
 └── utils/
     ├── pid.rs, format.rs, table.rs
     └── mod.rs
@@ -111,11 +114,11 @@ src/
 alter daemon start
         │
         ▼
-DaemonClient::is_alive() → TCP connect to :2999
+DaemonClient::probe_readiness() → TCP connect + strict health contract on :2999
         │
-        ├── alive? → print "daemon already running", exit
-        │
-        └── not alive?
+        ├── verified RunDock? → reuse it
+        ├── port unused? → start the sibling alter executable
+        └── occupied/incompatible? → fail with diagnostics; never end the listener
                 │
                 ▼
         Spawn hidden child: alter --internal-daemon --port 2999
@@ -123,10 +126,10 @@ DaemonClient::is_alive() → TCP connect to :2999
         (Unix: stdio → /dev/null)
                 │
                 ▼
-        Poll :2999 every 100ms (up to 5s)
+        Poll :2999 every 100ms (up to 10s)
                 │
                 ▼
-        GET /api/v1/system/health → "ok"
+        GET /api/v1/system/health → status/version/PID/persistence contract
                 │
                 ▼
         Print "daemon started at http://127.0.0.1:2999/"
@@ -343,13 +346,31 @@ status → Watching (same as Running but watcher is active)
 
 ## Web Dashboard Architecture
 
-The web dashboard is **compiled into the binary** using [rust-embed](https://github.com/pyros2097/rust-embed). At compile time, `index.html`, `app.js`, and `style.css` are embedded as byte arrays. At runtime, they are served directly from memory — no disk reads, no external files needed.
+The React dashboard is built by Vite into `web-ui/dist` and then **compiled into
+`alter.exe`** using [rust-embed](https://github.com/pyros2097/rust-embed).
+At runtime the daemon serves those assets from memory on the same loopback
+origin as `/api/v1`.
 
 **Technology:**
-- **Frontend:** Vanilla JavaScript — no framework, no build step
-- **Styling:** Hand-written CSS with CSS custom properties (dark theme)
+- **Frontend:** React 19 + TypeScript + Vite
+- **Styling:** CSS with shared theme variables
 - **Real-time updates:** Auto-refresh every 3 seconds + SSE for log streaming
 - **Transport:** Fetch API + EventSource
+
+### Windows desktop shell
+
+`rundock.exe` is a separate Tauri 2 package. Its WebView2 window initially loads
+only a bundled startup/error page, calls the shared daemon lifecycle state
+machine with the sibling `alter.exe`, and navigates to
+`http://127.0.0.1:2999/` only after health ownership is verified. The remote
+dashboard receives no Tauri IPC, filesystem, or shell capability. Navigation
+away from the canonical 2999 loopback origin is denied in the WebView and safe
+external HTTP(S) or registered custom-protocol links are handed to Windows.
+
+Only one desktop shell instance is allowed. A second launch restores the
+existing window. The close button hides it to the tray; tray exit stops only
+`rundock.exe`. Current-user login startup passes `--background`, so the daemon
+can be recovered without showing a window.
 
 **Dashboard views:**
 
@@ -391,7 +412,7 @@ This design means:
 | Data directory | `%APPDATA%\alter-pm2\` |
 | `.cmd` scripts (npm, yarn) | Wrapped in `cmd /C` automatically |
 | Terminal button | Tries `wt.exe` (Windows Terminal), falls back to `cmd.exe` |
-| Startup integration | PowerShell Scheduled Task |
+| Startup integration | Desktop installer: tray autostart; CLI-only: optional Scheduled Task |
 | Port reuse | `SO_REUSEADDR` via socket2 crate |
 
 ### Linux / macOS
@@ -461,3 +482,7 @@ CLI prints result table
 | `socket2` | 0.5 | Low-level socket control (SO_REUSEADDR) |
 | `anyhow` + `thiserror` | — | Error handling |
 | `windows` | 0.58 | Win32 API (Windows only, process flags) |
+
+The independent `desktop-shell/Cargo.toml` adds Tauri 2, its single-instance and
+autostart plugins, and Windows WebView2 integration without adding those
+dependencies to Linux CLI/package builds.

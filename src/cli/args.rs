@@ -69,6 +69,12 @@ pub enum Commands {
     Unstartup,
     /// Open the web dashboard URL
     Web,
+    /// Internal: verify that uninstall will not interrupt managed projects
+    #[command(hide = true)]
+    InternalUninstallPreflight,
+    /// Internal: preserve managed Windows jobs while an installer replaces the daemon
+    #[command(hide = true)]
+    InternalUpgradeHandoff,
 }
 
 #[derive(Args, Debug)]

@@ -12,9 +12,13 @@ fn main() {
     println!("cargo:rerun-if-env-changed=GH_OAUTH_CLIENT_ID");
     println!("cargo:rerun-if-changed=assets/rundock-icon.ico");
 
-    if cfg!(windows) {
+    if cfg!(windows) && std::env::var_os("CARGO_FEATURE_WINDOWS_RESOURCE").is_some() {
         let mut resource = winresource::WindowsResource::new();
         resource.set_icon("assets/rundock-icon.ico");
+        resource.set("ProductName", "RunDock");
+        resource.set("FileDescription", "RunDock compatible CLI and daemon");
+        resource.set("CompanyName", "DAMING");
+        resource.set("OriginalFilename", "alter.exe");
         if let Err(error) = resource.compile() {
             let profile = std::env::var("PROFILE").unwrap_or_default();
             let in_ci = std::env::var("CI")

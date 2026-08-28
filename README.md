@@ -19,6 +19,11 @@
 
 Download the latest `RunDock-x.x.x-windows-x64-setup.exe` from [Releases](https://github.com/damingishere-coder/RunDock/releases) and run it.
 RunDock is the product name; the compatible `alter.exe` command is added to your `PATH` automatically.
+The installer adds the `rundock.exe` desktop app. It opens the local dashboard in
+its own window, starts the daemon when needed, stays available in the system
+tray, and enables current-user login startup by default. Closing the window
+hides it to the tray; **Exit RunDock** closes only the desktop app and leaves the
+daemon and managed projects running.
 
 ### Debian / Ubuntu (signed APT repository)
 
@@ -48,7 +53,7 @@ The packaged service is opt-in: `sudo systemctl enable --now alter-daemon.servic
 - **State persistence** — save and restore your process list across reboots
 - **Ecosystem config** — define all apps in one TOML or JSON file
 - **Full REST API** — automate everything
-- **Single binary** — no runtime dependencies
+- **Self-contained Windows installer** — desktop app plus the compatible CLI/daemon
 - **Dashboard authentication** — password-protect the web UI with Argon2id hashing, session tokens, and a PIN quick-unlock
 - **Telegram bot** — control your processes from Telegram: list, start, stop, restart, tail logs, and receive crash/restart alerts
 - **AI assistant** — multi-provider chat panel (Ollama, GitHub Models, Claude, OpenAI-compatible) with streaming responses and process-aware context
@@ -72,6 +77,8 @@ npm run build
 cd ..
 cargo build --release --locked
 # Binary: target\release\alter.exe
+cargo build --manifest-path desktop-shell\Cargo.toml --release --locked
+# Desktop app: desktop-shell\target\release\rundock.exe
 ```
 
 ---
@@ -105,9 +112,19 @@ RunDock is built with Windows as a first-class platform:
 
 - Spawned processes use `CREATE_NO_WINDOW` — **no black console popups**
 - Daemon runs completely hidden in the background
+- `rundock.exe` provides a single-instance WebView2 window and system tray
+- Login startup is enabled by default with `--background` and can be toggled from the tray
+- Closing or exiting the desktop app never stops managed projects
 - `npm`, `yarn`, `npx` and other `.cmd` scripts work directly
 - Terminal button opens Windows Terminal or `cmd.exe` in the process directory
 - Data stored in `%APPDATA%\alter-pm2\`
+
+If the desktop window cannot reach the daemon, its local failure page offers
+**Retry**, **Open log directory**, **Copy diagnostics**, and **Open in browser**.
+An occupied or incompatible port 2999 is reported without ending that listener.
+If WebView2 is unavailable, repair the RunDock installation or install the
+Microsoft Edge WebView2 Evergreen Runtime; the installer normally deploys it
+automatically after verifying Microsoft's signature.
 
 ---
 

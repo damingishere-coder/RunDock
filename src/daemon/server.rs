@@ -60,6 +60,21 @@ fn enable_exclusive_address_use(socket: &socket2::Socket) -> std::io::Result<()>
     Ok(())
 }
 
+pub(crate) fn loopback_port_is_available(addr: SocketAddr) -> std::io::Result<bool> {
+    let socket = socket2::Socket::new(
+        socket2::Domain::for_address(addr),
+        socket2::Type::STREAM,
+        None,
+    )?;
+    #[cfg(windows)]
+    enable_exclusive_address_use(&socket)?;
+    match socket.bind(&addr.into()) {
+        Ok(()) => Ok(true),
+        Err(error) if error.kind() == std::io::ErrorKind::AddrInUse => Ok(false),
+        Err(error) => Err(error),
+    }
+}
+
 pub async fn run(state: Arc<DaemonState>, config: DaemonConfig) -> Result<()> {
     let addr = loopback_socket_addr(&config.host, config.port)?;
 
@@ -208,5 +223,14 @@ mod tests {
             "[::1]:2999".parse().unwrap()
         );
         assert!(loopback_socket_addr("192.168.1.20", 2999).is_err());
+    }
+
+    #[test]
+    fn port_availability_distinguishes_a_listener_from_an_unused_port() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        assert!(!super::loopback_port_is_available(address).unwrap());
+        drop(listener);
+        assert!(super::loopback_port_is_available(address).unwrap());
     }
 }

@@ -34,7 +34,7 @@ Managing background processes on Windows has always been awkward. RunDock gives 
 - **Structured logging** with rotation and historical browsing
 - **Web dashboard** — manage everything from your browser, with keyboard shortcuts
 - **Notifications** — get alerted on crashes, restarts, or stops via Slack, Teams, Discord, or webhook
-- **Single binary** — no runtime dependencies, no Node.js, no Python required
+- **Windows desktop app** — WebView2 window, system tray, single instance, and login startup
 
 ---
 
@@ -54,7 +54,7 @@ Managing background processes on Windows has always been awkward. RunDock gives 
 | **State Persistence** | Save and restore your process list across reboots |
 | **Ecosystem Config** | Define multiple apps in a single TOML or JSON file |
 | **REST API** | Full HTTP API — automate anything |
-| **OS Startup** | Register the daemon as a system startup task |
+| **OS Startup** | Installed desktop app starts in the tray at login; CLI-only installs can use a task |
 
 ---
 
@@ -64,9 +64,11 @@ RunDock is **designed with Windows in mind** while retaining the compatible `alt
 
 - Processes spawn with `CREATE_NO_WINDOW` — **no black console windows** appearing on your taskbar
 - Daemon runs as a detached hidden background process
+- The installed `rundock.exe` uses a single WebView2 window and system tray
+- Window close hides to the tray; tray exit leaves the daemon and projects running
 - Terminal button opens **Windows Terminal** (`wt.exe`) or falls back to `cmd.exe`
 - Data stored in `%APPDATA%\alter-pm2\` (no cluttering your home directory)
-- Startup integration via PowerShell Scheduled Tasks
+- Current-user login startup is enabled by default and can be toggled from the tray
 
 **Windows-specific paths:**
 ```
@@ -117,9 +119,11 @@ npm ci
 npm run build
 cd ..
 cargo build --release --locked
+cargo build --manifest-path desktop-shell\Cargo.toml --release --locked
 
 # The binary is at:
 .\target\release\alter.exe
+.\desktop-shell\target\release\rundock.exe
 
 # Optional: add to PATH
 $env:PATH += ";$(Get-Location)\target\release"

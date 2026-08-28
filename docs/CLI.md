@@ -370,7 +370,10 @@ Open the web dashboard in the default browser.
 alter web
 ```
 
-Navigates to `http://127.0.0.1:2999/`. Requires the daemon to be running.
+Checks the strict RunDock health contract first. If the port is unused, it
+starts the daemon and waits up to 10 seconds before navigating to
+`http://127.0.0.1:2999/`. If port 2999 belongs to another or incompatible
+program, the command reports the conflict and never ends that process.
 
 ---
 
@@ -396,7 +399,10 @@ alter unstartup
 ```
 
 **Windows:**
-Outputs a PowerShell command to register a Scheduled Task that starts the daemon at login. Run the printed command in an elevated PowerShell prompt.
+The installed `rundock.exe` desktop app enables current-user login startup by
+default and exposes the toggle in its tray menu. For CLI-only/source installs,
+`alter startup` still outputs a PowerShell command for an optional Scheduled
+Task; run that command in an elevated PowerShell prompt.
 
 **Linux:**
 Outputs a systemd unit file template. Copy it to `/etc/systemd/system/alter-daemon.service`, then run `sudo systemctl daemon-reload` and `sudo systemctl enable --now alter-daemon.service`.

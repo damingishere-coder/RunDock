@@ -1,4 +1,6 @@
 /target
+/desktop-shell/target/
+/desktop-shell/gen/
 .env.build
 .env
 .env.*
