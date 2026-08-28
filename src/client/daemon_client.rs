@@ -136,17 +136,20 @@ impl DaemonClient {
             base_url,
             socket_addr,
             client: Client::builder()
+                .no_proxy()
                 .default_headers(headers.clone())
                 .timeout(std::time::Duration::from_secs(10))
                 .build()
                 .context("failed to build daemon HTTP client")?,
             probe_client: Client::builder()
+                .no_proxy()
                 .default_headers(headers.clone())
                 .connect_timeout(std::time::Duration::from_millis(300))
                 .timeout(std::time::Duration::from_millis(500))
                 .build()
                 .context("failed to build daemon probe client")?,
             stream_client: Client::builder()
+                .no_proxy()
                 .default_headers(headers)
                 .connect_timeout(std::time::Duration::from_secs(5))
                 .build()
