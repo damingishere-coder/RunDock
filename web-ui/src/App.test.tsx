@@ -56,6 +56,17 @@ describe('AuthGuard lock configuration', () => {
     expect(screen.getByRole('button', { name: '重新连接' })).toBeVisible()
   })
 
+  it('shows the server recovery entry only when the initial daemon check fails', async () => {
+    vi.mocked(api.authStatus).mockRejectedValue(new Error('daemon unavailable'))
+
+    render(
+      <AuthGuard recovery={<div>服务器恢复入口</div>}>{() => <div>private shell</div>}</AuthGuard>
+    )
+
+    expect(await screen.findByText('服务器恢复入口')).toBeVisible()
+    expect(screen.queryByText('private shell')).not.toBeInTheDocument()
+  })
+
   it('keeps a valid session behind the lock screen after a page reload', async () => {
     localStorage.setItem('alter_screen_locked', 'true')
     vi.mocked(api.authStatus).mockResolvedValue({

@@ -76,8 +76,13 @@ function sshServerFromForm(form: ServerFormState, id: string, name: string): Rem
   }
 }
 
-// @group BusinessLogic > ServerSwitcher : Sidebar panel for switching between local + remote alter daemons
-export function ServerSwitcher() {
+interface ServerSwitcherProps {
+  variant?: 'popover' | 'settings'
+}
+
+// @group BusinessLogic > ServerSwitcher : Local/remote daemon selection and management
+export function ServerSwitcher({ variant = 'popover' }: ServerSwitcherProps) {
+  const embedded = variant === 'settings'
   const [initialState] = useState(loadInitialServerState)
   const [open, setOpen] = useState(false)
   const [remotes, setRemotes] = useState<RemoteServer[]>(initialState.remotes)
@@ -284,86 +289,99 @@ export function ServerSwitcher() {
   return (
     <div style={{ position: 'relative' }}>
       {/* Current server indicator */}
-      <button
-        ref={triggerRef}
-        type="button"
-        onClick={() => setOpen(v => !v)}
-        aria-expanded={open}
-        aria-controls="server-switcher-panel"
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 6,
-          width: '100%',
-          padding: '6px 12px',
-          fontSize: 11,
-          background: 'var(--color-secondary)',
-          border: '1px solid var(--color-border)',
-          borderRadius: 6,
-          cursor: 'pointer',
-          color: 'var(--color-foreground)',
-          fontFamily: 'inherit',
-          textAlign: 'left',
-        }}
-        title="切换服务器"
-      >
-        <Server size={11} style={{ flexShrink: 0, opacity: 0.7 }} />
-        <span
+      {!embedded && (
+        <button
+          ref={triggerRef}
+          type="button"
+          onClick={() => setOpen(v => !v)}
+          aria-expanded={open}
+          aria-controls="server-switcher-panel"
+          aria-label={`当前服务器：${activeServer.name}，点击切换服务器`}
           style={{
-            flex: 1,
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-            fontWeight: 500,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            width: '100%',
+            padding: '6px 12px',
+            fontSize: 11,
+            background: 'var(--color-secondary)',
+            border: '1px solid var(--color-border)',
+            borderRadius: 6,
+            cursor: 'pointer',
+            color: 'var(--color-foreground)',
+            fontFamily: 'inherit',
+            textAlign: 'left',
           }}
+          title="切换服务器"
         >
-          {activeServer.name}
-        </span>
-        <span style={{ fontSize: 9, opacity: 0.5, flexShrink: 0 }}>
-          {activeServer.id === 'local'
-            ? 'local'
-            : activeServer.connectionType === 'ssh'
-              ? `ssh:${activeServer.sshHost}`
-              : `${activeServer.host}:${activeServer.port}`}
-        </span>
-        <span
-          style={{
-            fontSize: 8,
-            opacity: 0.5,
-            flexShrink: 0,
-            marginLeft: 2,
-            display: 'inline-block',
-            transform: open ? 'rotate(0deg)' : 'rotate(-90deg)',
-            transition: 'transform 0.15s',
-          }}
-        >
-          ▼
-        </span>
-      </button>
+          <Server size={11} style={{ flexShrink: 0, opacity: 0.7 }} />
+          <span
+            style={{
+              flex: 1,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              fontWeight: 500,
+            }}
+          >
+            {activeServer.name}
+          </span>
+          <span style={{ fontSize: 9, opacity: 0.5, flexShrink: 0 }}>
+            {activeServer.id === 'local'
+              ? '本机'
+              : activeServer.connectionType === 'ssh'
+                ? `SSH：${activeServer.sshHost}`
+                : `${activeServer.host}:${activeServer.port}`}
+          </span>
+          <span
+            style={{
+              fontSize: 8,
+              opacity: 0.5,
+              flexShrink: 0,
+              marginLeft: 2,
+              display: 'inline-block',
+              transform: open ? 'rotate(0deg)' : 'rotate(-90deg)',
+              transition: 'transform 0.15s',
+            }}
+          >
+            ▼
+          </span>
+        </button>
+      )}
 
       {/* Dropdown panel */}
-      {open && (
+      {(embedded || open) && (
         <div
           ref={panelRef}
           id="server-switcher-panel"
-          role="dialog"
-          aria-modal="false"
-          aria-label="服务器切换"
-          style={{
-            position: 'absolute',
-            bottom: '100%',
-            left: 0,
-            right: 0,
-            background: 'var(--color-card)',
-            border: '1px solid var(--color-border)',
-            borderRadius: 8,
-            boxShadow: '0 -4px 16px rgba(0,0,0,0.15)',
-            marginBottom: 4,
-            zIndex: 300,
-            maxHeight: 420,
-            overflow: 'auto',
-            padding: '6px 0',
-          }}
+          role={embedded ? 'region' : 'dialog'}
+          aria-modal={embedded ? undefined : 'false'}
+          aria-label={embedded ? '服务器连接设置' : '服务器切换'}
+          style={
+            embedded
+              ? {
+                  background: 'var(--color-card)',
+                  border: '1px solid var(--color-border)',
+                  borderRadius: 8,
+                  overflow: 'hidden',
+                  padding: '6px 0',
+                }
+              : {
+                  position: 'absolute',
+                  bottom: '100%',
+                  left: 0,
+                  right: 0,
+                  background: 'var(--color-card)',
+                  border: '1px solid var(--color-border)',
+                  borderRadius: 8,
+                  boxShadow: '0 -4px 16px rgba(0,0,0,0.15)',
+                  marginBottom: 4,
+                  zIndex: 300,
+                  maxHeight: 420,
+                  overflow: 'auto',
+                  padding: '6px 0',
+                }
+          }
         >
           <div
             style={{
@@ -435,6 +453,21 @@ export function ServerSwitcher() {
                 >
                   {s.name}
                 </span>
+                {s.id === activeId && (
+                  <span
+                    style={{
+                      padding: '1px 5px',
+                      borderRadius: 7,
+                      background: 'var(--color-primary)',
+                      color: 'var(--color-primary-foreground)',
+                      fontSize: 9,
+                      lineHeight: 1.4,
+                      flexShrink: 0,
+                    }}
+                  >
+                    当前
+                  </span>
+                )}
                 <span style={{ fontSize: 9, opacity: 0.5, flexShrink: 0 }}>
                   {s.id === 'local'
                     ? 'localhost'

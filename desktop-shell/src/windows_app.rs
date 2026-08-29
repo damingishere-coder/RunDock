@@ -1,6 +1,6 @@
 use crate::{classify_navigation, LaunchMode, NavigationDecision, DASHBOARD_URL};
 use alter::daemon::lifecycle::ensure_daemon;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
@@ -11,10 +11,68 @@ use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
 const HOST: &str = "127.0.0.1";
 const PORT: u16 = 2999;
 const AUTOSTART_MARKER: &str = "desktop-shell-autostart.json";
+const TRAY_NOTICE_MARKER: &str = "desktop-shell-tray-notice.json";
 const SKIP_AUTOSTART_ENV: &str = "RUNDOCK_SKIP_AUTOSTART_INIT";
+const TRAY_NOTICE_MESSAGE: &str = "RunDock 已缩小到系统托盘。左键托盘图标可重新打开；只有在托盘菜单选择“退出 RunDock”时才会关闭桌面端。后台项目会继续运行。";
 
 struct LaunchState {
     in_progress: AtomicBool,
+    quitting: AtomicBool,
+    tray_notice_shown: AtomicBool,
+}
+
+fn should_intercept_close(quitting: bool) -> bool {
+    !quitting
+}
+
+fn show_native_message(title: &'static str, message: String, error: bool) {
+    std::thread::spawn(move || {
+        use windows::core::HSTRING;
+        use windows::Win32::UI::WindowsAndMessaging::{
+            MessageBoxW, MB_ICONERROR, MB_ICONINFORMATION, MB_OK, MB_SETFOREGROUND,
+        };
+
+        let style = MB_OK
+            | MB_SETFOREGROUND
+            | if error {
+                MB_ICONERROR
+            } else {
+                MB_ICONINFORMATION
+            };
+        unsafe {
+            let _ = MessageBoxW(None, &HSTRING::from(message), &HSTRING::from(title), style);
+        }
+    });
+}
+
+fn claim_tray_notice(shown: &AtomicBool, marker: &Path) -> bool {
+    if shown.swap(true, Ordering::SeqCst) || marker.exists() {
+        return false;
+    }
+    if let Err(error) =
+        alter::config::atomic_file::write_with_backup(marker, br#"{"shown":true}"#, None)
+    {
+        eprintln!(
+            "RunDock could not persist the tray notice marker {}: {error}",
+            marker.display()
+        );
+    }
+    true
+}
+
+fn show_tray_notice_once(app: &AppHandle) {
+    let state = app.state::<LaunchState>();
+    let marker = alter::config::paths::data_dir().join(TRAY_NOTICE_MARKER);
+    if claim_tray_notice(&state.tray_notice_shown, &marker) {
+        show_native_message("RunDock", TRAY_NOTICE_MESSAGE.to_string(), false);
+    }
+}
+
+fn request_exit(app: &AppHandle) {
+    app.state::<LaunchState>()
+        .quitting
+        .store(true, Ordering::SeqCst);
+    app.exit(0);
 }
 
 fn open_with_windows(target: &str) {
@@ -132,6 +190,7 @@ fn initialize_autostart(app: &AppHandle) {
 fn create_main_window(app: &tauri::App) -> tauri::Result<()> {
     let navigation_app = app.handle().clone();
     let new_window_app = app.handle().clone();
+    let close_app = app.handle().clone();
     let window = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
         .title("RunDock")
         .inner_size(1280.0, 820.0)
@@ -163,8 +222,27 @@ fn create_main_window(app: &tauri::App) -> tauri::Result<()> {
     let close_window = window.clone();
     window.on_window_event(move |event| {
         if let WindowEvent::CloseRequested { api, .. } = event {
+            if !should_intercept_close(
+                close_app
+                    .state::<LaunchState>()
+                    .quitting
+                    .load(Ordering::SeqCst),
+            ) {
+                return;
+            }
             api.prevent_close();
-            let _ = close_window.hide();
+            match close_window.hide() {
+                Ok(()) => show_tray_notice_once(&close_app),
+                Err(error) => {
+                    let _ = close_window.show();
+                    let _ = close_window.set_focus();
+                    show_native_message(
+                        "RunDock 无法缩小到托盘",
+                        format!("窗口仍保持打开。请稍后重试。\n\n详细信息：{error}"),
+                        true,
+                    );
+                }
+            }
         }
     });
     Ok(())
@@ -182,7 +260,13 @@ fn create_tray(app: &tauri::App) -> tauri::Result<()> {
         None::<&str>,
     )?;
     let separator = PredefinedMenuItem::separator(app)?;
-    let quit = MenuItem::with_id(app, "quit", "退出 RunDock", true, None::<&str>)?;
+    let quit = MenuItem::with_id(
+        app,
+        "quit",
+        "退出 RunDock（项目继续运行）",
+        true,
+        None::<&str>,
+    )?;
     let menu = Menu::with_items(app, &[&open, &browser, &autostart, &separator, &quit])?;
     let autostart_item = autostart.clone();
     TrayIconBuilder::with_id("rundock-tray")
@@ -219,7 +303,7 @@ fn create_tray(app: &tauri::App) -> tauri::Result<()> {
                     let _ = autostart_item.set_checked(!enabled);
                 }
             }
-            "quit" => app.exit(0),
+            "quit" => request_exit(app),
             _ => {}
         })
         .build(app)?;
@@ -232,7 +316,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, _| {
         let duplicate_mode = LaunchMode::from_args(args);
         if duplicate_mode == LaunchMode::QuitExisting {
-            app.exit(0);
+            request_exit(app);
         } else {
             show_window(app);
         }
@@ -244,10 +328,12 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     builder
         .manage(LaunchState {
             in_progress: AtomicBool::new(false),
+            quitting: AtomicBool::new(false),
+            tray_notice_shown: AtomicBool::new(false),
         })
         .setup(move |app| {
             if mode == LaunchMode::QuitExisting {
-                app.handle().exit(0);
+                request_exit(app.handle());
                 return Ok(());
             }
             initialize_autostart(app.handle());
@@ -261,4 +347,61 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         })
         .run(tauri::generate_context!())?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn close_is_intercepted_until_an_explicit_quit() {
+        assert!(should_intercept_close(false));
+        assert!(!should_intercept_close(true));
+    }
+
+    #[test]
+    fn tray_notice_is_claimed_once_and_persists_across_processes() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock should be after the Unix epoch")
+            .as_nanos();
+        let directory = std::env::temp_dir().join(format!(
+            "rundock-tray-notice-{}-{unique}",
+            std::process::id()
+        ));
+        let marker = directory.join(TRAY_NOTICE_MARKER);
+        let shown = AtomicBool::new(false);
+
+        assert!(claim_tray_notice(&shown, &marker));
+        assert!(marker.is_file());
+        assert!(!claim_tray_notice(&shown, &marker));
+
+        let next_process = AtomicBool::new(false);
+        assert!(!claim_tray_notice(&next_process, &marker));
+
+        std::fs::remove_dir_all(directory).expect("temporary marker directory should be removable");
+    }
+
+    #[test]
+    fn tray_notice_stays_once_per_process_when_persistence_fails() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock should be after the Unix epoch")
+            .as_nanos();
+        let parent_file = std::env::temp_dir().join(format!(
+            "rundock-tray-notice-parent-{}-{unique}",
+            std::process::id()
+        ));
+        std::fs::write(&parent_file, b"not a directory")
+            .expect("temporary parent file should be writable");
+        let marker = parent_file.join(TRAY_NOTICE_MARKER);
+        let shown = AtomicBool::new(false);
+
+        assert!(claim_tray_notice(&shown, &marker));
+        assert!(!marker.exists());
+        assert!(!claim_tray_notice(&shown, &marker));
+
+        std::fs::remove_file(parent_file).expect("temporary parent file should be removable");
+    }
 }

@@ -266,6 +266,65 @@ export function NavBtn({
   )
 }
 
+// @group BusinessLogic > SidebarAction : Text-labelled sidebar action for non-route tools
+export function SidebarAction({
+  icon: Icon,
+  label,
+  active,
+  badge,
+  onClick,
+}: {
+  icon: LucideIcon
+  label: string
+  active: boolean
+  badge?: number | string
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      style={{
+        width: '100%',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 9,
+        padding: '7px 16px',
+        fontSize: 13,
+        color: active ? 'var(--color-primary)' : 'var(--color-foreground)',
+        fontWeight: active ? 600 : 500,
+        background: active ? 'var(--color-accent)' : 'transparent',
+        border: 'none',
+        borderLeft: active ? '2px solid var(--color-primary)' : '2px solid transparent',
+        cursor: 'pointer',
+        textAlign: 'left',
+        fontFamily: 'inherit',
+      }}
+    >
+      <Icon size={14} />
+      <span style={{ flex: 1 }}>{label}</span>
+      {badge !== undefined && (
+        <span
+          aria-label={`${badge} 个已打开项`}
+          style={{
+            minWidth: 18,
+            padding: '0 5px',
+            borderRadius: 8,
+            background: 'var(--color-secondary)',
+            border: '1px solid var(--color-border)',
+            color: 'var(--color-muted-foreground)',
+            fontSize: 10,
+            textAlign: 'center',
+          }}
+        >
+          {badge}
+        </span>
+      )}
+    </button>
+  )
+}
+
 // @group BusinessLogic > SidebarProjectGroup : Category header with project-level rows only
 export function SidebarProjectGroup({
   category,

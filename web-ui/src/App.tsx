@@ -27,6 +27,10 @@ import {
   Globe,
   Menu,
   Search,
+  Bot,
+  SquareTerminal,
+  Server,
+  Code2,
 } from 'lucide-react'
 import { useDaemonHealth } from '@/hooks/useDaemonHealth'
 import { useProcesses } from '@/hooks/useProcesses'
@@ -39,13 +43,13 @@ import { GitHubStarBanner } from '@/components/GitHubStarBanner'
 import { NotificationTray } from '@/components/NotificationTray'
 import { AiPanel } from '@/components/AiPanel'
 import { ServerSwitcher } from '@/components/ServerSwitcher'
-import { StatusBar } from '@/components/StatusBar'
 import { SystemStatsWidget } from '@/components/SystemStatsWidget'
 import {
   CronJobSubmenu,
   LegacyNamespaceRedirect,
   NavBtn,
   NavRowWithAdd,
+  SidebarAction,
   SidebarProjectGroup,
 } from '@/components/AppSidebar'
 import {
@@ -127,6 +131,20 @@ function Layout({ onLock, canLock }: { onLock: () => void; canLock: boolean }) {
   }
   const closeAi = () => setAiOpen(false)
 
+  function toggleAi() {
+    if (aiOpen) {
+      closeAi()
+      return
+    }
+    const match = location.pathname.match(/^\/processes\/([^/]+)$/)
+    if (match) {
+      const process = processes.find(item => item.id === match[1] || item.name === match[1])
+      openAi(match[1], process?.name)
+    } else {
+      openAi()
+    }
+  }
+
   const connected = health !== null && error === null && healthError === null
   const operationalError = settingsError ?? error ?? projectsError ?? healthError ?? healthWarning
 
@@ -144,7 +162,7 @@ function Layout({ onLock, canLock }: { onLock: () => void; canLock: boolean }) {
   const [statsOpen, setStatsOpen] = useState(false)
   const [devtoolsOpen, setDevtoolsOpen] = useState(false)
 
-  // @group BusinessLogic > Terminal : Panel state and tab count for the status bar badge
+  // @group BusinessLogic > Terminal : Panel state and tab count for the sidebar tool badge
   const [terminalState, setTerminalState] = useState<TerminalPanelState>('hidden')
   const [terminalTabCount, setTerminalTabCount] = useState(0)
   const terminalPanelRef = useRef<TerminalPanelHandle>(null)
@@ -235,6 +253,7 @@ function Layout({ onLock, canLock }: { onLock: () => void; canLock: boolean }) {
   const isCronActive = location.pathname === '/cron-jobs' || location.pathname === '/cron-jobs/new'
   const isPortsActive = location.pathname === '/ports'
   const isTunnelsActive = location.pathname === '/tunnels'
+  const isServersActive = location.pathname === '/settings/servers'
 
   const [cronOpen, setCronOpen] = useState(false)
   const cronJobs = useMemo(() => processes.filter(p => p.cron), [processes])
@@ -470,8 +489,53 @@ function Layout({ onLock, canLock }: { onLock: () => void; canLock: boolean }) {
             </button>
             {toolsOpen && (
               <div id="sidebar-tools">
+                <NavBtn
+                  to="/settings/servers"
+                  icon={Server}
+                  label="服务器连接"
+                  active={isServersActive}
+                />
+                <SidebarAction
+                  icon={SquareTerminal}
+                  label="终端"
+                  active={terminalState !== 'hidden'}
+                  badge={terminalTabCount > 0 ? terminalTabCount : undefined}
+                  onClick={() => {
+                    toggleTerminal()
+                    setSidebarOpen(false)
+                  }}
+                />
+                <SidebarAction
+                  icon={Bot}
+                  label="AI 助手"
+                  active={aiOpen}
+                  onClick={() => {
+                    toggleAi()
+                    setSidebarOpen(false)
+                  }}
+                />
+                <SidebarAction
+                  icon={BarChart2}
+                  label="系统统计"
+                  active={statsOpen}
+                  onClick={() => {
+                    setStatsOpen(value => !value)
+                    setSidebarOpen(false)
+                  }}
+                />
                 <NavBtn to="/ports" icon={Network} label="端口查找" active={isPortsActive} />
                 <NavBtn to="/tunnels" icon={Globe} label="隧道" active={isTunnelsActive} />
+                {import.meta.env.DEV && settings.showQueryDevtools && (
+                  <SidebarAction
+                    icon={Code2}
+                    label="React Query 开发工具"
+                    active={devtoolsOpen}
+                    onClick={() => {
+                      setDevtoolsOpen(value => !value)
+                      setSidebarOpen(false)
+                    }}
+                  />
+                )}
               </div>
             )}
           </nav>
@@ -766,39 +830,6 @@ function Layout({ onLock, canLock }: { onLock: () => void; canLock: boolean }) {
         shortcuts={settings.terminalShortcuts as TerminalShortcuts}
       />
 
-      {/* VSCode-style status bar */}
-      <StatusBar
-        connected={connected}
-        projects={projects}
-        statsOpen={statsOpen}
-        onToggleStats={() => setStatsOpen(v => !v)}
-        updateInfo={updateInfo}
-        onGoToUpdate={() => navigate('/settings')}
-        version={health?.version ?? null}
-        unreadCount={unreadCount}
-        trayOpen={trayOpen}
-        onToggleTray={toggleTray}
-        aiOpen={aiOpen}
-        onToggleAi={() => {
-          if (aiOpen) {
-            closeAi()
-            return
-          }
-          const match = location.pathname.match(/^\/processes\/([^/]+)$/)
-          if (match) {
-            const proc = processes.find(p => p.id === match[1] || p.name === match[1])
-            openAi(match[1], proc?.name)
-          } else {
-            openAi()
-          }
-        }}
-        devtoolsEnabled={import.meta.env.DEV && settings.showQueryDevtools}
-        devtoolsOpen={devtoolsOpen}
-        onToggleDevtools={() => setDevtoolsOpen(v => !v)}
-        terminalState={terminalState}
-        terminalTabCount={terminalTabCount}
-        onToggleTerminal={toggleTerminal}
-      />
       {import.meta.env.DEV && settings.showQueryDevtools && devtoolsOpen && (
         <ReactQueryDevtoolsPanel
           onClose={() => setDevtoolsOpen(false)}
@@ -910,12 +941,7 @@ export default function App() {
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
         <AuthGuard recovery={serverSwitcher}>
-          {({ canLock, onLock }) => (
-            <>
-              {serverSwitcher}
-              <Layout canLock={canLock} onLock={onLock} />
-            </>
-          )}
+          {({ canLock, onLock }) => <Layout canLock={canLock} onLock={onLock} />}
         </AuthGuard>
       </BrowserRouter>
       <GitHubStarBanner />

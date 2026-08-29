@@ -1,8 +1,8 @@
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { describe, expect, it, vi } from 'vitest'
 import { Clock } from 'lucide-react'
-import { CronJobSubmenu, NavRowWithAdd, SidebarProjectGroup } from './AppSidebar'
+import { CronJobSubmenu, NavRowWithAdd, SidebarAction, SidebarProjectGroup } from './AppSidebar'
 import type { ProcessInfo, ProjectInfo } from '@/types'
 
 describe('AppSidebar accessibility and navigation', () => {
@@ -65,5 +65,20 @@ describe('AppSidebar accessibility and navigation', () => {
       'false'
     )
     expect(screen.getByRole('button', { name: /服务/ })).toHaveAttribute('aria-expanded', 'false')
+  })
+
+  it('exposes text-labelled non-route tools with active state and count', () => {
+    const onClick = vi.fn()
+    render(
+      <MemoryRouter>
+        <SidebarAction icon={Clock} label="终端" active badge={2} onClick={onClick} />
+      </MemoryRouter>
+    )
+
+    const action = screen.getByRole('button', { name: /终端/ })
+    expect(action).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByLabelText('2 个已打开项')).toBeVisible()
+    fireEvent.click(action)
+    expect(onClick).toHaveBeenCalledOnce()
   })
 })

@@ -19,4 +19,13 @@ describe('ServerSwitcher storage recovery', () => {
     expect(localStorage.getItem('alter_servers')).toBeNull()
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
+
+  it('renders server management inline for the settings page', () => {
+    render(<ServerSwitcher variant="settings" />)
+
+    expect(screen.getByRole('region', { name: '服务器连接设置' })).toBeVisible()
+    expect(screen.getByText('本地')).toBeVisible()
+    expect(screen.getByText('当前')).toBeVisible()
+    expect(screen.queryByTitle('切换服务器')).not.toBeInTheDocument()
+  })
 })

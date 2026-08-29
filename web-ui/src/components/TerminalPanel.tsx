@@ -678,12 +678,12 @@ export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>
       position: 'fixed',
       left: 0,
       right: 0,
-      bottom: 22,
+      bottom: 0,
       zIndex: isMax ? 600 : 500,
       display: 'flex',
       flexDirection: 'column',
       background: '#0d0d0d',
-      transform: hidden ? 'translateY(calc(100% + 22px))' : 'translateY(0)',
+      transform: hidden ? 'translateY(100%)' : 'translateY(0)',
       transition: 'transform 0.28s cubic-bezier(0.4, 0, 0.2, 1)',
       willChange: 'transform',
       pointerEvents: hidden ? 'none' : 'auto',
@@ -1134,75 +1134,3 @@ export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>
     )
   }
 )
-
-// @group Exports : Status bar pill — active terminal count badge, click to show/hide panel
-export function TerminalStatusBarBtn({
-  panelState,
-  onToggle,
-  tabCount,
-}: {
-  panelState: TerminalPanelState
-  onToggle: () => void
-  tabCount: number
-}) {
-  const active = panelState !== 'hidden'
-  const style: React.CSSProperties = {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 4,
-    padding: '0 9px',
-    height: '100%',
-    cursor: 'pointer',
-    background: active
-      ? 'color-mix(in srgb, var(--color-foreground) 10%, transparent)'
-      : 'transparent',
-    border: 'none',
-    borderLeft: '1px solid var(--color-border)',
-    color: active ? 'var(--color-foreground)' : 'var(--color-muted-foreground)',
-    fontFamily: 'inherit',
-    fontSize: 11,
-    fontWeight: 500,
-    position: 'relative',
-  }
-  return (
-    <button
-      style={style}
-      onClick={onToggle}
-      title={active ? '隐藏终端' : '显示终端'}
-      onMouseEnter={e => {
-        ;(e.currentTarget as HTMLElement).style.background =
-          'color-mix(in srgb, var(--color-foreground) 10%, transparent)'
-      }}
-      onMouseLeave={e => {
-        ;(e.currentTarget as HTMLElement).style.background = active
-          ? 'color-mix(in srgb, var(--color-foreground) 10%, transparent)'
-          : 'transparent'
-      }}
-    >
-      <SquareTerminal size={12} />
-      {tabCount > 0 && (
-        <span
-          style={{
-            position: 'absolute',
-            top: 2,
-            right: 4,
-            minWidth: 13,
-            height: 13,
-            borderRadius: 7,
-            background: 'var(--color-primary)',
-            color: '#000',
-            fontSize: 8,
-            fontWeight: 700,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: '0 2px',
-            lineHeight: 1,
-          }}
-        >
-          {tabCount > 9 ? '9+' : tabCount}
-        </span>
-      )}
-    </button>
-  )
-}

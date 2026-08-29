@@ -245,6 +245,8 @@ jobs:
           $shortcut = Join-Path $env:ProgramData 'Microsoft\Windows\Start Menu\Programs\RunDock\RunDock.lnk'
           Get-Item -LiteralPath $shortcut -ErrorAction Stop | Out-Null
 
+          $trayMarker = Join-Path $env:APPDATA 'alter-pm2\desktop-shell-tray-notice.json'
+          Remove-Item -LiteralPath $trayMarker -Force -ErrorAction SilentlyContinue
           Start-Process -FilePath $shell -ArgumentList '--background' | Out-Null
           $deadline = [DateTime]::UtcNow.AddSeconds(20)
           do {
@@ -261,6 +263,100 @@ jobs:
           $secondShell = @(Get-Process rundock -ErrorAction SilentlyContinue)
           if ($secondShell.Count -ne 1 -or $secondShell[0].Id -ne $firstShell[0].Id) {
             throw 'second launch did not reuse the existing desktop shell'
+          }
+
+          Add-Type @'
+          using System;
+          using System.Runtime.InteropServices;
+          using System.Text;
+
+          public static class RunDockWindowSmoke {
+            public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+            [DllImport("user32.dll")]
+            public static extern bool EnumWindows(EnumWindowsProc callback, IntPtr lParam);
+            [DllImport("user32.dll")]
+            public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
+            [DllImport("user32.dll")]
+            public static extern bool IsWindow(IntPtr hWnd);
+            [DllImport("user32.dll")]
+            public static extern bool IsWindowVisible(IntPtr hWnd);
+            [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+            public static extern int GetWindowText(IntPtr hWnd, StringBuilder text, int count);
+            [DllImport("user32.dll")]
+            public static extern bool PostMessage(IntPtr hWnd, uint message, IntPtr wParam, IntPtr lParam);
+
+            public static IntPtr FindMainWindow(uint targetProcessId) {
+              IntPtr found = IntPtr.Zero;
+              EnumWindows((window, _) => {
+                uint processId;
+                GetWindowThreadProcessId(window, out processId);
+                if (processId != targetProcessId || !IsWindowVisible(window)) return true;
+                var title = new StringBuilder(256);
+                GetWindowText(window, title, title.Capacity);
+                if (title.ToString() == "RunDock") {
+                  found = window;
+                  return false;
+                }
+                return true;
+              }, IntPtr.Zero);
+              return found;
+            }
+          }
+          '@
+
+          $mainWindow = [RunDockWindowSmoke]::FindMainWindow([uint32]$firstShell[0].Id)
+          if ($mainWindow -eq [IntPtr]::Zero) { throw 'desktop shell has no visible RunDock main window' }
+          if (-not [RunDockWindowSmoke]::PostMessage($mainWindow, 0x0010, [IntPtr]::Zero, [IntPtr]::Zero)) {
+            throw 'failed to send WM_CLOSE to the desktop shell'
+          }
+          $deadline = [DateTime]::UtcNow.AddSeconds(10)
+          while ([RunDockWindowSmoke]::IsWindowVisible($mainWindow) -and [DateTime]::UtcNow -lt $deadline) {
+            Start-Sleep -Milliseconds 100
+          }
+          if (-not [RunDockWindowSmoke]::IsWindow($mainWindow) -or
+              [RunDockWindowSmoke]::IsWindowVisible($mainWindow)) {
+            throw 'WM_CLOSE destroyed the window or failed to hide it'
+          }
+          $afterCloseShell = @(Get-Process rundock -ErrorAction SilentlyContinue)
+          if ($afterCloseShell.Count -ne 1 -or $afterCloseShell[0].Id -ne $firstShell[0].Id) {
+            throw 'WM_CLOSE exited or replaced the desktop shell process'
+          }
+
+          $deadline = [DateTime]::UtcNow.AddSeconds(5)
+          while (-not (Test-Path -LiteralPath $trayMarker) -and [DateTime]::UtcNow -lt $deadline) {
+            Start-Sleep -Milliseconds 100
+          }
+          if (-not (Test-Path -LiteralPath $trayMarker)) { throw 'first close did not persist the tray notice marker' }
+          $firstMarkerHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $trayMarker).Hash
+          $firstMarkerWrite = (Get-Item -LiteralPath $trayMarker).LastWriteTimeUtc
+
+          Start-Process -FilePath $shell -PassThru | Wait-Process
+          $deadline = [DateTime]::UtcNow.AddSeconds(10)
+          while (-not [RunDockWindowSmoke]::IsWindowVisible($mainWindow) -and [DateTime]::UtcNow -lt $deadline) {
+            Start-Sleep -Milliseconds 100
+          }
+          if (-not [RunDockWindowSmoke]::IsWindowVisible($mainWindow)) {
+            throw 'second launch did not restore the hidden main window'
+          }
+
+          [RunDockWindowSmoke]::PostMessage($mainWindow, 0x0010, [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null
+          $deadline = [DateTime]::UtcNow.AddSeconds(10)
+          while ([RunDockWindowSmoke]::IsWindowVisible($mainWindow) -and [DateTime]::UtcNow -lt $deadline) {
+            Start-Sleep -Milliseconds 100
+          }
+          if ([RunDockWindowSmoke]::IsWindowVisible($mainWindow)) { throw 'second WM_CLOSE did not hide the main window' }
+          if ((Get-FileHash -Algorithm SHA256 -LiteralPath $trayMarker).Hash -ne $firstMarkerHash -or
+              (Get-Item -LiteralPath $trayMarker).LastWriteTimeUtc -ne $firstMarkerWrite) {
+            throw 'second close rewrote the one-time tray notice marker'
+          }
+
+          Start-Process -FilePath $shell -PassThru | Wait-Process
+          $deadline = [DateTime]::UtcNow.AddSeconds(10)
+          while (-not [RunDockWindowSmoke]::IsWindowVisible($mainWindow) -and [DateTime]::UtcNow -lt $deadline) {
+            Start-Sleep -Milliseconds 100
+          }
+          if (-not [RunDockWindowSmoke]::IsWindowVisible($mainWindow)) {
+            throw 'desktop shell did not restore after the second close'
           }
 
           $runValues = Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'

@@ -11,6 +11,7 @@ import TelegramTab from '@/components/settings/TelegramTab'
 import LogAlertsTab from '@/components/settings/LogAlertsTab'
 import TunnelsTab from '@/components/settings/TunnelsTab'
 import TerminalTab from '@/components/settings/TerminalTab'
+import ServersTab from '@/components/settings/ServersTab'
 
 interface Props {
   settings: AppSettings
@@ -27,6 +28,7 @@ type TabId =
   | 'log-alerts'
   | 'tunnels'
   | 'terminal'
+  | 'servers'
 
 const TABS: { id: TabId; label: string }[] = [
   { id: 'general', label: '常规' },
@@ -35,6 +37,7 @@ const TABS: { id: TabId; label: string }[] = [
   { id: 'ai', label: 'AI' },
   { id: 'telegram', label: 'Telegram' },
   { id: 'log-alerts', label: '日志告警' },
+  { id: 'servers', label: '服务器' },
   { id: 'tunnels', label: '隧道' },
   { id: 'terminal', label: '终端' },
 ]
@@ -130,6 +133,7 @@ export default function SettingsPage({ settings, onUpdate, onReset }: Props) {
         {activeTab === 'ai' && <AiTab />}
         {activeTab === 'telegram' && <TelegramTab />}
         {activeTab === 'log-alerts' && <LogAlertsTab />}
+        {activeTab === 'servers' && <ServersTab />}
         {activeTab === 'tunnels' && <TunnelsTab />}
         {activeTab === 'terminal' && <TerminalTab settings={settings} onUpdate={onUpdate} />}
       </div>

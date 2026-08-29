@@ -36,7 +36,6 @@
   color-scheme: light;
   --rundock-sidebar-width: 238px;
   --rundock-topbar-height: 64px;
-  --rundock-statusbar-height: 24px;
   --rundock-radius-sm: 10px;
   --rundock-radius-md: 16px;
   --rundock-radius-lg: 22px;
@@ -618,7 +617,7 @@ textarea::placeholder {
   .rundock-workspace { border: 0; border-radius: 0; }
   .rundock-sidebar {
     position: fixed;
-    inset: 10px auto 34px 10px;
+    inset: 10px auto 10px 10px;
     height: auto;
     transform: translateX(calc(-100% - 24px));
     transition: transform 220ms cubic-bezier(0.2, 0.75, 0.2, 1);
@@ -627,7 +626,7 @@ textarea::placeholder {
   .rundock-sidebar[data-open="true"] { transform: translateX(0); }
   .rundock-sidebar-backdrop {
     position: fixed;
-    inset: 0 0 var(--rundock-statusbar-height);
+    inset: 0;
     z-index: 200;
     display: block;
     border: 0;
