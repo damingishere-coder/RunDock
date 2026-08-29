@@ -8,6 +8,7 @@ use std::path::Path;
 use std::time::{Duration, Instant};
 
 const DAEMON_START_TIMEOUT: Duration = Duration::from_secs(10);
+#[cfg(windows)]
 const DAEMON_STOP_TIMEOUT: Duration = Duration::from_secs(15);
 #[cfg(windows)]
 const DAEMON_EXIT_GRACE: Duration = Duration::from_secs(3);
