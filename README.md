@@ -4,7 +4,7 @@
   <img src="./assets/rundock-icon.svg" width="112" alt="RunDock icon" />
 </p>
 
-> A polished local project and process manager for Windows (and cross-platform). RunDock keeps related services together, exposes logs and ports when needed, and retains the compatible `alter` CLI for existing scripts.
+> A polished local project and process manager for Windows (and cross-platform). RunDock keeps related services together and exposes logs and ports when needed.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 [![Built with Rust](https://img.shields.io/badge/Built%20with-Rust-orange.svg)](https://www.rust-lang.org/)
@@ -18,7 +18,7 @@
 ### Manual installer
 
 Download the latest `RunDock-x.x.x-windows-x64-setup.exe` from [Releases](https://github.com/damingishere-coder/RunDock/releases) and run it.
-RunDock is the product name; the compatible `alter.exe` command is added to your `PATH` automatically.
+The installer adds the RunDock command-line tools to your `PATH` automatically.
 The installer adds the `rundock.exe` desktop app. It opens the local dashboard in
 its own window, starts the daemon when needed, stays available in the system
 tray, and enables current-user login startup by default. Closing the window

@@ -30,11 +30,11 @@ pub async fn run(client: &DaemonClient, target: Option<&str>, json_mode: bool) -
         match client.delete(&format!("/api/v1/processes/{id}/logs")).await {
             Ok(_) => {
                 if !json_mode {
-                    println!("[alter] flushed logs for {id}");
+                    println!("[RunDock] flushed logs for {id}");
                 }
             }
             Err(error) => {
-                eprintln!("[alter] failed to flush logs for {id}: {error}");
+                eprintln!("[RunDock] failed to flush logs for {id}: {error}");
                 failures.push(format!("{id}: {error}"));
             }
         }

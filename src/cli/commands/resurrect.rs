@@ -5,7 +5,7 @@ use anyhow::Result;
 
 pub async fn run(client: &DaemonClient, json_mode: bool) -> Result<()> {
     if !client.is_alive().await {
-        eprintln!("[alter] daemon is not running");
+        eprintln!("[RunDock] daemon is not running");
         std::process::exit(1);
     }
     let result = client
@@ -15,7 +15,7 @@ pub async fn run(client: &DaemonClient, json_mode: bool) -> Result<()> {
         println!("{}", serde_json::to_string_pretty(&result)?);
     } else {
         let msg = result["message"].as_str().unwrap_or("done");
-        println!("[alter] {msg}");
+        println!("[RunDock] {msg}");
     }
     Ok(())
 }

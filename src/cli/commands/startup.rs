@@ -9,7 +9,7 @@ pub async fn run_startup() -> Result<()> {
     #[cfg(target_os = "windows")]
     {
         let escaped_exe = exe.replace('\'', "''");
-        println!("[alter] To auto-start the daemon on Windows login, run this in PowerShell (as Administrator):");
+        println!("[RunDock] To auto-start the daemon on Windows login, run this in PowerShell (as Administrator):");
         println!();
         println!(
             "  $action = New-ScheduledTaskAction -Execute '{escaped_exe}' -Argument 'daemon start'"
@@ -41,7 +41,7 @@ pub async fn run_startup() -> Result<()> {
         );
         let unit = format!(
             r#"[Unit]
-Description=RunDock process manager daemon (alter CLI compatibility service)
+Description=RunDock process manager daemon
 After=network.target
 
 [Service]
@@ -58,9 +58,9 @@ WantedBy=multi-user.target
         );
 
         let path = "/etc/systemd/system/alter-daemon.service";
-        println!("[alter] Suggested systemd unit for {path} (not written automatically):");
+        println!("[RunDock] Suggested systemd unit for {path} (not written automatically):");
         println!(
-            "[alter] Run: sudo systemctl enable alter-daemon && sudo systemctl start alter-daemon"
+            "[RunDock] Run: sudo systemctl enable alter-daemon && sudo systemctl start alter-daemon"
         );
         println!();
         println!("{unit}");
@@ -83,13 +83,13 @@ pub async fn run_unstartup() -> Result<()> {
 
     #[cfg(target_os = "windows")]
     {
-        println!("[alter] To remove startup task, run in PowerShell (as Administrator):");
+        println!("[RunDock] To remove startup task, run in PowerShell (as Administrator):");
         println!(r#"  Unregister-ScheduledTask -TaskName "alter-daemon" -Confirm:$false"#);
     }
 
     #[cfg(target_os = "linux")]
     {
-        println!("[alter] To remove systemd unit:");
+        println!("[RunDock] To remove systemd unit:");
         println!("  sudo systemctl disable alter-daemon");
         println!("  sudo rm /etc/systemd/system/alter-daemon.service");
     }

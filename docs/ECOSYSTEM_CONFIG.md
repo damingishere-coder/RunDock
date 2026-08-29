@@ -142,7 +142,7 @@ TZ = "UTC"
 
 ### `script`
 
-The executable to run. alter handles the following automatically:
+The executable to run. RunDock handles the following automatically:
 
 - **Python:** `python`, `python3`, `py`
 - **Node.js:** `node`
@@ -154,7 +154,7 @@ The executable to run. alter handles the following automatically:
 - **Any `.exe`** on Windows — spawned directly
 - **Batch scripts** (`.cmd`) — automatically wrapped in `cmd /C`
 
-> **Windows note:** Tools like `npm`, `yarn`, `npx`, `tsc`, `nodemon` are `.cmd` batch files. alter wraps them in `cmd /C` automatically, so you can use them directly as the `script` value.
+> **Windows note:** Tools like `npm`, `yarn`, `npx`, `tsc`, `nodemon` are `.cmd` batch files. RunDock wraps them in `cmd /C` automatically, so you can use them directly as the `script` value.
 
 ```toml
 # These all work on Windows:
@@ -301,9 +301,9 @@ alter start C:\projects\alter.config.toml
 alter start ./alter.config.json
 ```
 
-> alter detects config files by their extension (`.toml` or `.json`). Any other value is treated as a script to run directly.
+> RunDock detects config files by their extension (`.toml` or `.json`). Any other value is treated as a script to run directly.
 
-After loading, each app appears as a separate process in `alter list` and the web dashboard, with its own logs, restart counter, and controls.
+After loading, each app appears as a separate process in `alter list` and the RunDock dashboard, with its own logs, restart counter, and controls.
 
 ---
 

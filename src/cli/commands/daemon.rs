@@ -25,10 +25,10 @@ async fn start_daemon(host: &str, port: u16) -> Result<()> {
     let exe = std::env::current_exe()?;
     match crate::daemon::lifecycle::ensure_daemon(&exe, host, port).await? {
         crate::daemon::lifecycle::EnsureDaemonOutcome::AlreadyRunning => {
-            println!("[alter] daemon is already running on {host}:{port}");
+            println!("[RunDock] daemon is already running on {host}:{port}");
         }
         crate::daemon::lifecycle::EnsureDaemonOutcome::Started => {
-            println!("[alter] daemon started  →  http://{host}:{port}");
+            println!("[RunDock] daemon started  →  http://{host}:{port}");
         }
     }
     Ok(())
@@ -36,7 +36,7 @@ async fn start_daemon(host: &str, port: u16) -> Result<()> {
 
 async fn stop_daemon(client: &DaemonClient) -> Result<()> {
     if !client.is_alive().await {
-        println!("[alter] daemon is not running");
+        println!("[RunDock] daemon is not running");
         return Ok(());
     }
     let old_pid = crate::utils::pid::read_pid_result()?;
@@ -44,7 +44,7 @@ async fn stop_daemon(client: &DaemonClient) -> Result<()> {
         .post("/api/v1/system/shutdown", serde_json::json!({}))
         .await?;
     if wait_until_stopped(client, old_pid, DAEMON_STOP_TIMEOUT).await {
-        println!("[alter] daemon stopped");
+        println!("[RunDock] daemon stopped");
         return Ok(());
     }
     anyhow::bail!("daemon acknowledged shutdown but remained healthy after 15s");
@@ -63,11 +63,11 @@ async fn restart_daemon(client: &DaemonClient, host: &str, port: u16) -> Result<
                 "daemon restart did not produce a healthy replacement with new PID ownership after 45s"
             );
         }
-        println!("[alter] daemon restarted");
+        println!("[RunDock] daemon restarted");
         return Ok(());
     }
     start_daemon(host, port).await?;
-    println!("[alter] daemon restarted");
+    println!("[RunDock] daemon restarted");
     Ok(())
 }
 
@@ -132,7 +132,7 @@ async fn wait_until_stopped(
 async fn status(client: &DaemonClient) -> Result<()> {
     if client.is_alive().await {
         let health = client.get("/api/v1/system/health").await?;
-        println!("[alter] daemon is running");
+        println!("[RunDock] daemon is running");
         println!(
             "  version:    {}",
             health["version"].as_str().unwrap_or("?")
@@ -146,7 +146,7 @@ async fn status(client: &DaemonClient) -> Result<()> {
             health["process_count"].as_u64().unwrap_or(0)
         );
     } else {
-        println!("[alter] daemon is NOT running");
+        println!("[RunDock] daemon is NOT running");
     }
     Ok(())
 }
@@ -154,7 +154,7 @@ async fn status(client: &DaemonClient) -> Result<()> {
 fn show_logs() -> Result<()> {
     let path = crate::config::paths::daemon_log_file();
     if !path.exists() {
-        println!("[alter] no daemon log file found at {}", path.display());
+        println!("[RunDock] no daemon log file found at {}", path.display());
         return Ok(());
     }
     let lines = crate::logging::reader::read_last_lines(&path, 100)?;

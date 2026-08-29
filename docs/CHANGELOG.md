@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to alter are documented here.
+All notable changes to RunDock are documented here.
 
 Format: `[version] — YYYY-MM-DD` with sections: **Added**, **Changed**, **Fixed**, **Removed**.
 

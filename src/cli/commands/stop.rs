@@ -43,7 +43,7 @@ pub async fn run(client: &DaemonClient, target: &str, json_mode: bool) -> Result
             {
                 failures.push(format!("{name}: {e}"));
             } else if !json_mode {
-                println!("[alter] stopped '{name}'");
+                println!("[RunDock] stopped '{name}'");
             }
         }
         if !failures.is_empty() {
@@ -64,14 +64,14 @@ pub async fn run(client: &DaemonClient, target: &str, json_mode: bool) -> Result
         println!("{}", serde_json::to_string_pretty(&result)?);
     } else {
         let name = result["name"].as_str().unwrap_or(target);
-        println!("[alter] stopped '{name}'");
+        println!("[RunDock] stopped '{name}'");
     }
     Ok(())
 }
 
 pub async fn require_alive(client: &DaemonClient) {
     if !client.is_alive().await {
-        eprintln!("[alter] daemon is not running. Start it with: alter daemon start");
+        eprintln!("[RunDock] daemon is not running. Start it with: alter daemon start");
         std::process::exit(1);
     }
 }

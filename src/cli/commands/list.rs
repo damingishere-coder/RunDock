@@ -7,7 +7,7 @@ use anyhow::{Context, Result};
 
 pub async fn run(client: &DaemonClient, json_mode: bool) -> Result<()> {
     if !client.is_alive().await {
-        eprintln!("[alter] daemon is not running. Start it with: alter daemon start");
+        eprintln!("[RunDock] daemon is not running. Start it with: alter daemon start");
         std::process::exit(1);
     }
 

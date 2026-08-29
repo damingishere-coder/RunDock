@@ -142,7 +142,7 @@ export function StatusBar({
             updateInfo
               ? `有可用更新：v${updateInfo.latest} — 点击前往设置`
               : version
-                ? `RunDock v${version}（alter CLI）`
+                ? `RunDock v${version}`
                 : ''
           }
           style={{

@@ -1,4 +1,4 @@
-# RunDock — Linux Release Workflow (compatible alter CLI packages)
+# RunDock — Linux Release Workflow
 # Triggers on version tags (v*) → builds Linux binaries → packages .deb → publishes APT repo on GitHub Pages
 # https://github.com/damingishere-coder/RunDock
 

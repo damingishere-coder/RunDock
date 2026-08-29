@@ -32,7 +32,7 @@ pub async fn run(client: &DaemonClient, args: LogsArgs, json_mode: bool) -> Resu
 
     if args.follow {
         println!(
-            "[alter] streaming logs for '{}' (Ctrl+C to stop)...",
+            "[RunDock] streaming logs for '{}' (Ctrl+C to stop)...",
             args.target
         );
         client

@@ -26,7 +26,7 @@ if command -v systemctl &>/dev/null && [ -d /run/systemd/system ]; then
 fi
 
 echo ""
-echo "[alter] Installation complete!"
+echo "[RunDock] Installation complete!"
 echo ""
 echo "  Start the daemon:     alter daemon start"
 echo "  Start a process:      alter start node -- server.js"

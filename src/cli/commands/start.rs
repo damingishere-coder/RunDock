@@ -49,7 +49,7 @@ pub async fn run(client: &DaemonClient, args: StartArgs, json_mode: bool) -> Res
         let id = result["id"].as_str().unwrap_or("?");
         let status = result["status"].as_str().unwrap_or("?");
         println!(
-            "[alter] started '{}' ({}): {}",
+            "[RunDock] started '{}' ({}): {}",
             name,
             &id[..8.min(id.len())],
             status
@@ -74,10 +74,10 @@ async fn run_ecosystem(client: &DaemonClient, path: &str, json_mode: bool) -> Re
     } else {
         let started = result["started"].as_u64().unwrap_or(0);
         let total = result["total"].as_u64().unwrap_or(0);
-        println!("[alter] started {started}/{total} apps from ecosystem config");
+        println!("[RunDock] started {started}/{total} apps from ecosystem config");
         if let Some(errors) = result["errors"].as_array() {
             for e in errors {
-                eprintln!("[alter] error: {}", e.as_str().unwrap_or("unknown"));
+                eprintln!("[RunDock] error: {}", e.as_str().unwrap_or("unknown"));
             }
         }
     }
@@ -86,7 +86,7 @@ async fn run_ecosystem(client: &DaemonClient, path: &str, json_mode: bool) -> Re
 
 async fn ensure_daemon(client: &DaemonClient) -> Result<()> {
     if !client.is_alive().await {
-        eprintln!("[alter] daemon is not running. Start it with: alter daemon start");
+        eprintln!("[RunDock] daemon is not running. Start it with: alter daemon start");
         std::process::exit(1);
     }
     Ok(())

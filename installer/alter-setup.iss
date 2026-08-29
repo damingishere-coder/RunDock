@@ -50,7 +50,7 @@ ArchitecturesInstallIn64BitMode=x64
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
-Name: "addtopath"; Description: "Add the compatible alter CLI to PATH (recommended)"; GroupDescription: "System integration:"
+Name: "addtopath"; Description: "Add RunDock command-line tools to PATH (recommended)"; GroupDescription: "System integration:"
 Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Shortcuts:"; Flags: unchecked
 
 [Files]

@@ -26,7 +26,7 @@
 
 ## Why RunDock?
 
-Managing background processes on Windows has always been awkward. RunDock gives you a polished dashboard while retaining the compatible `alter` command:
+Managing background processes on Windows has always been awkward. RunDock gives you a polished dashboard and command-line workflows:
 
 - **No console window popups** — processes run silently in the background
 - **Auto-restart** on crash with exponential backoff
@@ -60,7 +60,7 @@ Managing background processes on Windows has always been awkward. RunDock gives 
 
 ## Windows Notes
 
-RunDock is **designed with Windows in mind** while retaining the compatible `alter` CLI:
+RunDock is **designed with Windows in mind**:
 
 - Processes spawn with `CREATE_NO_WINDOW` — **no black console windows** appearing on your taskbar
 - Daemon runs as a detached hidden background process

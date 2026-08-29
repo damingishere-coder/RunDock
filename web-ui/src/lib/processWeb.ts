@@ -65,7 +65,7 @@ export function listeningPortsByManagedPid(
 }
 
 export function projectWebUrl(port: number, server: RemoteServer): string | null {
-  // An SSH Alter connection forwards only the daemon port. Opening a project
+  // An SSH RunDock connection forwards only the daemon port. Opening a project
   // port on 127.0.0.1 would therefore point at the wrong machine.
   if (server.connectionType === 'ssh') return null
 

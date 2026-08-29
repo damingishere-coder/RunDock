@@ -45,10 +45,7 @@ fn sibling_daemon_exe() -> Result<PathBuf, String> {
     if path.is_file() {
         Ok(path)
     } else {
-        Err(format!(
-            "未找到后台程序 {}。请重新安装 RunDock。",
-            path.display()
-        ))
+        Err("未找到 RunDock 后台程序。请重新安装 RunDock。".to_string())
     }
 }
 

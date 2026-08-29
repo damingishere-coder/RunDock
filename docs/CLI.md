@@ -1,6 +1,6 @@
 # CLI Reference
 
-> Complete reference for all `alter` commands, flags, and options.
+> Complete reference for RunDock command-line actions, flags, and options.
 
 ---
 
@@ -436,7 +436,7 @@ Shows instructions for adding the daemon start command to your shell profile.
 
 **Target resolution:** Most commands accept a process name, a full UUID, or a UUID prefix (first 8 characters). For bulk operations, use `all`.
 
-**Windows `.cmd` scripts:** Tools like `npm`, `yarn`, `npx`, `tsc`, and `nodemon` are batch scripts on Windows. alter automatically wraps them in `cmd /C`, so you can use them directly:
+**Windows `.cmd` scripts:** Tools like `npm`, `yarn`, `npx`, `tsc`, and `nodemon` are batch scripts on Windows. RunDock automatically wraps them in `cmd /C`, so you can use them directly:
 
 ```powershell
 alter start npm --name my-app -- run start

@@ -224,7 +224,7 @@ pub async fn run(config: DaemonConfig) -> Result<()> {
         guard
     };
 
-    tracing::info!("alter daemon starting on {}:{}", config.host, config.port);
+    tracing::info!("RunDock daemon starting on {}:{}", config.host, config.port);
 
     let state = Arc::new(DaemonState::new(config.clone())?);
 
@@ -367,6 +367,6 @@ pub async fn run(config: DaemonConfig) -> Result<()> {
         }
     }
     pid_file_guard.release_with_retry().await?;
-    tracing::info!("alter daemon stopped");
+    tracing::info!("RunDock daemon stopped");
     Ok(())
 }

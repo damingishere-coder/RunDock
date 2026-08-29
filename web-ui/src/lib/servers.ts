@@ -43,7 +43,7 @@ export function getServers(): RemoteServer[] {
   try {
     parsed = JSON.parse(raw)
   } catch {
-    throw new Error('服务器配置已损坏，请在浏览器存储中删除 alter_servers 后重新添加')
+    throw new Error('服务器配置已损坏，请清除 RunDock 的服务器配置后重新添加')
   }
   if (
     !Array.isArray(parsed) ||

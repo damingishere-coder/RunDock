@@ -1,5 +1,5 @@
 [Unit]
-Description=RunDock process manager daemon (alter CLI compatibility service)
+Description=RunDock process manager daemon
 Documentation=https://github.com/damingishere-coder/RunDock
 After=network.target
 

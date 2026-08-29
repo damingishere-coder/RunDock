@@ -7,7 +7,7 @@ Depends: libc6 (>= 2.35)
 Section: utils
 Priority: optional
 Homepage: https://github.com/damingishere-coder/RunDock
-Description: RunDock developer project console (compatible alter CLI)
+Description: RunDock developer project console
  Run and manage Python, Node.js, Go, Rust, .NET and PHP applications
  from a single binary with a polished web dashboard.
  .

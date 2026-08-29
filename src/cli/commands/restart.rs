@@ -21,7 +21,7 @@ pub async fn run(client: &DaemonClient, target: &str, json_mode: bool) -> Result
             {
                 failures.push(format!("{name}: {e}"));
             } else if !json_mode {
-                println!("[alter] restarted '{name}'");
+                println!("[RunDock] restarted '{name}'");
             }
         }
         if !failures.is_empty() {
@@ -42,7 +42,7 @@ pub async fn run(client: &DaemonClient, target: &str, json_mode: bool) -> Result
         println!("{}", serde_json::to_string_pretty(&result)?);
     } else {
         let name = result["name"].as_str().unwrap_or(target);
-        println!("[alter] restarted '{name}'");
+        println!("[RunDock] restarted '{name}'");
     }
     Ok(())
 }

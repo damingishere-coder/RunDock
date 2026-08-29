@@ -13,7 +13,7 @@ pub async fn run(client: &DaemonClient, target: &str, json_mode: bool) -> Result
         let mut failures = Vec::new();
         for (id, name) in &processes {
             match client.delete(&format!("/api/v1/processes/{id}")).await {
-                Ok(_) if !json_mode => println!("[alter] deleted '{name}'"),
+                Ok(_) if !json_mode => println!("[RunDock] deleted '{name}'"),
                 Ok(_) => {}
                 Err(error) => failures.push(format!("{name}: {error}")),
             }
@@ -28,7 +28,7 @@ pub async fn run(client: &DaemonClient, target: &str, json_mode: bool) -> Result
     let _ = client.delete(&format!("/api/v1/processes/{id}")).await?;
 
     if !json_mode {
-        println!("[alter] deleted '{target}'");
+        println!("[RunDock] deleted '{target}'");
     }
     Ok(())
 }

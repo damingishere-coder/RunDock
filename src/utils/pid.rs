@@ -44,7 +44,7 @@ pub fn write_pid_file() -> Result<String> {
             Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
                 if is_daemon_running_result()? {
                     return Err(anyhow!(
-                        "another Alter daemon owns PID file {}",
+                        "another RunDock daemon owns PID file {}",
                         path.display()
                     ));
                 }

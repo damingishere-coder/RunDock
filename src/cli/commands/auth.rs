@@ -6,7 +6,7 @@ use anyhow::{anyhow, Result};
 
 pub async fn run(client: &DaemonClient, action: AuthAction, json_mode: bool) -> Result<()> {
     if !client.is_alive().await {
-        return Err(anyhow!("alter daemon is not running"));
+        return Err(anyhow!("RunDock daemon is not running"));
     }
 
     match action {
@@ -15,7 +15,7 @@ pub async fn run(client: &DaemonClient, action: AuthAction, json_mode: bool) -> 
             if json_mode {
                 println!("{}", serde_json::to_string_pretty(&result)?);
             } else {
-                println!("[alter] dashboard password disabled");
+                println!("[RunDock] dashboard password disabled");
             }
         }
     }

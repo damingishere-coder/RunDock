@@ -1,6 +1,6 @@
 # REST API Reference
 
-> The alter daemon exposes a full HTTP REST API on `http://127.0.0.1:2999/api/v1`.
+> The RunDock daemon exposes a full HTTP REST API on `http://127.0.0.1:2999/api/v1`.
 > All request and response bodies use JSON. All endpoints return standard HTTP status codes.
 
 ---

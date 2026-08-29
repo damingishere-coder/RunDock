@@ -215,7 +215,7 @@ jobs:
         run: |
           $metadata = cargo metadata --no-deps --format-version 1 | ConvertFrom-Json
           $version = ($metadata.packages | Where-Object name -eq 'alter').version
-          if (-not $version) { throw "Unable to derive Alter version from Cargo metadata" }
+          if (-not $version) { throw "Unable to derive RunDock version from Cargo metadata" }
           $issPath = 'installer\alter-setup.iss'
           $iss = Get-Content -LiteralPath $issPath -Raw
           $pattern = '#define AppVersion\s+"[^"]+"'

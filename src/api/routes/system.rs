@@ -787,7 +787,7 @@ async fn open_folder(
     }
     if !allowed {
         return Err(ApiError::bad_request(
-            "folder access is limited to registered process directories and Alter data",
+            "folder access is limited to registered process directories and RunDock data",
         ));
     }
 

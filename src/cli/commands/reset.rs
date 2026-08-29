@@ -17,7 +17,7 @@ pub async fn run(client: &DaemonClient, target: &str, json_mode: bool) -> Result
     if json_mode {
         println!("{}", serde_json::to_string_pretty(&result)?);
     } else {
-        println!("[alter] reset restart counter for '{target}'");
+        println!("[RunDock] reset restart counter for '{target}'");
     }
     Ok(())
 }

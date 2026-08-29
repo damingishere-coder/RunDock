@@ -202,7 +202,7 @@ pub async fn run_cli(cli: Cli) -> anyhow::Result<()> {
             let daemon_exe = std::env::current_exe()?;
             crate::daemon::lifecycle::ensure_daemon(&daemon_exe, &cli.host, cli.port).await?;
             let url = format!("http://{}:{}/", cli.host, cli.port);
-            println!("[alter] dashboard: {url}");
+            println!("[RunDock] dashboard: {url}");
             #[cfg(target_os = "windows")]
             let _ = std::process::Command::new("explorer.exe").arg(&url).spawn();
             #[cfg(target_os = "macos")]

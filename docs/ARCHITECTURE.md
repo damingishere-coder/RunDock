@@ -1,14 +1,14 @@
 # Architecture
 
-> How alter works under the hood — daemon design, process lifecycle, logging pipeline, and data flow.
+> How RunDock works under the hood — daemon design, process lifecycle, logging pipeline, and data flow.
 
 ---
 
 ## Overview
 
-alter is a **single binary** that plays two roles depending on how it is invoked:
+The RunDock backend is a **single binary** that plays two roles depending on how it is invoked:
 
-1. **CLI** — the user-facing interface (`alter start`, `alter list`, etc.)
+1. **CLI** — RunDock's command-line interface (`alter start`, `alter list`, etc.)
 2. **Daemon** — a long-running background HTTP server that manages processes
 
 ```
@@ -117,7 +117,7 @@ alter daemon start
 DaemonClient::probe_readiness() → TCP connect + strict health contract on :2999
         │
         ├── verified RunDock? → reuse it
-        ├── port unused? → start the sibling alter executable
+        ├── port unused? → start the sibling backend executable
         └── occupied/incompatible? → fail with diagnostics; never end the listener
                 │
                 ▼
