@@ -358,7 +358,7 @@ export function AiPanel({ open, processId, processName, onClose }: AiPanelProps)
           top: 0,
           right: 0,
           width: panelWidth,
-          height: 'calc(100vh - 22px)',
+          height: '100vh',
           zIndex: 200,
           background: 'var(--color-card)',
           borderLeft: '1px solid var(--color-border)',

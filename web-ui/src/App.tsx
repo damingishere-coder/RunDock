@@ -821,7 +821,7 @@ function Layout({ onLock, canLock }: { onLock: () => void; canLock: boolean }) {
       </div>
       {/* end main row */}
 
-      {/* Browser terminal panel — floats above status bar */}
+      {/* Browser terminal panel — floats from the viewport bottom */}
       <TerminalPanel
         ref={terminalPanelRef}
         panelState={terminalState}

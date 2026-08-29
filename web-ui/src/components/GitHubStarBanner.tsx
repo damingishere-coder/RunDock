@@ -58,7 +58,7 @@ export function GitHubStarBanner() {
       className="rundock-star-banner"
       style={{
         position: 'fixed',
-        bottom: 36, // sit above the 22px status bar
+        bottom: 16,
         right: 16,
         zIndex: 9000,
         width: 280,
@@ -236,67 +236,5 @@ export function GitHubStarBanner() {
         }
       `}</style>
     </div>
-  )
-}
-
-// @group BusinessLogic > GitHubStarWidget : Compact star-count chip for the status bar
-export function GitHubStarWidget() {
-  const [stars, setStars] = useState<number | null>(null)
-
-  useEffect(() => {
-    const controller = new AbortController()
-    fetch('https://api.github.com/repos/damingishere-coder/RunDock', {
-      signal: controller.signal,
-    })
-      .then(response => {
-        if (!response.ok) throw new Error(`GitHub API returned HTTP ${response.status}`)
-        return response.json()
-      })
-      .then((data: { stargazers_count?: number }) => {
-        if (typeof data.stargazers_count === 'number') {
-          setStars(data.stargazers_count)
-        }
-      })
-      .catch(error => {
-        if ((error as Error)?.name !== 'AbortError') {
-          console.warn('GitHub star count is unavailable', error)
-        }
-      })
-    return () => controller.abort()
-  }, [])
-
-  return (
-    <a
-      href={REPO_URL}
-      target="_blank"
-      rel="noopener noreferrer"
-      title="在 GitHub 为 RunDock 点星标"
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 4,
-        padding: '0 8px',
-        height: '100%',
-        borderLeft: '1px solid var(--color-border)',
-        textDecoration: 'none',
-        color: 'var(--color-muted-foreground)',
-        fontSize: 11,
-        fontWeight: 500,
-        opacity: 0.8,
-        cursor: 'pointer',
-        whiteSpace: 'nowrap',
-      }}
-      onMouseEnter={e => {
-        ;(e.currentTarget as HTMLElement).style.opacity = '1'
-        ;(e.currentTarget as HTMLElement).style.color = 'var(--color-primary)'
-      }}
-      onMouseLeave={e => {
-        ;(e.currentTarget as HTMLElement).style.opacity = '0.8'
-        ;(e.currentTarget as HTMLElement).style.color = 'var(--color-muted-foreground)'
-      }}
-    >
-      <Star size={11} />
-      {stars !== null && <span>{stars >= 1000 ? `${(stars / 1000).toFixed(1)}k` : stars}</span>}
-    </a>
   )
 }
