@@ -302,7 +302,8 @@ fn windows_descendants(root_pid: u32, processes: &[(u32, u32)]) -> std::collecti
 #[cfg(windows)]
 fn suspend_windows_tree_threads(
     owned: &std::collections::HashSet<u32>,
-) -> anyhow::Result<Vec<windows::Win32::Foundation::HANDLE>> {
+    already_suspended: &std::collections::HashSet<u32>,
+) -> anyhow::Result<Vec<(u32, windows::Win32::Foundation::HANDLE)>> {
     use anyhow::Context;
     use windows::Win32::Foundation::CloseHandle;
     use windows::Win32::System::Diagnostics::ToolHelp::{
@@ -321,22 +322,37 @@ fn suspend_windows_tree_threads(
         unsafe { Thread32First(snapshot, &mut entry) }
             .context("failed to enumerate the first Windows thread")?;
         loop {
-            if owned.contains(&entry.th32OwnerProcessID) {
-                let thread =
-                    unsafe { OpenThread(THREAD_SUSPEND_RESUME, false, entry.th32ThreadID) }
-                        .with_context(|| {
+            if owned.contains(&entry.th32OwnerProcessID)
+                && !already_suspended.contains(&entry.th32ThreadID)
+            {
+                match unsafe { OpenThread(THREAD_SUSPEND_RESUME, false, entry.th32ThreadID) } {
+                    Ok(thread) => {
+                        if unsafe { SuspendThread(thread) } == u32::MAX {
+                            let error = std::io::Error::last_os_error();
+                            unsafe {
+                                let _ = CloseHandle(thread);
+                            }
+                            if !matches!(error.raw_os_error(), Some(6 | 87)) {
+                                return Err(error).with_context(|| {
+                                    format!("failed to suspend thread {}", entry.th32ThreadID)
+                                });
+                            }
+                        } else {
+                            suspended.push((entry.th32ThreadID, thread));
+                        }
+                    }
+                    Err(error) if error.code().0 == 0x8007_0057_u32 as i32 => {
+                        // The thread exited between the Toolhelp snapshot and OpenThread.
+                    }
+                    Err(error) => {
+                        return Err(error).with_context(|| {
                             format!(
                                 "failed to open thread {} for suspension",
                                 entry.th32ThreadID
                             )
-                        })?;
-                if unsafe { SuspendThread(thread) } == u32::MAX {
-                    unsafe {
-                        let _ = CloseHandle(thread);
+                        });
                     }
-                    anyhow::bail!("failed to suspend thread {}", entry.th32ThreadID);
                 }
-                suspended.push(thread);
             }
             entry.dwSize = std::mem::size_of::<THREADENTRY32>() as u32;
             if let Err(error) = unsafe { Thread32Next(snapshot, &mut entry) } {
@@ -353,7 +369,7 @@ fn suspend_windows_tree_threads(
     }
     if result.is_err() {
         use windows::Win32::System::Threading::ResumeThread;
-        for thread in suspended.drain(..) {
+        for (_, thread) in suspended.drain(..) {
             unsafe {
                 let _ = ResumeThread(thread);
                 let _ = CloseHandle(thread);
@@ -377,22 +393,27 @@ fn cleanup_unowned_spawned_windows_tree_with_root(
 
     let mut suspended_threads = Vec::new();
     let mut owned = std::collections::HashSet::from([pid]);
-    let mut suspended_pids = std::collections::HashSet::new();
+    let mut suspended_thread_ids = std::collections::HashSet::new();
     let containment = (|| -> anyhow::Result<()> {
-        for _ in 0..4 {
+        let mut stable_rounds = 0u8;
+        for _ in 0..8 {
             let snapshot = windows_process_snapshot()?;
             let discovered = windows_descendants(pid, &snapshot);
             let new_owned = discovered.difference(&owned).copied().collect::<Vec<_>>();
-            let to_suspend = discovered
-                .difference(&suspended_pids)
-                .copied()
-                .collect::<std::collections::HashSet<_>>();
             owned.extend(discovered);
-            let newly_suspended = suspend_windows_tree_threads(&to_suspend)?;
-            suspended_threads.extend(newly_suspended);
-            suspended_pids.extend(to_suspend);
-            if new_owned.is_empty() {
-                break;
+            let newly_suspended = suspend_windows_tree_threads(&owned, &suspended_thread_ids)?;
+            let new_thread_count = newly_suspended.len();
+            for (thread_id, handle) in newly_suspended {
+                suspended_thread_ids.insert(thread_id);
+                suspended_threads.push(handle);
+            }
+            if new_owned.is_empty() && new_thread_count == 0 {
+                stable_rounds = stable_rounds.saturating_add(1);
+                if stable_rounds >= 2 {
+                    break;
+                }
+            } else {
+                stable_rounds = 0;
             }
         }
         let final_snapshot = windows_process_snapshot()?;

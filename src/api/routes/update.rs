@@ -515,7 +515,7 @@ fn probe_installed_version(
         let probe_tree = match crate::process::tree::ProcessTreeGuard::attach_or_terminate_std(
             &mut child,
             child_pid,
-            "update-version-probe",
+            &format!("update-version-probe-{child_pid}"),
         ) {
             Ok(tree) => tree,
             Err(error) => {
@@ -668,7 +668,7 @@ fn verify_update_publisher(path: &Path) -> anyhow::Result<()> {
         let probe_tree = match crate::process::tree::ProcessTreeGuard::attach_or_terminate_std(
             &mut child,
             child_pid,
-            "update-publisher-probe",
+            &format!("update-publisher-probe-{child_pid}"),
         ) {
             Ok(tree) => tree,
             Err(error) => {

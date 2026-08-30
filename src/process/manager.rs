@@ -183,8 +183,13 @@ impl ProcessManager {
         process: &Arc<RwLock<ManagedProcess>>,
         generation: u64,
     ) -> Result<()> {
+        enum CleanupOwner {
+            Guard(crate::process::tree::ProcessTreeGuard, Option<u32>),
+            Identity(u32, ProcessIdentity),
+        }
+
         let mut cleanup_waits = 0u16;
-        let (process_tree, owned_pid) = loop {
+        let cleanup_owner = loop {
             let mut process = process.write().await;
             if process.process_tree_cleanup_in_progress {
                 cleanup_waits = cleanup_waits.saturating_add(1);
@@ -206,31 +211,58 @@ impl ProcessManager {
                 Some(process_tree) => {
                     let owned_pid = process.pid;
                     process.process_tree_cleanup_in_progress = true;
-                    break (process_tree, owned_pid);
+                    break CleanupOwner::Guard(process_tree, owned_pid);
                 }
                 None if process.pid.is_none() => return Ok(()),
-                None => {
-                    return Err(anyhow!(
-                        "no owned process-tree handle is available for PID {:?}",
-                        process.pid
-                    ));
-                }
+                None => match (process.pid, process.process_identity.clone()) {
+                    (Some(pid), Some(identity)) => {
+                        process.process_tree_cleanup_in_progress = true;
+                        break CleanupOwner::Identity(pid, identity);
+                    }
+                    _ => {
+                        return Err(anyhow!(
+                            "no owned process-tree handle or stable identity is available for PID {:?}",
+                            process.pid
+                        ));
+                    }
+                },
             }
         };
 
-        if let Err(error) = process_tree.terminate_and_wait().await {
-            let mut process = process.write().await;
-            process.process_tree_cleanup_in_progress = false;
-            if process.process_tree.is_none() && process.pid == owned_pid {
-                process.process_tree = Some(process_tree);
+        match cleanup_owner {
+            CleanupOwner::Guard(process_tree, owned_pid) => {
+                if let Err(error) = process_tree.terminate_and_wait().await {
+                    let mut process = process.write().await;
+                    process.process_tree_cleanup_in_progress = false;
+                    if process.process_tree.is_none() && process.pid == owned_pid {
+                        process.process_tree = Some(process_tree);
+                    }
+                    return Err(error);
+                }
+                let mut process = process.write().await;
+                process.process_tree_cleanup_in_progress = false;
+                if process.process_tree.is_none() && process.pid == owned_pid {
+                    process.pid = None;
+                    process.process_identity = None;
+                }
             }
-            return Err(error);
-        }
-        let mut process = process.write().await;
-        process.process_tree_cleanup_in_progress = false;
-        if process.process_tree.is_none() && process.pid == owned_pid {
-            process.pid = None;
-            process.process_identity = None;
+            CleanupOwner::Identity(pid, identity) => {
+                if let Err(error) =
+                    crate::process::tree::ProcessTreeGuard::terminate_unowned_existing(
+                        pid, &identity,
+                    )
+                    .await
+                {
+                    process.write().await.process_tree_cleanup_in_progress = false;
+                    return Err(error);
+                }
+                let mut process = process.write().await;
+                process.process_tree_cleanup_in_progress = false;
+                if process.process_tree.is_none() && process.pid == Some(pid) {
+                    process.pid = None;
+                    process.process_identity = None;
+                }
+            }
         }
         Ok(())
     }
@@ -3282,7 +3314,7 @@ mod lifecycle_tests {
 
         assert!(error
             .to_string()
-            .contains("no owned process-tree handle is available"));
+            .contains("no owned process-tree handle or stable identity is available"));
         assert!(manager.cron_schedulers.lock().await.contains_key(&id));
         let entry = manager.registry.get(&id).unwrap();
         let process = entry.read().await;
@@ -3531,6 +3563,12 @@ mod lifecycle_tests {
         let descendant_identity =
             crate::process::identity::capture_process_identity(descendant_pid)
                 .expect("managed descendant process has no identity");
+        {
+            let entry = manager.registry.get(&started.id).unwrap();
+            let mut process = entry.write().await;
+            let mut guard = process.process_tree.take().unwrap();
+            guard.preserve_on_drop().unwrap();
+        }
 
         let stopped = manager.stop(started.id).await.unwrap();
 

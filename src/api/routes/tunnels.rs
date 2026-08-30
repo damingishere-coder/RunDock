@@ -213,7 +213,7 @@ async fn install_provider(
     let process_tree = match crate::process::tree::ProcessTreeGuard::attach_or_terminate(
         &mut child,
         pid,
-        "tunnel-installer",
+        &format!("tunnel-installer-{pid}"),
     )
     .await
     {
@@ -512,7 +512,7 @@ async fn install_provider_stream(
             yield Ok(Event::default().data(json!({"done": true, "ok": false}).to_string()));
             return;
         };
-        let process_tree = match crate::process::tree::ProcessTreeGuard::attach_or_terminate(&mut child, pid, "tunnel-installer-stream").await {
+        let process_tree = match crate::process::tree::ProcessTreeGuard::attach_or_terminate(&mut child, pid, &format!("tunnel-installer-stream-{pid}")).await {
             Ok(tree) => tree,
             Err(error) => {
                 yield Ok(Event::default().data(json!({"line": format!("Failed to contain installer process tree: {error}"), "stream": "stderr"}).to_string()));
