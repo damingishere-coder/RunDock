@@ -27,6 +27,29 @@ impl ProcessTreeGuard {
         Self::attach_or_terminate_with(child, pid, owner, Self::new).await
     }
 
+    /// Terminate a live tree that could not be attached during daemon
+    /// recovery. The immutable process identity is checked before any signal
+    /// or Windows descendant snapshot is used.
+    pub async fn terminate_unowned_existing(
+        pid: u32,
+        expected: &crate::process::instance::ProcessIdentity,
+    ) -> anyhow::Result<()> {
+        #[cfg(windows)]
+        {
+            let expected = expected.clone();
+            tokio::task::spawn_blocking(move || {
+                cleanup_unowned_existing_windows_tree(pid, &expected)
+            })
+            .await
+            .map_err(|error| anyhow::anyhow!("Windows fallback cleanup task failed: {error}"))??;
+            Ok(())
+        }
+        #[cfg(not(windows))]
+        {
+            crate::process::identity::kill_process_verified(pid, Some(expected)).await
+        }
+    }
+
     async fn attach_or_terminate_with<F>(
         child: &mut tokio::process::Child,
         pid: u32,
@@ -221,23 +244,36 @@ fn cleanup_unowned_spawned_windows_tree(pid: u32) -> anyhow::Result<()> {
 
     let mut suspended_threads = Vec::new();
     let mut owned = std::collections::HashSet::from([pid]);
-    for _ in 0..4 {
-        let snapshot = windows_process_snapshot()?;
-        let discovered = windows_descendants(pid, &snapshot);
-        let new_owned = discovered.difference(&owned).copied().collect::<Vec<_>>();
-        owned.extend(discovered);
-        let newly_suspended = suspend_windows_tree_threads(&owned)?;
-        suspended_threads.extend(newly_suspended);
-        if new_owned.is_empty() {
-            break;
+    let containment = (|| -> anyhow::Result<()> {
+        for _ in 0..4 {
+            let snapshot = windows_process_snapshot()?;
+            let discovered = windows_descendants(pid, &snapshot);
+            let new_owned = discovered.difference(&owned).copied().collect::<Vec<_>>();
+            owned.extend(discovered);
+            let newly_suspended = suspend_windows_tree_threads(&owned)?;
+            suspended_threads.extend(newly_suspended);
+            if new_owned.is_empty() {
+                break;
+            }
         }
+        let final_snapshot = windows_process_snapshot()?;
+        let final_owned = windows_descendants(pid, &final_snapshot);
+        anyhow::ensure!(
+            final_owned.is_subset(&owned),
+            "Windows process tree kept spawning descendants while containment was being established"
+        );
+        Ok(())
+    })();
+    if let Err(error) = containment {
+        use windows::Win32::System::Threading::ResumeThread;
+        for thread in suspended_threads {
+            unsafe {
+                let _ = ResumeThread(thread);
+                let _ = CloseHandle(thread);
+            }
+        }
+        return Err(error);
     }
-    let final_snapshot = windows_process_snapshot()?;
-    let final_owned = windows_descendants(pid, &final_snapshot);
-    anyhow::ensure!(
-        final_owned.is_subset(&owned),
-        "Windows process tree kept spawning descendants while containment was being established"
-    );
 
     let mut process_handles: Vec<(u32, HANDLE)> = Vec::new();
     let mut open_failures = Vec::new();
@@ -293,6 +329,40 @@ fn cleanup_unowned_spawned_windows_tree(pid: u32) -> anyhow::Result<()> {
         std::thread::sleep(std::time::Duration::from_millis(100));
     }
     anyhow::bail!("fallback Windows process tree still contains a known root or descendant")
+}
+
+#[cfg(windows)]
+fn cleanup_unowned_existing_windows_tree(
+    pid: u32,
+    expected: &crate::process::instance::ProcessIdentity,
+) -> anyhow::Result<()> {
+    use anyhow::Context;
+    use windows::Win32::Foundation::CloseHandle;
+    use windows::Win32::System::Threading::{
+        OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SYNCHRONIZE, PROCESS_TERMINATE,
+    };
+
+    // Hold a stable handle before checking the PID identity so a root exit and
+    // PID reuse cannot redirect the subsequent descendant cleanup.
+    let root = unsafe {
+        OpenProcess(
+            PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_SYNCHRONIZE | PROCESS_TERMINATE,
+            false,
+            pid,
+        )
+    }
+    .context("failed to open adopted root with a stable cleanup handle")?;
+    let cleanup = (|| -> anyhow::Result<()> {
+        anyhow::ensure!(
+            crate::process::identity::process_identity_matches(pid, expected),
+            "refusing fallback tree cleanup for PID {pid}: immutable process identity no longer matches"
+        );
+        cleanup_unowned_spawned_windows_tree(pid)
+    })();
+    unsafe {
+        let _ = CloseHandle(root);
+    }
+    cleanup
 }
 
 #[cfg(windows)]
@@ -773,6 +843,72 @@ mod windows_tests {
             assert!(
                 !crate::process::identity::is_pid_alive(owned_pid),
                 "fallback cleanup left PID {owned_pid} alive"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn adopted_fallback_verifies_identity_and_terminates_descendants() {
+        const CREATE_BREAKAWAY_FROM_JOB: u32 = 0x0100_0000;
+        const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+        let spawn = |flags| {
+            let mut command = tokio::process::Command::new("powershell.exe");
+            command.args([
+                "-NoLogo",
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                "$child = Start-Process powershell.exe -ArgumentList '-NoLogo -NoProfile -NonInteractive -Command Start-Sleep -Seconds 30' -PassThru; Start-Sleep -Seconds 30",
+            ]);
+            command.creation_flags(flags);
+            command.spawn()
+        };
+        let mut child =
+            match spawn(CREATE_BREAKAWAY_FROM_JOB | CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW) {
+                Ok(child) => child,
+                Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => {
+                    spawn(CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW).unwrap()
+                }
+                Err(error) => panic!("failed to spawn adopted fallback test tree: {error}"),
+            };
+        let pid = child.id().unwrap();
+        let identity = crate::process::identity::capture_process_identity_with_retry(pid)
+            .await
+            .expect("test root identity was unavailable");
+        let mut observed = std::collections::HashSet::new();
+        for _ in 0..30 {
+            observed = super::windows_descendants(pid, &super::windows_process_snapshot().unwrap());
+            if observed.len() > 1 {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+        assert!(
+            observed.len() > 1,
+            "test process did not create a descendant"
+        );
+
+        let mut mismatched = identity.clone();
+        mismatched.start_time_secs = mismatched.start_time_secs.saturating_add(1);
+        let refused = ProcessTreeGuard::terminate_unowned_existing(pid, &mismatched)
+            .await
+            .unwrap_err();
+        assert!(refused.to_string().contains("identity no longer matches"));
+        assert!(crate::process::identity::is_pid_alive(pid));
+
+        ProcessTreeGuard::terminate_unowned_existing(pid, &identity)
+            .await
+            .unwrap();
+        tokio::time::timeout(std::time::Duration::from_secs(5), child.wait())
+            .await
+            .expect("fallback root did not reap")
+            .unwrap();
+        for owned_pid in observed {
+            assert!(
+                !crate::process::identity::is_pid_alive(owned_pid),
+                "adopted fallback cleanup left PID {owned_pid} alive"
             );
         }
     }

@@ -39,10 +39,13 @@ impl ManagedChild {
             .process_tree
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("managed child has no process-tree ownership"))?;
-        let (tree_result, child_result) =
-            tokio::join!(process_tree.terminate_and_wait(), self.child.wait());
-        tree_result?;
-        child_result.context("failed to reap terminated managed child")?;
+        // Do not wait for the root concurrently with tree cleanup. If cleanup
+        // fails, the caller must retain both the Child and guard for a retry;
+        // waiting here could block forever on the still-running root.
+        process_tree.terminate_and_wait().await?;
+        tokio::time::timeout(std::time::Duration::from_secs(5), self.child.wait())
+            .await
+            .context("timed out reaping terminated managed child")??;
         Ok(())
     }
 }

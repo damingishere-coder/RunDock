@@ -10,8 +10,7 @@ use crate::models::process_info::ProcessInfo;
 use crate::models::process_status::ProcessStatus;
 use crate::notifications::sender::{fire_event, ProcessEvent};
 use crate::process::identity::{
-    capture_process_identity_with_retry, kill_process_verified, process_identity_matches,
-    stable_identity_matches,
+    capture_process_identity_with_retry, process_identity_matches, stable_identity_matches,
 };
 use crate::process::instance::{read_git_branch, LogLine, ManagedProcess, ProcessIdentity};
 use crate::process::restarter::{watch_and_restart, RestartEvent, RestartPolicy};
@@ -317,7 +316,12 @@ impl ProcessManager {
             Ok(process_tree) => process_tree,
             Err(error) => {
                 tracing::error!(%error, %saved_id, pid, "adopted process tree ownership could not be restored; stopping the unowned process");
-                if let Err(kill_error) = kill_process_verified(pid, Some(&identity)).await {
+                if let Err(kill_error) =
+                    crate::process::tree::ProcessTreeGuard::terminate_unowned_existing(
+                        pid, &identity,
+                    )
+                    .await
+                {
                     tracing::error!(%kill_error, %saved_id, pid, "failed to stop unowned adopted process");
                     process.status = ProcessStatus::Errored;
                     process.pid = Some(pid);
@@ -338,22 +342,20 @@ impl ProcessManager {
         };
         if let Err(error) = process_tree.preserve_on_drop() {
             tracing::error!(%error, %saved_id, pid, "adopted process tree could not be preserved after daemon exit");
-            drop(process_tree);
-            if process_identity_matches(pid, &identity) {
-                if let Err(kill_error) = kill_process_verified(pid, Some(&identity)).await {
-                    tracing::error!(%kill_error, %saved_id, pid, "failed to stop adopted process after process-tree preservation failed");
-                    process.status = ProcessStatus::Errored;
-                    process.pid = Some(pid);
-                    process.process_identity = Some(identity);
-                    process.desired_running = false;
-                    process.generation = 1;
-                    process.restart_count = restart_count;
-                    process.cron_run_history = cron_run_history;
-                    let info = process.to_info();
-                    self.registry
-                        .insert(saved_id, Arc::new(RwLock::new(process)));
-                    return info;
-                }
+            if let Err(kill_error) = process_tree.terminate_and_wait().await {
+                tracing::error!(%kill_error, %saved_id, pid, "failed to stop adopted process after process-tree preservation failed");
+                process.status = ProcessStatus::Errored;
+                process.pid = Some(pid);
+                process.process_identity = Some(identity);
+                process.process_tree = Some(process_tree);
+                process.desired_running = false;
+                process.generation = 1;
+                process.restart_count = restart_count;
+                process.cron_run_history = cron_run_history;
+                let info = process.to_info();
+                self.registry
+                    .insert(saved_id, Arc::new(RwLock::new(process)));
+                return info;
             }
             return self
                 .register_stopped_restored(saved_id, config, restart_count, cron_run_history)
@@ -2550,7 +2552,42 @@ impl ProcessManager {
                                 }
                                 return;
                             }
-                            let Some(process_tree) = child.take_process_tree() else {
+                            let mut health_check_handle =
+                                config.health_check_url.as_ref().map(|url| {
+                                    crate::process::health::start_health_check(
+                                        Arc::clone(&arc),
+                                        generation,
+                                        url.clone(),
+                                        config.health_check_interval_secs,
+                                        config.health_check_timeout_secs,
+                                        config.health_check_retries,
+                                        Arc::clone(&notif_cron),
+                                    )
+                                });
+
+                            // Commit PID, tree ownership, health monitoring and
+                            // Running state in one registry critical section. Until
+                            // this point the ManagedChild retains the guard, so every
+                            // cancellation path can perform complete-tree cleanup.
+                            let commit_error = {
+                                let mut proc = arc.write().await;
+                                if proc.generation != generation || !proc.desired_running {
+                                    Some("process start was cancelled before cron ownership commit")
+                                } else if let Some(process_tree) = child.take_process_tree() {
+                                    proc.pid = Some(pid);
+                                    proc.process_identity = Some(identity.clone());
+                                    proc.process_tree = Some(process_tree);
+                                    proc.health_check_handle = health_check_handle.take();
+                                    proc.status = ProcessStatus::Running;
+                                    None
+                                } else {
+                                    Some("process-tree ownership was lost before cron ownership commit")
+                                }
+                            };
+                            if let Some(commit_error) = commit_error {
+                                if let Some(handle) = health_check_handle.take() {
+                                    handle.abort();
+                                }
                                 let cleanup_error = manager
                                     .cleanup_failed_spawn(
                                         Arc::clone(&arc),
@@ -2561,7 +2598,7 @@ impl ProcessManager {
                                     )
                                     .await;
                                 tracing::error!(
-                                    "cron: process-tree ownership was lost for PID {pid}; cleanup error: {cleanup_error:?}"
+                                    "cron: {commit_error} for PID {pid}; cleanup error: {cleanup_error:?}"
                                 );
                                 if let Some(scheduler) =
                                     cron_schedulers.lock().await.remove(&process_id)
@@ -2569,72 +2606,10 @@ impl ProcessManager {
                                     scheduler.abort();
                                 }
                                 return;
-                            };
-                            {
-                                let mut proc = arc.write().await;
-                                if proc.generation != generation || !proc.desired_running {
-                                    drop(proc);
-                                    drop(process_tree);
-                                    manager
-                                        .cleanup_failed_spawn(
-                                            Arc::clone(&arc),
-                                            child,
-                                            pid,
-                                            Some(identity),
-                                            generation,
-                                        )
-                                        .await;
-                                    return;
-                                }
-                                proc.pid = Some(pid);
-                                proc.process_identity = Some(identity.clone());
-                                proc.process_tree = Some(process_tree);
-                            }
-
-                            if let Some(url) = &config.health_check_url {
-                                let handle = crate::process::health::start_health_check(
-                                    Arc::clone(&arc),
-                                    generation,
-                                    url.clone(),
-                                    config.health_check_interval_secs,
-                                    config.health_check_timeout_secs,
-                                    config.health_check_retries,
-                                    Arc::clone(&notif_cron),
-                                );
-                                let mut proc = arc.write().await;
-                                if proc.generation != generation || !proc.desired_running {
-                                    handle.abort();
-                                    drop(proc);
-                                    manager
-                                        .cleanup_failed_spawn(
-                                            Arc::clone(&arc),
-                                            child,
-                                            pid,
-                                            Some(identity),
-                                            generation,
-                                        )
-                                        .await;
-                                    return;
-                                }
-                                proc.health_check_handle = Some(handle);
                             }
 
                             let info_for_notif = {
-                                let mut proc = arc.write().await;
-                                if proc.generation != generation || !proc.desired_running {
-                                    drop(proc);
-                                    manager
-                                        .cleanup_failed_spawn(
-                                            Arc::clone(&arc),
-                                            child,
-                                            pid,
-                                            Some(identity),
-                                            generation,
-                                        )
-                                        .await;
-                                    return;
-                                }
-                                proc.status = ProcessStatus::Running;
+                                let proc = arc.read().await;
                                 proc.to_info()
                             };
                             let _ = persistence_tx.send(());
