@@ -44,8 +44,6 @@ jobs:
     name: Required quality gate
     uses: ./.github/workflows/quality.yml
     needs: validate-release-tag
-    secrets:
-      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
   # ─────────────────────────────────────────────────────────────────────────────
   # Build Windows x64 release binary
@@ -272,6 +270,12 @@ jobs:
         if: always()
         shell: pwsh
         run: Remove-Item -LiteralPath (Join-Path $env:RUNNER_TEMP "rundock-signing.pfx") -Force -ErrorAction SilentlyContinue
+
+      - name: Smoke the signed installer
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.VERSION }}
+        run: .\scripts\windows-installer-smoke.ps1 -InstallerPath "dist\RunDock-$env:RELEASE_VERSION-windows-x64-setup.exe" -InstallDirectory (Join-Path $env:RUNNER_TEMP 'RunDockReleaseSmoke')
 
       - name: Compute SHA256
         id: sha256

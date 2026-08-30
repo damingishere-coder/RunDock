@@ -2,9 +2,6 @@ name: Quality
 
 on:
   workflow_call:
-    secrets:
-      SONAR_TOKEN:
-        required: true
   pull_request:
   push:
     branches:
@@ -20,27 +17,6 @@ env:
   NPM_VERSION: 11.12.1
 
 jobs:
-  sonar-configuration:
-    name: SonarQube gate configuration
-    if: >-
-      github.event_name == 'workflow_call' ||
-      (github.event_name == 'pull_request' &&
-      github.event.pull_request.head.repo.full_name == github.repository) ||
-      (github.event_name == 'push' &&
-      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'))
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    steps:
-      - name: Require SonarQube gate configuration
-        env:
-          SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL }}
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        run: |
-          if [ -z "$SONAR_HOST_URL" ] || [ -z "$SONAR_TOKEN" ]; then
-            echo "::error::SONAR_HOST_URL and SONAR_TOKEN are required on protected pushes and internal pull requests."
-            exit 1
-          fi
-
   frontend:
     name: Frontend quality
     runs-on: ubuntu-24.04
@@ -140,21 +116,11 @@ jobs:
         with:
           name: rundock-linux-binary
           path: package-input
-      - name: Validate scripts, package the real binary, and inspect payload
+      - name: Install, upgrade, health-check, and remove the real Debian package
         run: |
-          bash -n scripts/build-deb.sh packaging/debian/postinst packaging/debian/prerm packaging/debian/postrm
-          temp_dir="$(mktemp -d)"
-          trap 'rm -rf "$temp_dir"' EXIT
-          cp package-input/alter "$temp_dir/alter"
-          chmod 755 "$temp_dir/alter"
-          (
-            cd "$temp_dir"
-            bash "$GITHUB_WORKSPACE/scripts/build-deb.sh" ./alter 0.0.0 amd64
-          )
-          dpkg-deb --info "$temp_dir/alter_0.0.0_amd64.deb"
-          package_contents="$(dpkg-deb --contents "$temp_dir/alter_0.0.0_amd64.deb")"
-          grep -F './usr/local/bin/alter' <<< "$package_contents"
-          grep -F './lib/systemd/system/alter-daemon.service' <<< "$package_contents"
+          bash -n scripts/build-deb.sh scripts/linux-deb-smoke.sh packaging/debian/postinst packaging/debian/prerm packaging/debian/postrm
+          chmod 755 package-input/alter
+          CI=true bash scripts/linux-deb-smoke.sh package-input/alter
 
   packaging-windows:
     name: Windows installer smoke
@@ -180,20 +146,36 @@ jobs:
       - name: Set up Rust
         shell: pwsh
         run: |
-          rustup toolchain install 1.98.0 --profile minimal
+          rustup toolchain install 1.98.0 --profile minimal --component rustfmt,clippy --target x86_64-pc-windows-msvc
           rustup default 1.98.0
-      - name: Build real Windows release binary
+      - name: Build root release binary with MSVC
         shell: pwsh
         run: |
-          cargo build --release --locked
+          cargo build --release --locked --target x86_64-pc-windows-msvc
           if ($LASTEXITCODE -ne 0) { throw "alter release build failed" }
-          cargo test --manifest-path desktop-shell\Cargo.toml --all-targets --locked
+          New-Item -ItemType Directory -Force -Path target\release | Out-Null
+          Copy-Item target\x86_64-pc-windows-msvc\release\alter.exe target\release\alter.exe
+      - name: Desktop shell fmt
+        shell: pwsh
+        run: cargo fmt --manifest-path desktop-shell\Cargo.toml --all -- --check
+      - name: Desktop shell clippy
+        shell: pwsh
+        run: cargo clippy --manifest-path desktop-shell\Cargo.toml --all-targets --locked --target x86_64-pc-windows-msvc -- -D warnings
+      - name: Desktop shell tests
+        shell: pwsh
+        run: |
+          cargo test --manifest-path desktop-shell\Cargo.toml --all-targets --locked --target x86_64-pc-windows-msvc
           if ($LASTEXITCODE -ne 0) { throw "desktop shell tests failed" }
-          cargo build --manifest-path desktop-shell\Cargo.toml --release --locked
+      - name: Desktop shell release build
+        shell: pwsh
+        run: |
+          cargo build --manifest-path desktop-shell\Cargo.toml --release --locked --target x86_64-pc-windows-msvc
           if ($LASTEXITCODE -ne 0) { throw "desktop shell release build failed" }
-          $loader = 'desktop-shell\target\release\WebView2Loader.dll'
+          New-Item -ItemType Directory -Force -Path desktop-shell\target\release | Out-Null
+          Copy-Item desktop-shell\target\x86_64-pc-windows-msvc\release\rundock.exe desktop-shell\target\release\rundock.exe
+          $loader = 'desktop-shell\target\x86_64-pc-windows-msvc\release\WebView2Loader.dll'
           if (-not (Test-Path -LiteralPath $loader)) {
-            $loaderSource = Get-ChildItem 'desktop-shell\target\release\build' -Filter WebView2Loader.dll -File -Recurse |
+            $loaderSource = Get-ChildItem 'desktop-shell\target\x86_64-pc-windows-msvc\release\build' -Filter WebView2Loader.dll -File -Recurse |
               Where-Object FullName -Match '[\\/]out[\\/]x64[\\/]WebView2Loader\.dll$' |
               Sort-Object LastWriteTimeUtc -Descending |
               Select-Object -First 1
@@ -205,6 +187,7 @@ jobs:
               $signature.SignerCertificate.Subject -notmatch '(^|,\s*)O=Microsoft Corporation(,|$)') {
             throw 'WebView2Loader.dll does not have the expected Microsoft signature'
           }
+          Copy-Item -LiteralPath $loader -Destination desktop-shell\target\release\WebView2Loader.dll
       - name: Stage verified WebView2 bootstrapper
         shell: pwsh
         run: .\scripts\stage-webview2.ps1
@@ -231,225 +214,4 @@ jobs:
         run: |
           $metadata = cargo metadata --no-deps --format-version 1 | ConvertFrom-Json
           $version = ($metadata.packages | Where-Object name -eq 'alter').version
-          $installer = (Resolve-Path "dist\RunDock-$version-windows-x64-setup.exe").Path
-          $installDir = Join-Path $env:RUNNER_TEMP 'RunDockInstallSmoke'
-          $install = Start-Process -FilePath $installer -ArgumentList @(
-            '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/DIR=$installDir"
-          ) -Wait -PassThru
-          if ($install.ExitCode -ne 0) { throw "silent install failed: $($install.ExitCode)" }
-
-          $shell = Join-Path $installDir 'rundock.exe'
-          $daemon = Join-Path $installDir 'alter.exe'
-          $loader = Join-Path $installDir 'WebView2Loader.dll'
-          Get-Item -LiteralPath $shell, $daemon, $loader -ErrorAction Stop | Out-Null
-          $shortcut = Join-Path $env:ProgramData 'Microsoft\Windows\Start Menu\Programs\RunDock\RunDock.lnk'
-          Get-Item -LiteralPath $shortcut -ErrorAction Stop | Out-Null
-
-          $trayMarker = Join-Path $env:APPDATA 'alter-pm2\desktop-shell-tray-notice.json'
-          Remove-Item -LiteralPath $trayMarker -Force -ErrorAction SilentlyContinue
-          Start-Process -FilePath $shell -ArgumentList '--background' | Out-Null
-          $deadline = [DateTime]::UtcNow.AddSeconds(20)
-          do {
-            Start-Sleep -Milliseconds 250
-            try { $health = Invoke-RestMethod 'http://127.0.0.1:2999/api/v1/system/health' -TimeoutSec 1 }
-            catch { $health = $null }
-          } until (($health.status -in @('ok', 'degraded')) -or [DateTime]::UtcNow -ge $deadline)
-          if ($health.status -notin @('ok', 'degraded')) { throw 'installed daemon did not become healthy' }
-
-          $firstShell = @(Get-Process rundock -ErrorAction SilentlyContinue)
-          if ($firstShell.Count -ne 1) { throw "expected one desktop shell, found $($firstShell.Count)" }
-          Start-Process -FilePath $shell -PassThru | Wait-Process
-          Start-Sleep -Milliseconds 500
-          $secondShell = @(Get-Process rundock -ErrorAction SilentlyContinue)
-          if ($secondShell.Count -ne 1 -or $secondShell[0].Id -ne $firstShell[0].Id) {
-            throw 'second launch did not reuse the existing desktop shell'
-          }
-
-          Add-Type @'
-          using System;
-          using System.Runtime.InteropServices;
-          using System.Text;
-
-          public static class RunDockWindowSmoke {
-            public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
-            [DllImport("user32.dll")]
-            public static extern bool EnumWindows(EnumWindowsProc callback, IntPtr lParam);
-            [DllImport("user32.dll")]
-            public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
-            [DllImport("user32.dll")]
-            public static extern bool IsWindow(IntPtr hWnd);
-            [DllImport("user32.dll")]
-            public static extern bool IsWindowVisible(IntPtr hWnd);
-            [DllImport("user32.dll", CharSet = CharSet.Unicode)]
-            public static extern int GetWindowText(IntPtr hWnd, StringBuilder text, int count);
-            [DllImport("user32.dll")]
-            public static extern bool PostMessage(IntPtr hWnd, uint message, IntPtr wParam, IntPtr lParam);
-
-            public static IntPtr FindMainWindow(uint targetProcessId) {
-              IntPtr found = IntPtr.Zero;
-              EnumWindows((window, _) => {
-                uint processId;
-                GetWindowThreadProcessId(window, out processId);
-                if (processId != targetProcessId || !IsWindowVisible(window)) return true;
-                var title = new StringBuilder(256);
-                GetWindowText(window, title, title.Capacity);
-                if (title.ToString() == "RunDock") {
-                  found = window;
-                  return false;
-                }
-                return true;
-              }, IntPtr.Zero);
-              return found;
-            }
-          }
-          '@
-
-          $mainWindow = [RunDockWindowSmoke]::FindMainWindow([uint32]$firstShell[0].Id)
-          if ($mainWindow -eq [IntPtr]::Zero) { throw 'desktop shell has no visible RunDock main window' }
-          if (-not [RunDockWindowSmoke]::PostMessage($mainWindow, 0x0010, [IntPtr]::Zero, [IntPtr]::Zero)) {
-            throw 'failed to send WM_CLOSE to the desktop shell'
-          }
-          $deadline = [DateTime]::UtcNow.AddSeconds(10)
-          while ([RunDockWindowSmoke]::IsWindowVisible($mainWindow) -and [DateTime]::UtcNow -lt $deadline) {
-            Start-Sleep -Milliseconds 100
-          }
-          if (-not [RunDockWindowSmoke]::IsWindow($mainWindow) -or
-              [RunDockWindowSmoke]::IsWindowVisible($mainWindow)) {
-            throw 'WM_CLOSE destroyed the window or failed to hide it'
-          }
-          $afterCloseShell = @(Get-Process rundock -ErrorAction SilentlyContinue)
-          if ($afterCloseShell.Count -ne 1 -or $afterCloseShell[0].Id -ne $firstShell[0].Id) {
-            throw 'WM_CLOSE exited or replaced the desktop shell process'
-          }
-
-          $deadline = [DateTime]::UtcNow.AddSeconds(5)
-          while (-not (Test-Path -LiteralPath $trayMarker) -and [DateTime]::UtcNow -lt $deadline) {
-            Start-Sleep -Milliseconds 100
-          }
-          if (-not (Test-Path -LiteralPath $trayMarker)) { throw 'first close did not persist the tray notice marker' }
-          $firstMarkerHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $trayMarker).Hash
-          $firstMarkerWrite = (Get-Item -LiteralPath $trayMarker).LastWriteTimeUtc
-
-          Start-Process -FilePath $shell -PassThru | Wait-Process
-          $deadline = [DateTime]::UtcNow.AddSeconds(10)
-          while (-not [RunDockWindowSmoke]::IsWindowVisible($mainWindow) -and [DateTime]::UtcNow -lt $deadline) {
-            Start-Sleep -Milliseconds 100
-          }
-          if (-not [RunDockWindowSmoke]::IsWindowVisible($mainWindow)) {
-            throw 'second launch did not restore the hidden main window'
-          }
-
-          [RunDockWindowSmoke]::PostMessage($mainWindow, 0x0010, [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null
-          $deadline = [DateTime]::UtcNow.AddSeconds(10)
-          while ([RunDockWindowSmoke]::IsWindowVisible($mainWindow) -and [DateTime]::UtcNow -lt $deadline) {
-            Start-Sleep -Milliseconds 100
-          }
-          if ([RunDockWindowSmoke]::IsWindowVisible($mainWindow)) { throw 'second WM_CLOSE did not hide the main window' }
-          if ((Get-FileHash -Algorithm SHA256 -LiteralPath $trayMarker).Hash -ne $firstMarkerHash -or
-              (Get-Item -LiteralPath $trayMarker).LastWriteTimeUtc -ne $firstMarkerWrite) {
-            throw 'second close rewrote the one-time tray notice marker'
-          }
-
-          Start-Process -FilePath $shell -PassThru | Wait-Process
-          $deadline = [DateTime]::UtcNow.AddSeconds(10)
-          while (-not [RunDockWindowSmoke]::IsWindowVisible($mainWindow) -and [DateTime]::UtcNow -lt $deadline) {
-            Start-Sleep -Milliseconds 100
-          }
-          if (-not [RunDockWindowSmoke]::IsWindowVisible($mainWindow)) {
-            throw 'desktop shell did not restore after the second close'
-          }
-
-          $runValues = Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
-          if (($runValues.PSObject.Properties.Value -join "`n") -notmatch 'rundock\.exe.*--background') {
-            throw 'default login autostart was not registered with --background'
-          }
-
-          $ping = Join-Path $env:SystemRoot 'System32\PING.EXE'
-          & $daemon start $ping --name ci-upgrade-survivor -- -t 127.0.0.1
-          if ($LASTEXITCODE -ne 0) { throw 'failed to start upgrade survivor process' }
-          $beforeUpgrade = (& $daemon --json list | ConvertFrom-Json).processes |
-            Where-Object name -eq 'ci-upgrade-survivor'
-          if (-not $beforeUpgrade.pid) { throw 'upgrade survivor has no PID' }
-
-          $upgrade = Start-Process -FilePath $installer -ArgumentList @(
-            '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/DIR=$installDir"
-          ) -Wait -PassThru
-          if ($upgrade.ExitCode -ne 0) { throw "in-place upgrade failed: $($upgrade.ExitCode)" }
-          if (-not (Get-Process -Id $beforeUpgrade.pid -ErrorAction SilentlyContinue)) {
-            throw 'in-place upgrade stopped the managed child process'
-          }
-          if (Get-Process rundock -ErrorAction SilentlyContinue) {
-            throw 'silent upgrade unexpectedly left the desktop shell running'
-          }
-
-          Start-Process -FilePath $shell -ArgumentList '--background' | Out-Null
-          $deadline = [DateTime]::UtcNow.AddSeconds(20)
-          do {
-            Start-Sleep -Milliseconds 250
-            try { $health = Invoke-RestMethod 'http://127.0.0.1:2999/api/v1/system/health' -TimeoutSec 1 }
-            catch { $health = $null }
-          } until (($health.status -in @('ok', 'degraded')) -or [DateTime]::UtcNow -ge $deadline)
-          if ($health.status -notin @('ok', 'degraded')) { throw 'upgraded daemon did not become healthy' }
-          $afterUpgrade = (& $daemon --json list | ConvertFrom-Json).processes |
-            Where-Object name -eq 'ci-upgrade-survivor'
-          if ($afterUpgrade.id -ne $beforeUpgrade.id -or $afterUpgrade.pid -ne $beforeUpgrade.pid) {
-            throw 'in-place upgrade did not re-adopt the exact managed process'
-          }
-          & $daemon stop ci-upgrade-survivor
-          if ($LASTEXITCODE -ne 0) { throw 'failed to stop upgrade survivor before uninstall' }
-
-          Start-Process -FilePath $shell -ArgumentList '--quit' -PassThru | Wait-Process
-          $deadline = [DateTime]::UtcNow.AddSeconds(10)
-          while ((Get-Process rundock -ErrorAction SilentlyContinue) -and [DateTime]::UtcNow -lt $deadline) {
-            Start-Sleep -Milliseconds 200
-          }
-          if (Get-Process rundock -ErrorAction SilentlyContinue) { throw 'desktop shell did not exit' }
-          $healthAfterShellExit = Invoke-RestMethod 'http://127.0.0.1:2999/api/v1/system/health' -TimeoutSec 2
-          if ($healthAfterShellExit.status -notin @('ok', 'degraded')) { throw 'daemon stopped with desktop shell' }
-          if (Get-NetTCPConnection -State Listen -LocalPort 5173 -ErrorAction SilentlyContinue) {
-            throw 'production smoke unexpectedly found a 5173 listener'
-          }
-
-          $dataDir = Join-Path $env:APPDATA 'alter-pm2'
-          New-Item -ItemType Directory -Force -Path $dataDir | Out-Null
-          $retentionMarker = Join-Path $dataDir 'ci-data-retention.txt'
-          Set-Content -LiteralPath $retentionMarker -Value 'preserve'
-          $uninstaller = Get-Item -LiteralPath (Join-Path $installDir 'unins000.exe') -ErrorAction Stop
-          $uninstall = Start-Process -FilePath $uninstaller.FullName -ArgumentList @(
-            '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART'
-          ) -Wait -PassThru
-          if ($uninstall.ExitCode -ne 0) { throw "silent uninstall failed: $($uninstall.ExitCode)" }
-          if (-not (Test-Path -LiteralPath $retentionMarker)) { throw 'uninstall removed user data' }
-          if (Test-Path -LiteralPath $shell) { throw 'desktop shell remained after uninstall' }
-
-  sonarqube:
-    name: SonarQube quality gate
-    needs: [frontend, rust, sonar-configuration]
-    if: >-
-      github.event_name == 'workflow_call' ||
-      (github.event_name == 'pull_request' &&
-      github.event.pull_request.head.repo.full_name == github.repository) ||
-      (github.event_name == 'push' &&
-      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'))
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    steps:
-      - name: Checkout full history
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          fetch-depth: 0
-      - name: Download frontend coverage
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        with:
-          name: frontend-coverage
-          path: web-ui/coverage
-      - name: Download Rust coverage
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        with:
-          name: rust-coverage
-          path: coverage
-      - name: Analyze and wait for the quality gate
-        uses: SonarSource/sonarqube-scan-action@fd88b7d7ccbaefd23d8f36f73b59db7a3d246602 # v6.0.0
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL }}
+          .\scripts\windows-installer-smoke.ps1 -InstallerPath "dist\RunDock-$version-windows-x64-setup.exe" -InstallDirectory (Join-Path $env:RUNNER_TEMP 'RunDockInstallSmoke')

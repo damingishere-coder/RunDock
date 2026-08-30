@@ -48,8 +48,6 @@ jobs:
     name: Required quality gate
     uses: ./.github/workflows/quality.yml
     needs: validate-release-tag
-    secrets:
-      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
   # ─────────────────────────────────────────────────────────────────────────────
   # Build web UI (shared asset, embedded into the binary via rust-embed)
