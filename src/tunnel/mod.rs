@@ -145,17 +145,18 @@ impl TunnelManager {
         let pid = child
             .id()
             .ok_or_else(|| "Tunnel process did not expose a PID".to_string())?;
-        let process_tree = match ProcessTreeGuard::new(pid, &format!("tunnel-{id}")) {
-            Ok(guard) => guard,
-            Err(error) => {
-                let cleanup = crate::process::identity::kill_spawned_process(&mut child, pid).await;
-                let message = format!(
-                    "Could not establish tunnel process-tree ownership: {error}; cleanup result: {cleanup:?}"
-                );
-                self.entries.remove(&id);
-                return Err(message);
-            }
-        };
+        let process_tree =
+            match ProcessTreeGuard::attach_or_terminate(&mut child, pid, &format!("tunnel-{id}"))
+                .await
+            {
+                Ok(guard) => guard,
+                Err(error) => {
+                    let message =
+                        format!("Could not establish tunnel process-tree ownership: {error}");
+                    self.entries.remove(&id);
+                    return Err(message);
+                }
+            };
         let Some(identity) =
             crate::process::identity::capture_process_identity_with_retry(pid).await
         else {
@@ -614,10 +615,15 @@ pub async fn check_provider(
         let _ = child.wait().await;
         return (false, format!("`{binary}` did not expose a process ID"));
     };
-    let _tree = match ProcessTreeGuard::new(pid, &format!("tunnel-probe-{pid}")) {
+    let _tree = match ProcessTreeGuard::attach_or_terminate(
+        &mut child,
+        pid,
+        &format!("tunnel-probe-{pid}"),
+    )
+    .await
+    {
         Ok(tree) => tree,
         Err(error) => {
-            let _ = crate::process::identity::kill_spawned_process(&mut child, pid).await;
             return (
                 false,
                 format!("`{binary}` probe could not be contained: {error}"),

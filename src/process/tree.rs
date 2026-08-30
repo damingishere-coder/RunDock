@@ -27,6 +27,55 @@ impl ProcessTreeGuard {
         Self::attach_or_terminate_with(child, pid, owner, Self::new).await
     }
 
+    /// Synchronous-child variant used by installer and signature/version
+    /// probes. Attachment failure is returned only after the complete spawned
+    /// tree has been terminated and the direct child reaped.
+    pub fn attach_or_terminate_std(
+        child: &mut std::process::Child,
+        pid: u32,
+        owner: &str,
+    ) -> anyhow::Result<Self> {
+        match Self::new(pid, owner) {
+            Ok(guard) => Ok(guard),
+            Err(attach_error) => {
+                if let Err(cleanup_error) = cleanup_unowned_spawned_std_tree(child, pid) {
+                    return Err(anyhow::anyhow!(
+                        "failed to establish process-tree ownership: {attach_error}; fallback tree cleanup could not be confirmed: {cleanup_error}"
+                    ));
+                }
+                Err(attach_error).map_err(|error| {
+                    error.context(
+                        "failed to establish process-tree ownership; spawned tree was terminated",
+                    )
+                })
+            }
+        }
+    }
+
+    /// Portable-PTY variant. The PTY child keeps the root OS handle alive while
+    /// fallback cleanup snapshots and terminates the complete tree.
+    pub async fn attach_or_terminate_pty(
+        child: &mut (dyn portable_pty::Child + Send),
+        pid: u32,
+        owner: &str,
+    ) -> anyhow::Result<Self> {
+        match Self::new(pid, owner) {
+            Ok(guard) => Ok(guard),
+            Err(attach_error) => {
+                if let Err(cleanup_error) = cleanup_unowned_spawned_pty_tree(child, pid).await {
+                    return Err(anyhow::anyhow!(
+                        "failed to establish process-tree ownership: {attach_error}; fallback tree cleanup could not be confirmed: {cleanup_error}"
+                    ));
+                }
+                Err(attach_error).map_err(|error| {
+                    error.context(
+                        "failed to establish process-tree ownership; PTY tree was terminated",
+                    )
+                })
+            }
+        }
+    }
+
     /// Terminate a live tree that could not be attached during daemon
     /// recovery. The immutable process identity is checked before any signal
     /// or Windows descendant snapshot is used.
@@ -114,6 +163,72 @@ async fn cleanup_unowned_spawned_tree(
     anyhow::bail!(
         "fallback process group {process_group} still contains descendants after termination"
     )
+}
+
+#[cfg(unix)]
+fn cleanup_unowned_spawned_std_tree(
+    child: &mut std::process::Child,
+    pid: u32,
+) -> anyhow::Result<()> {
+    let process_group = libc::pid_t::try_from(pid)
+        .map_err(|_| anyhow::anyhow!("PID does not fit a process-group id"))?;
+    anyhow::ensure!(
+        unsafe { libc::getpgid(process_group) } == process_group,
+        "refusing fallback cleanup because process {pid} is not its process-group leader"
+    );
+    if unsafe { libc::kill(-process_group, libc::SIGKILL) } != 0 {
+        let error = std::io::Error::last_os_error();
+        anyhow::ensure!(
+            error.raw_os_error() == Some(libc::ESRCH),
+            "failed to terminate fallback process group {process_group}: {error}"
+        );
+    }
+    child
+        .wait()
+        .map_err(|error| anyhow::anyhow!("failed to reap fallback root process: {error}"))?;
+    for _ in 0..50 {
+        let exists = unsafe { libc::kill(-process_group, 0) } == 0
+            || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM);
+        if !exists {
+            return Ok(());
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    anyhow::bail!(
+        "fallback process group {process_group} still contains descendants after termination"
+    )
+}
+
+#[cfg(unix)]
+async fn cleanup_unowned_spawned_pty_tree(
+    child: &mut (dyn portable_pty::Child + Send),
+    pid: u32,
+) -> anyhow::Result<()> {
+    let process_group = libc::pid_t::try_from(pid)
+        .map_err(|_| anyhow::anyhow!("PID does not fit a process-group id"))?;
+    anyhow::ensure!(
+        unsafe { libc::getpgid(process_group) } == process_group,
+        "refusing fallback cleanup because PTY process {pid} is not its process-group leader"
+    );
+    if unsafe { libc::kill(-process_group, libc::SIGKILL) } != 0 {
+        let error = std::io::Error::last_os_error();
+        anyhow::ensure!(
+            error.raw_os_error() == Some(libc::ESRCH),
+            "failed to terminate fallback PTY process group {process_group}: {error}"
+        );
+    }
+    child
+        .wait()
+        .map_err(|error| anyhow::anyhow!("failed to reap fallback PTY root: {error}"))?;
+    for _ in 0..50 {
+        let exists = unsafe { libc::kill(-process_group, 0) } == 0
+            || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM);
+        if !exists {
+            return Ok(());
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+    anyhow::bail!("fallback PTY process group still contains descendants")
 }
 
 #[cfg(windows)]
@@ -363,6 +478,57 @@ fn cleanup_unowned_existing_windows_tree(
         let _ = CloseHandle(root);
     }
     cleanup
+}
+
+#[cfg(windows)]
+fn cleanup_unowned_spawned_std_tree(
+    child: &mut std::process::Child,
+    pid: u32,
+) -> anyhow::Result<()> {
+    match cleanup_unowned_spawned_windows_tree(pid) {
+        Ok(()) => {
+            child.wait()?;
+            Ok(())
+        }
+        Err(cleanup_error) => match child.kill() {
+            Ok(()) => match child.wait() {
+                Ok(_) => Err(cleanup_error),
+                Err(reap_error) => Err(anyhow::anyhow!(
+                    "{cleanup_error}; fallback root reap also failed: {reap_error}"
+                )),
+            },
+            Err(kill_error) => Err(anyhow::anyhow!(
+                "{cleanup_error}; fallback root termination also failed: {kill_error}"
+            )),
+        },
+    }
+}
+
+#[cfg(windows)]
+async fn cleanup_unowned_spawned_pty_tree(
+    child: &mut (dyn portable_pty::Child + Send),
+    pid: u32,
+) -> anyhow::Result<()> {
+    let cleanup = tokio::task::spawn_blocking(move || cleanup_unowned_spawned_windows_tree(pid))
+        .await
+        .map_err(|error| anyhow::anyhow!("Windows PTY fallback cleanup task failed: {error}"))?;
+    match cleanup {
+        Ok(()) => {
+            child.wait()?;
+            Ok(())
+        }
+        Err(cleanup_error) => match child.kill() {
+            Ok(()) => match child.wait() {
+                Ok(_) => Err(cleanup_error),
+                Err(reap_error) => Err(anyhow::anyhow!(
+                    "{cleanup_error}; fallback PTY root reap also failed: {reap_error}"
+                )),
+            },
+            Err(kill_error) => Err(anyhow::anyhow!(
+                "{cleanup_error}; fallback PTY root termination also failed: {kill_error}"
+            )),
+        },
+    }
 }
 
 #[cfg(windows)]

@@ -676,16 +676,12 @@ async fn run_script(
     let child_pid = child
         .id()
         .ok_or_else(|| ApiError::internal("spawned script has no process id"))?;
-    let process_tree = match ProcessTreeGuard::new(child_pid, &format!("script-{name}")) {
-        Ok(process_tree) => process_tree,
-        Err(error) => {
-            let _ = child.kill().await;
-            let _ = child.wait().await;
-            return Err(ApiError::internal(format!(
-                "failed to contain script process tree: {error}"
-            )));
-        }
-    };
+    let process_tree =
+        ProcessTreeGuard::attach_or_terminate(&mut child, child_pid, &format!("script-{name}"))
+            .await
+            .map_err(|error| {
+                ApiError::internal(format!("failed to contain script process tree: {error}"))
+            })?;
 
     let stdout = child.stdout.take().expect("stdout piped");
     let stderr = child.stderr.take().expect("stderr piped");

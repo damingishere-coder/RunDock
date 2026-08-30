@@ -2,6 +2,7 @@
 
 use crate::api::error::ApiError;
 use crate::daemon::state::DaemonState;
+use anyhow::Context;
 use axum::{
     extract::{Path, State},
     routing::{get, post},
@@ -116,15 +117,13 @@ async fn cmd_output(program: &str, args: &[&str], dir: &FsPath) -> anyhow::Resul
     let child_pid = child
         .id()
         .ok_or_else(|| anyhow::anyhow!("spawned {program} command has no process id"))?;
-    let _process_tree =
-        match crate::process::tree::ProcessTreeGuard::new(child_pid, &format!("git-{child_pid}")) {
-            Ok(process_tree) => process_tree,
-            Err(error) => {
-                let _ = child.kill().await;
-                let _ = child.wait().await;
-                return Err(error.context(format!("failed to contain {program} process tree")));
-            }
-        };
+    let _process_tree = crate::process::tree::ProcessTreeGuard::attach_or_terminate(
+        &mut child,
+        child_pid,
+        &format!("git-{child_pid}"),
+    )
+    .await
+    .with_context(|| format!("failed to contain {program} process tree"))?;
     let started = tokio::time::Instant::now();
     let status = loop {
         if let Some(status) = child.try_wait()? {

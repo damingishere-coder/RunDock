@@ -187,16 +187,17 @@ async fn handle_terminal(
             .await;
         return;
     };
-    let process_tree = match crate::process::tree::ProcessTreeGuard::new(
+    let process_tree = match crate::process::tree::ProcessTreeGuard::attach_or_terminate_pty(
+        child.as_mut(),
         child_pid,
         &format!("terminal-{id}"),
-    ) {
+    )
+    .await
+    {
         Ok(guard) => guard,
         Err(error) => {
             let reference = uuid::Uuid::new_v4();
             tracing::error!(%reference, %error, "terminal process-tree isolation failed");
-            let _ = child.kill();
-            let _ = child.wait();
             let _ = socket
                 .send(Message::Text(
                     serde_json::json!({"type":"error","message": format!("terminal could not be isolated (reference: {reference})")})

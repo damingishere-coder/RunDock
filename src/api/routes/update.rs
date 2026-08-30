@@ -425,14 +425,13 @@ fn install_and_verify(path: &Path, current_exe: &Path, expected: &str) -> anyhow
         Err(error) => return Err(error.into()),
     };
     let installer_pid = installer.id();
-    let installer_tree = match crate::process::tree::ProcessTreeGuard::new(
+    let installer_tree = match crate::process::tree::ProcessTreeGuard::attach_or_terminate_std(
+        &mut installer,
         installer_pid,
         &format!("update-installer-{}", Uuid::new_v4()),
     ) {
         Ok(guard) => guard,
         Err(error) => {
-            let _ = installer.kill();
-            let _ = installer.wait();
             restore_update_backup(current_exe, &backup)?;
             anyhow::bail!("could not establish installer process-tree ownership: {error}");
         }
@@ -512,15 +511,17 @@ fn probe_installed_version(
             .stderr(Stdio::null())
             .creation_flags(0x0800_0000 | 0x0100_0000)
             .spawn()?;
-        let probe_tree =
-            match crate::process::tree::ProcessTreeGuard::new(child.id(), "update-version-probe") {
-                Ok(tree) => tree,
-                Err(error) => {
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    anyhow::bail!("failed to contain version probe process tree: {error}");
-                }
-            };
+        let child_pid = child.id();
+        let probe_tree = match crate::process::tree::ProcessTreeGuard::attach_or_terminate_std(
+            &mut child,
+            child_pid,
+            "update-version-probe",
+        ) {
+            Ok(tree) => tree,
+            Err(error) => {
+                anyhow::bail!("failed to contain version probe process tree: {error}");
+            }
+        };
         let deadline = std::time::Instant::now() + VERSION_PROBE_TIMEOUT;
         let status = loop {
             if std::fs::metadata(&output_path)
@@ -663,16 +664,17 @@ fn verify_update_publisher(path: &Path) -> anyhow::Result<()> {
             .stderr(Stdio::null())
             .creation_flags(0x0800_0000 | 0x0100_0000)
             .spawn()?;
-        let probe_tree =
-            match crate::process::tree::ProcessTreeGuard::new(child.id(), "update-publisher-probe")
-            {
-                Ok(tree) => tree,
-                Err(error) => {
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    anyhow::bail!("failed to contain publisher probe process tree: {error}");
-                }
-            };
+        let child_pid = child.id();
+        let probe_tree = match crate::process::tree::ProcessTreeGuard::attach_or_terminate_std(
+            &mut child,
+            child_pid,
+            "update-publisher-probe",
+        ) {
+            Ok(tree) => tree,
+            Err(error) => {
+                anyhow::bail!("failed to contain publisher probe process tree: {error}");
+            }
+        };
         let deadline = std::time::Instant::now() + PUBLISHER_PROBE_TIMEOUT;
         let status = loop {
             if std::fs::metadata(&output_path)
