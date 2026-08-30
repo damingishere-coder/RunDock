@@ -2,6 +2,7 @@
 
 use crate::api::error::ApiError;
 use crate::daemon::state::DaemonState;
+use crate::models::api_types::PatchField;
 use crate::models::process_info::ProcessInfo;
 use crate::models::process_status::ProcessStatus;
 use crate::models::project::{
@@ -227,12 +228,12 @@ fn validate_patch(patch: &ProjectPatch) -> Result<(), ApiError> {
             ));
         }
     }
-    if patch.web_port == Some(0) {
+    if matches!(patch.web_port, PatchField::Value(0)) {
         return Err(ApiError::bad_request(
             "web_port must be between 1 and 65535",
         ));
     }
-    if let Some(uri) = &patch.launch_uri {
+    if let PatchField::Value(uri) = &patch.launch_uri {
         if !is_valid_desktop_launch_uri(uri) {
             return Err(ApiError::bad_request(
                 "launch_uri must be a safe non-HTTP custom protocol URI",
@@ -288,11 +289,11 @@ async fn update_project(
     validate_patch(&patch)?;
     let project = find_project(&state, id).await?;
     let effective_kind = patch.kind.unwrap_or(project.kind);
-    let effective_launch_uri = patch
-        .launch_uri
-        .as_ref()
-        .map(|uri| uri.trim().to_string())
-        .or_else(|| project.launch_uri.clone());
+    let effective_launch_uri = match &patch.launch_uri {
+        PatchField::Missing => project.launch_uri.clone(),
+        PatchField::Null => None,
+        PatchField::Value(uri) => Some(uri.trim().to_string()),
+    };
     let projects_before = state.projects.read().await.clone();
     let requested_enabled = patch.enabled;
 
@@ -302,10 +303,7 @@ async fn update_project(
                 "managed project with process members cannot be converted to desktop",
             ));
         }
-        if effective_launch_uri.is_none() {
-            return Err(ApiError::bad_request("desktop project requires launch_uri"));
-        }
-        if patch.web_port.is_some() {
+        if matches!(patch.web_port, PatchField::Value(_)) {
             return Err(ApiError::bad_request(
                 "desktop project does not support web_port",
             ));
@@ -316,7 +314,7 @@ async fn update_project(
             ));
         }
     } else {
-        if patch.launch_uri.is_some() {
+        if matches!(patch.launch_uri, PatchField::Value(_)) {
             return Err(ApiError::bad_request(
                 "managed project does not support launch_uri",
             ));
@@ -348,8 +346,10 @@ async fn update_project(
             }
             ProjectKind::Managed => {
                 record.launch_uri = None;
-                if let Some(web_port) = patch.web_port {
-                    record.web_port = Some(web_port);
+                match patch.web_port {
+                    PatchField::Missing => {}
+                    PatchField::Null => record.web_port = None,
+                    PatchField::Value(web_port) => record.web_port = Some(web_port),
                 }
             }
         }
@@ -664,8 +664,8 @@ mod tests {
             display_name: Some("项目".to_string()),
             note: Some("备注".to_string()),
             category: Some("常用".to_string()),
-            web_port: Some(6866),
-            launch_uri: None,
+            web_port: PatchField::Value(6866),
+            launch_uri: PatchField::Missing,
             enabled: None,
         })
         .is_ok());
@@ -674,8 +674,8 @@ mod tests {
             display_name: Some(String::new()),
             note: None,
             category: None,
-            web_port: None,
-            launch_uri: None,
+            web_port: PatchField::Missing,
+            launch_uri: PatchField::Missing,
             enabled: None,
         })
         .is_err());
@@ -684,11 +684,39 @@ mod tests {
             display_name: None,
             note: None,
             category: None,
-            web_port: Some(0),
-            launch_uri: None,
+            web_port: PatchField::Value(0),
+            launch_uri: PatchField::Missing,
             enabled: None,
         })
         .is_err());
+    }
+
+    #[test]
+    fn project_patch_distinguishes_missing_clear_and_replace() {
+        let missing: ProjectPatch = serde_json::from_value(json!({})).unwrap();
+        assert_eq!(missing.web_port, PatchField::Missing);
+        assert_eq!(missing.launch_uri, PatchField::Missing);
+
+        let cleared: ProjectPatch =
+            serde_json::from_value(json!({ "web_port": null, "launch_uri": null })).unwrap();
+        assert_eq!(cleared.web_port, PatchField::Null);
+        assert_eq!(cleared.launch_uri, PatchField::Null);
+
+        let replaced: ProjectPatch = serde_json::from_value(json!({
+            "web_port": 6866,
+            "launch_uri": "wanmotai://open"
+        }))
+        .unwrap();
+        assert_eq!(replaced.web_port, PatchField::Value(6866));
+        assert_eq!(
+            replaced.launch_uri,
+            PatchField::Value("wanmotai://open".to_string())
+        );
+        assert_eq!(
+            PatchField::Missing.resolve_optional(Some(6866_u16)),
+            Some(6866)
+        );
+        assert_eq!(PatchField::<u16>::Null.resolve_optional(Some(6866)), None);
     }
 
     #[test]

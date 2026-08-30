@@ -153,6 +153,26 @@ export interface StartProcessBody {
   notify?: NotificationConfig
 }
 
+export interface UpdateProcessBody {
+  script?: string
+  name?: string
+  project_id?: string
+  cwd?: string | null
+  args?: string[]
+  env?: Record<string, string> | null
+  namespace?: string
+  autorestart?: boolean
+  watch?: boolean
+  max_restarts?: number
+  restart_delay_ms?: number
+  watch_paths?: string[]
+  watch_ignore?: string[]
+  max_log_size_mb?: number
+  cron?: string | null
+  notify?: NotificationConfig | null
+  log_alert?: LogAlertOverride | null
+}
+
 export type ProjectKind = 'managed' | 'desktop'
 export type ProjectStatus = 'desktop' | 'running' | 'partial' | 'stopped' | 'errored' | 'disabled'
 
@@ -186,8 +206,8 @@ export interface ProjectPatch {
   display_name?: string
   note?: string
   category?: string
-  web_port?: number
-  launch_uri?: string
+  web_port?: number | null
+  launch_uri?: string | null
   enabled?: boolean
 }
 

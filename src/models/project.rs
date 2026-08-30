@@ -1,5 +1,6 @@
 // @group Types : Logical project metadata and aggregate API projections
 
+use crate::models::api_types::PatchField;
 use crate::models::process_status::ProcessStatus;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -78,8 +79,10 @@ pub struct ProjectPatch {
     pub display_name: Option<String>,
     pub note: Option<String>,
     pub category: Option<String>,
-    pub web_port: Option<u16>,
-    pub launch_uri: Option<String>,
+    #[serde(default)]
+    pub web_port: PatchField<u16>,
+    #[serde(default)]
+    pub launch_uri: PatchField<String>,
     pub enabled: Option<bool>,
 }
 

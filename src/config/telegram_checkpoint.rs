@@ -1,6 +1,7 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use std::path::Path;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct TelegramCheckpoint {
@@ -38,10 +39,11 @@ pub fn token_fingerprint(token: &str) -> String {
 }
 
 pub fn load() -> Result<TelegramCheckpoint> {
-    crate::config::atomic_file::load_json_with_backup_validated(
-        &crate::config::paths::data_dir().join("telegram-offset.json"),
-        TelegramCheckpoint::validate,
-    )
+    load_at(&crate::config::paths::data_dir().join("telegram-offset.json"))
+}
+
+fn load_at(path: &Path) -> Result<TelegramCheckpoint> {
+    crate::config::atomic_file::load_json_with_backup_validated(path, TelegramCheckpoint::validate)
 }
 
 fn ensure_monotonic(current: &TelegramCheckpoint, next: &TelegramCheckpoint) -> Result<()> {
@@ -55,14 +57,25 @@ fn ensure_monotonic(current: &TelegramCheckpoint, next: &TelegramCheckpoint) -> 
 }
 
 pub fn save(checkpoint: &TelegramCheckpoint) -> Result<()> {
-    checkpoint.validate()?;
-    let current = load()?;
-    ensure_monotonic(&current, checkpoint)?;
-    crate::config::atomic_file::write_json_with_backup_validated(
+    save_at(
         &crate::config::paths::data_dir().join("telegram-offset.json"),
         checkpoint,
-        TelegramCheckpoint::validate,
     )
+}
+
+fn save_at(path: &Path, checkpoint: &TelegramCheckpoint) -> Result<()> {
+    checkpoint.validate()?;
+    let next = checkpoint.clone();
+    crate::config::atomic_file::update_json_with_backup_validated(
+        path,
+        TelegramCheckpoint::validate,
+        move |current| {
+            ensure_monotonic(current, &next)?;
+            *current = next;
+            Ok(())
+        },
+    )
+    .map(|_| ())
 }
 
 #[cfg(test)]
@@ -105,5 +118,75 @@ mod tests {
             next_update_id: 0,
         };
         assert!(ensure_monotonic(&current, &different_token).is_ok());
+    }
+
+    fn checkpoint_test_path(name: &str) -> std::path::PathBuf {
+        let directory = std::env::temp_dir().join(format!(
+            "rundock-telegram-checkpoint-{name}-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&directory).unwrap();
+        directory.join("telegram-offset.json")
+    }
+
+    #[test]
+    fn smaller_offset_cannot_overwrite_persisted_checkpoint() {
+        let path = checkpoint_test_path("monotonic");
+        let token = token_fingerprint("123:secret");
+        save_at(
+            &path,
+            &TelegramCheckpoint {
+                token_fingerprint: token.clone(),
+                next_update_id: 100,
+            },
+        )
+        .unwrap();
+        load_at(&path).unwrap();
+        let primary_before = std::fs::read(&path).unwrap();
+        let backup_before = std::fs::read(path.with_extension("json.bak")).unwrap();
+
+        let error = save_at(
+            &path,
+            &TelegramCheckpoint {
+                token_fingerprint: token,
+                next_update_id: 99,
+            },
+        )
+        .unwrap_err();
+
+        assert!(error.to_string().contains("backwards"));
+        assert_eq!(std::fs::read(&path).unwrap(), primary_before);
+        assert_eq!(
+            std::fs::read(path.with_extension("json.bak")).unwrap(),
+            backup_before
+        );
+        std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn concurrent_checkpoint_saves_finish_at_the_maximum_offset() {
+        let path = checkpoint_test_path("concurrent");
+        let token = token_fingerprint("123:secret");
+        let mut writers = Vec::new();
+        for offset in [12, 40, 25, 100, 70, 99] {
+            let writer_path = path.clone();
+            let writer_token = token.clone();
+            writers.push(std::thread::spawn(move || {
+                save_at(
+                    &writer_path,
+                    &TelegramCheckpoint {
+                        token_fingerprint: writer_token,
+                        next_update_id: offset,
+                    },
+                )
+            }));
+        }
+        for writer in writers {
+            let _ = writer.join().unwrap();
+        }
+
+        let final_checkpoint = load_at(&path).unwrap();
+        assert_eq!(final_checkpoint.next_update_id, 100);
+        std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
     }
 }

@@ -3,7 +3,9 @@
 use crate::api::error::ApiError;
 use crate::config::ecosystem::AppConfig;
 use crate::daemon::state::DaemonState;
-use crate::models::api_types::{ProcessNotificationRequest, StartRequest};
+use crate::models::api_types::{
+    PatchField, ProcessNotificationRequest, StartRequest, UpdateProcessRequest,
+};
 use crate::models::process_status::ProcessStatus;
 use crate::models::project::AssignProjectRequest;
 use crate::process::manager::ManagedProcessSnapshot;
@@ -706,7 +708,7 @@ async fn stream_logs(
 async fn update_process(
     State(state): State<Arc<DaemonState>>,
     Path(id_str): Path<String>,
-    Json(req): Json<StartRequest>,
+    Json(req): Json<UpdateProcessRequest>,
 ) -> Result<Json<Value>, ApiError> {
     let _mutation_guard = state.state_mutation_lock.lock().await;
     let id = resolve(&state, &id_str).await?;
@@ -727,22 +729,27 @@ async fn update_process(
     let namespace = req
         .namespace
         .unwrap_or_else(|| existing_config.namespace.clone());
-    let cron = req.cron.clone().or_else(|| existing_config.cron.clone());
+    let cron = req.cron.resolve_optional(existing_config.cron.clone());
 
-    let mut env = req.env.unwrap_or_else(|| existing_config.env.clone());
+    let mut env = req
+        .env
+        .resolve_value(existing_config.env.clone(), HashMap::new());
     for (key, value) in &mut env {
         if value == crate::models::notification::MASKED_SECRET {
             *value = existing_config.env.get(key).cloned().unwrap_or_default();
         }
     }
 
-    let notify = req.notify.map(|mut config| {
-        if let Some(current) = existing_config.notify.as_ref() {
-            config.preserve_masked_secrets(current);
+    let notify = match req.notify {
+        PatchField::Missing => existing_config.notify.clone(),
+        PatchField::Null => None,
+        PatchField::Value(mut config) => {
+            if let Some(current) = existing_config.notify.as_ref() {
+                config.preserve_masked_secrets(current);
+            }
+            Some(config)
         }
-        config
-    });
-    let notify = notify.or_else(|| existing_config.notify.clone());
+    };
     if let Some(config) = notify.as_ref() {
         config
             .validate()
@@ -756,9 +763,9 @@ async fn update_process(
     let config = AppConfig {
         name,
         project_id: existing_config.project_id,
-        script: req.script,
+        script: req.script.unwrap_or_else(|| existing_config.script.clone()),
         args: req.args.unwrap_or_else(|| existing_config.args.clone()),
-        cwd: req.cwd.or_else(|| existing_config.cwd.clone()),
+        cwd: req.cwd.resolve_optional(existing_config.cwd.clone()),
         instances: existing_config.instances,
         autorestart: req.autorestart.unwrap_or(existing_config.autorestart),
         max_restarts: req.max_restarts.unwrap_or(existing_config.max_restarts),
@@ -781,7 +788,9 @@ async fn update_process(
         cron_last_run: existing_config.cron_last_run,
         cron_next_run: existing_config.cron_next_run,
         notify,
-        log_alert: req.log_alert.or_else(|| existing_config.log_alert.clone()),
+        log_alert: req
+            .log_alert
+            .resolve_optional(existing_config.log_alert.clone()),
         env_file: existing_config.env_file.clone(),
         health_check_url: existing_config.health_check_url.clone(),
         health_check_interval_secs: existing_config.health_check_interval_secs,

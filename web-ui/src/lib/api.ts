@@ -25,6 +25,7 @@ import type {
   TunnelProvider,
   TunnelSettings,
   UpdateInfo,
+  UpdateProcessBody,
 } from '@/types'
 import {
   isAuthSession,
@@ -593,7 +594,7 @@ export const api = {
       body: JSON.stringify(name ? { name } : {}),
     }),
 
-  updateProcess: (id: string, body: StartProcessBody): Promise<ProcessInfo> =>
+  updateProcess: (id: string, body: UpdateProcessBody): Promise<ProcessInfo> =>
     validatedRequest(`/processes/${id}`, isProcessInfo, '服务端返回了无效的进程详情', {
       method: 'PATCH',
       body: JSON.stringify(body),

@@ -5,7 +5,8 @@ import { useParams } from 'react-router-dom'
 import { FolderOpen, Save, Bell, ChevronDown, ChevronRight } from 'lucide-react'
 import { NamespaceInput } from '@/components/NamespaceInput'
 import { api } from '@/lib/api'
-import { parseArgs, parseDotEnv, envToString } from '@/lib/utils'
+import { envToString } from '@/lib/utils'
+import { buildProcessUpdateBody } from '@/lib/processPatch'
 import { FormCard, FormField, FormRow } from '@/components/FormLayout'
 import { FolderBrowser } from '@/components/FolderBrowser'
 import { inputStyle, primaryBtnStyle, browseBtnStyle } from './formStyles'
@@ -162,20 +163,22 @@ export default function EditPage({ onDone }: Props) {
     setLoading(true)
     let processUpdated = false
     try {
-      const cronVal = cron.trim() || undefined
-      await api.updateProcess(id, {
-        script: script.trim(),
-        ...(name.trim() && { name: name.trim() }),
-        ...(cwd.trim() && { cwd: cwd.trim() }),
-        namespace: namespace.trim() || 'default',
-        ...(argsStr.trim() && { args: parseArgs(argsStr.trim()) }),
-        env: parseDotEnv(envStr),
-        autorestart,
-        watch,
-        max_restarts: maxRestarts,
-        ...(cronVal && { cron: cronVal }),
-        ...(notify && { notify }),
-      })
+      await api.updateProcess(
+        id,
+        buildProcessUpdateBody({
+          script,
+          name,
+          cwd,
+          namespace,
+          args: argsStr,
+          env: envStr,
+          autorestart,
+          watch,
+          maxRestarts,
+          cron,
+          notify,
+        })
+      )
       processUpdated = true
       if (saveToFile && envStr.trim()) {
         await api.saveEnvFile(id, envStr)

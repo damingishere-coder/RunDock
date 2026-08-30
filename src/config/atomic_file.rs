@@ -255,20 +255,28 @@ where
     F: Fn(&T) -> Result<()>,
 {
     let _file_guard = lock_file_operations();
+    load_json_with_backup_validated_unlocked(path, &validate)
+}
+
+fn load_json_with_backup_validated_unlocked<T, F>(path: &Path, validate: &F) -> Result<T>
+where
+    T: DeserializeOwned + Default,
+    F: Fn(&T) -> Result<()>,
+{
     let backup_path = path.with_extension("json.bak");
     match read_bounded(path) {
-        Ok(content) => match parse_and_validate(&content, &validate) {
+        Ok(content) => match parse_and_validate(&content, validate) {
             Ok(value) => {
-                repair_missing_or_invalid_backup::<T, _>(&backup_path, &content, &validate);
+                repair_missing_or_invalid_backup::<T, _>(&backup_path, &content, validate);
                 Ok(value)
             }
             Err(primary_error) => {
-                load_json_backup_validated(&backup_path, &primary_error, &validate)
+                load_json_backup_validated(&backup_path, &primary_error, validate)
             }
         },
         Err(primary_error) if primary_error.kind() == std::io::ErrorKind::NotFound => {
             match read_bounded(&backup_path) {
-                Ok(backup) => parse_and_validate(&backup, &validate).with_context(|| {
+                Ok(backup) => parse_and_validate(&backup, validate).with_context(|| {
                     format!(
                         "primary JSON is absent; backup is invalid: {}",
                         backup_path.display()
@@ -287,7 +295,7 @@ where
                 }),
             }
         }
-        Err(primary_error) => load_json_backup_validated(&backup_path, &primary_error, &validate),
+        Err(primary_error) => load_json_backup_validated(&backup_path, &primary_error, validate),
     }
 }
 
@@ -355,6 +363,18 @@ where
     F: Fn(&T) -> Result<()>,
 {
     let _file_guard = lock_file_operations();
+    write_json_with_backup_validated_unlocked(path, value, &validate)
+}
+
+fn write_json_with_backup_validated_unlocked<T, F>(
+    path: &Path,
+    value: &T,
+    validate: &F,
+) -> Result<()>
+where
+    T: Serialize + DeserializeOwned,
+    F: Fn(&T) -> Result<()>,
+{
     validate(value).context("refusing to persist a semantically invalid JSON document")?;
     let content = serde_json::to_vec_pretty(value)?;
     if content.len() as u64 > MAX_JSON_DOCUMENT_BYTES {
@@ -364,8 +384,8 @@ where
         );
     }
     let backup_path = path.with_extension("json.bak");
-    let primary_previous = read_validated_candidate::<T, _>(path, &validate);
-    let backup_previous = read_validated_candidate::<T, _>(&backup_path, &validate);
+    let primary_previous = read_validated_candidate::<T, _>(path, validate);
+    let backup_previous = read_validated_candidate::<T, _>(&backup_path, validate);
     let primary_is_valid = matches!(primary_previous, Ok(Some(_)));
     let recovered_from_backup = !primary_is_valid && matches!(backup_previous, Ok(Some(_)));
     let validated_previous = match (primary_previous, backup_previous) {
@@ -390,6 +410,22 @@ where
         write_with_backup_unlocked(&backup_path, &content, None)?;
     }
     Ok(())
+}
+
+/// Atomically load, validate, mutate, revalidate, and persist one JSON
+/// document under the same file-operation lock.
+pub fn update_json_with_backup_validated<T, F, U>(path: &Path, validate: F, update: U) -> Result<T>
+where
+    T: Serialize + DeserializeOwned + Default,
+    F: Fn(&T) -> Result<()>,
+    U: FnOnce(&mut T) -> Result<()>,
+{
+    let _file_guard = lock_file_operations();
+    let mut value = load_json_with_backup_validated_unlocked(path, &validate)?;
+    update(&mut value)?;
+    validate(&value).context("updated JSON document failed semantic validation")?;
+    write_json_with_backup_validated_unlocked(path, &value, &validate)?;
+    Ok(value)
 }
 
 fn read_validated_candidate<T, F>(path: &Path, validate: &F) -> Result<Option<Vec<u8>>>
