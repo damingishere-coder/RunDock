@@ -3,6 +3,7 @@
 /// Owns a platform process-tree boundary. Short-lived Unix operations terminate
 /// the group on drop; daemon-owned groups explicitly opt into crash survival and
 /// remain terminable through `terminate_and_wait`.
+#[derive(Debug)]
 pub struct ProcessTreeGuard {
     #[cfg(windows)]
     job: isize,
@@ -12,6 +13,305 @@ pub struct ProcessTreeGuard {
     leader_start_time_secs: u64,
     #[cfg(unix)]
     terminate_on_drop: bool,
+}
+
+impl ProcessTreeGuard {
+    /// Attach the newly spawned child to an owned process-tree boundary. If the
+    /// boundary cannot be established, synchronously clean up the complete
+    /// tree before returning the attachment error.
+    pub async fn attach_or_terminate(
+        child: &mut tokio::process::Child,
+        pid: u32,
+        owner: &str,
+    ) -> anyhow::Result<Self> {
+        Self::attach_or_terminate_with(child, pid, owner, Self::new).await
+    }
+
+    async fn attach_or_terminate_with<F>(
+        child: &mut tokio::process::Child,
+        pid: u32,
+        owner: &str,
+        attach: F,
+    ) -> anyhow::Result<Self>
+    where
+        F: FnOnce(u32, &str) -> anyhow::Result<Self>,
+    {
+        match attach(pid, owner) {
+            Ok(guard) => Ok(guard),
+            Err(attach_error) => {
+                if let Err(cleanup_error) = cleanup_unowned_spawned_tree(child, pid).await {
+                    return Err(anyhow::anyhow!(
+                        "failed to establish process-tree ownership: {attach_error}; fallback tree cleanup could not be confirmed: {cleanup_error}"
+                    ));
+                }
+                Err(attach_error).map_err(|error| {
+                    error.context(
+                        "failed to establish process-tree ownership; spawned tree was terminated",
+                    )
+                })
+            }
+        }
+    }
+}
+
+#[cfg(unix)]
+async fn cleanup_unowned_spawned_tree(
+    child: &mut tokio::process::Child,
+    pid: u32,
+) -> anyhow::Result<()> {
+    let process_group = libc::pid_t::try_from(pid)
+        .map_err(|_| anyhow::anyhow!("PID does not fit a process-group id"))?;
+    let actual_group = unsafe { libc::getpgid(process_group) };
+    anyhow::ensure!(
+        actual_group == process_group,
+        "refusing fallback cleanup because process {pid} is not its process-group leader"
+    );
+
+    let signal_result = unsafe { libc::kill(-process_group, libc::SIGKILL) };
+    if signal_result != 0 {
+        let error = std::io::Error::last_os_error();
+        anyhow::ensure!(
+            error.raw_os_error() == Some(libc::ESRCH),
+            "failed to terminate fallback process group {process_group}: {error}"
+        );
+    }
+    let _ = tokio::time::timeout(std::time::Duration::from_secs(5), child.wait())
+        .await
+        .map_err(|_| {
+            anyhow::anyhow!("fallback process-group leader did not exit within 5 seconds")
+        })??;
+    for _ in 0..50 {
+        let exists = unsafe { libc::kill(-process_group, 0) } == 0
+            || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM);
+        if !exists {
+            return Ok(());
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+    anyhow::bail!(
+        "fallback process group {process_group} still contains descendants after termination"
+    )
+}
+
+#[cfg(windows)]
+fn windows_process_snapshot() -> anyhow::Result<Vec<(u32, u32)>> {
+    use anyhow::Context;
+    use windows::Win32::Foundation::CloseHandle;
+    use windows::Win32::System::Diagnostics::ToolHelp::{
+        CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W,
+        TH32CS_SNAPPROCESS,
+    };
+
+    let snapshot = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) }
+        .context("failed to snapshot Windows processes")?;
+    let result = (|| -> anyhow::Result<Vec<(u32, u32)>> {
+        let mut entry = PROCESSENTRY32W {
+            dwSize: std::mem::size_of::<PROCESSENTRY32W>() as u32,
+            ..Default::default()
+        };
+        let mut processes = Vec::new();
+        unsafe { Process32FirstW(snapshot, &mut entry) }
+            .context("failed to enumerate the first Windows process")?;
+        loop {
+            processes.push((entry.th32ProcessID, entry.th32ParentProcessID));
+            entry.dwSize = std::mem::size_of::<PROCESSENTRY32W>() as u32;
+            if let Err(error) = unsafe { Process32NextW(snapshot, &mut entry) } {
+                if error.code().0 == 0x8007_0012_u32 as i32 {
+                    break;
+                }
+                return Err(error).context("Windows process enumeration failed before completion");
+            }
+        }
+        Ok(processes)
+    })();
+    unsafe {
+        let _ = CloseHandle(snapshot);
+    }
+    result
+}
+
+#[cfg(windows)]
+fn windows_descendants(root_pid: u32, processes: &[(u32, u32)]) -> std::collections::HashSet<u32> {
+    let mut owned = std::collections::HashSet::from([root_pid]);
+    loop {
+        let before = owned.len();
+        for &(pid, parent) in processes {
+            if owned.contains(&parent) {
+                owned.insert(pid);
+            }
+        }
+        if owned.len() == before {
+            return owned;
+        }
+    }
+}
+
+#[cfg(windows)]
+fn suspend_windows_tree_threads(
+    owned: &std::collections::HashSet<u32>,
+) -> anyhow::Result<Vec<windows::Win32::Foundation::HANDLE>> {
+    use anyhow::Context;
+    use windows::Win32::Foundation::CloseHandle;
+    use windows::Win32::System::Diagnostics::ToolHelp::{
+        CreateToolhelp32Snapshot, Thread32First, Thread32Next, TH32CS_SNAPTHREAD, THREADENTRY32,
+    };
+    use windows::Win32::System::Threading::{OpenThread, SuspendThread, THREAD_SUSPEND_RESUME};
+
+    let snapshot = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0) }
+        .context("failed to snapshot Windows threads")?;
+    let mut suspended = Vec::new();
+    let result = (|| -> anyhow::Result<()> {
+        let mut entry = THREADENTRY32 {
+            dwSize: std::mem::size_of::<THREADENTRY32>() as u32,
+            ..Default::default()
+        };
+        unsafe { Thread32First(snapshot, &mut entry) }
+            .context("failed to enumerate the first Windows thread")?;
+        loop {
+            if owned.contains(&entry.th32OwnerProcessID) {
+                let thread =
+                    unsafe { OpenThread(THREAD_SUSPEND_RESUME, false, entry.th32ThreadID) }
+                        .with_context(|| {
+                            format!(
+                                "failed to open thread {} for suspension",
+                                entry.th32ThreadID
+                            )
+                        })?;
+                if unsafe { SuspendThread(thread) } == u32::MAX {
+                    unsafe {
+                        let _ = CloseHandle(thread);
+                    }
+                    anyhow::bail!("failed to suspend thread {}", entry.th32ThreadID);
+                }
+                suspended.push(thread);
+            }
+            entry.dwSize = std::mem::size_of::<THREADENTRY32>() as u32;
+            if let Err(error) = unsafe { Thread32Next(snapshot, &mut entry) } {
+                if error.code().0 == 0x8007_0012_u32 as i32 {
+                    break;
+                }
+                return Err(error).context("Windows thread enumeration failed before completion");
+            }
+        }
+        Ok(())
+    })();
+    unsafe {
+        let _ = CloseHandle(snapshot);
+    }
+    if result.is_err() {
+        use windows::Win32::System::Threading::ResumeThread;
+        for thread in suspended.drain(..) {
+            unsafe {
+                let _ = ResumeThread(thread);
+                let _ = CloseHandle(thread);
+            }
+        }
+        result?;
+    }
+    Ok(suspended)
+}
+
+#[cfg(windows)]
+fn cleanup_unowned_spawned_windows_tree(pid: u32) -> anyhow::Result<()> {
+    use anyhow::Context;
+    use windows::Win32::Foundation::{CloseHandle, HANDLE, WAIT_OBJECT_0};
+    use windows::Win32::System::Threading::{
+        OpenProcess, TerminateProcess, WaitForSingleObject, PROCESS_SYNCHRONIZE, PROCESS_TERMINATE,
+    };
+
+    let mut suspended_threads = Vec::new();
+    let mut owned = std::collections::HashSet::from([pid]);
+    for _ in 0..4 {
+        let snapshot = windows_process_snapshot()?;
+        let discovered = windows_descendants(pid, &snapshot);
+        let new_owned = discovered.difference(&owned).copied().collect::<Vec<_>>();
+        owned.extend(discovered);
+        let newly_suspended = suspend_windows_tree_threads(&owned)?;
+        suspended_threads.extend(newly_suspended);
+        if new_owned.is_empty() {
+            break;
+        }
+    }
+    let final_snapshot = windows_process_snapshot()?;
+    let final_owned = windows_descendants(pid, &final_snapshot);
+    anyhow::ensure!(
+        final_owned.is_subset(&owned),
+        "Windows process tree kept spawning descendants while containment was being established"
+    );
+
+    let mut process_handles: Vec<(u32, HANDLE)> = Vec::new();
+    let mut open_failures = Vec::new();
+    for owned_pid in &owned {
+        match unsafe { OpenProcess(PROCESS_TERMINATE | PROCESS_SYNCHRONIZE, false, *owned_pid) } {
+            Ok(handle) => process_handles.push((*owned_pid, handle)),
+            Err(error) => open_failures.push(format!("PID {owned_pid}: {error}")),
+        }
+    }
+
+    let cleanup = (|| -> anyhow::Result<()> {
+        process_handles.sort_by_key(|(owned_pid, _)| *owned_pid == pid);
+        for &(owned_pid, handle) in &process_handles {
+            if unsafe { WaitForSingleObject(handle, 0) } != WAIT_OBJECT_0 {
+                unsafe { TerminateProcess(handle, 1) }
+                    .with_context(|| format!("failed to terminate fallback process {owned_pid}"))?;
+            }
+        }
+        for &(owned_pid, handle) in &process_handles {
+            anyhow::ensure!(
+                unsafe { WaitForSingleObject(handle, 5_000) } == WAIT_OBJECT_0,
+                "fallback process {owned_pid} did not exit within 5 seconds"
+            );
+        }
+        Ok(())
+    })();
+
+    for (_, handle) in process_handles {
+        unsafe {
+            let _ = CloseHandle(handle);
+        }
+    }
+    for thread in suspended_threads {
+        unsafe {
+            let _ = CloseHandle(thread);
+        }
+    }
+    cleanup?;
+    anyhow::ensure!(
+        open_failures.is_empty(),
+        "could not open every fallback process with stable termination handles: {}",
+        open_failures.join(", ")
+    );
+    for _ in 0..50 {
+        let live_pids = windows_process_snapshot()?
+            .into_iter()
+            .map(|(live_pid, _)| live_pid)
+            .filter(|live_pid| owned.contains(live_pid))
+            .collect::<Vec<_>>();
+        if live_pids.is_empty() {
+            return Ok(());
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    anyhow::bail!("fallback Windows process tree still contains a known root or descendant")
+}
+
+#[cfg(windows)]
+async fn cleanup_unowned_spawned_tree(
+    child: &mut tokio::process::Child,
+    pid: u32,
+) -> anyhow::Result<()> {
+    let cleanup = cleanup_unowned_spawned_windows_tree(pid);
+    let reap = tokio::time::timeout(std::time::Duration::from_secs(5), child.wait())
+        .await
+        .map_err(|_| anyhow::anyhow!("fallback root process did not reap within 5 seconds"))?;
+    match (cleanup, reap) {
+        (Ok(()), Ok(_)) => Ok(()),
+        (Err(cleanup_error), Ok(_)) => Err(cleanup_error),
+        (Ok(()), Err(reap_error)) => Err(reap_error.into()),
+        (Err(cleanup_error), Err(reap_error)) => Err(anyhow::anyhow!(
+            "{cleanup_error}; root process reap also failed: {reap_error}"
+        )),
+    }
 }
 
 impl ProcessTreeGuard {
@@ -347,6 +647,33 @@ mod tests {
         child.kill().unwrap();
         child.wait().unwrap();
     }
+
+    #[tokio::test]
+    async fn failed_attachment_terminates_the_spawned_unix_group() {
+        let mut command = tokio::process::Command::new("sh");
+        command.arg("-c").arg("sleep 30 & wait");
+        command.as_std_mut().process_group(0);
+        let mut child = command.spawn().unwrap();
+        let pid = child.id().unwrap();
+
+        let error = ProcessTreeGuard::attach_or_terminate_with(
+            &mut child,
+            pid,
+            "forced-attach-failure",
+            |_, _| anyhow::bail!("forced attachment failure"),
+        )
+        .await
+        .unwrap_err();
+
+        assert!(error.to_string().contains("spawned tree was terminated"));
+        assert!(child.try_wait().unwrap().is_some());
+        let group = libc::pid_t::try_from(pid).unwrap();
+        assert_ne!(unsafe { libc::kill(-group, 0) }, 0);
+        assert_eq!(
+            std::io::Error::last_os_error().raw_os_error(),
+            Some(libc::ESRCH)
+        );
+    }
 }
 
 #[cfg(all(test, windows))]
@@ -389,5 +716,64 @@ mod windows_tests {
         assert!(child.try_wait().unwrap().is_none());
         child.kill().unwrap();
         child.wait().unwrap();
+    }
+
+    #[tokio::test]
+    async fn failed_attachment_terminates_the_spawned_windows_tree() {
+        const CREATE_BREAKAWAY_FROM_JOB: u32 = 0x0100_0000;
+        const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+        let spawn = |flags| {
+            let mut command = tokio::process::Command::new("powershell.exe");
+            command.args([
+                "-NoLogo",
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                "$child = Start-Process powershell.exe -ArgumentList '-NoLogo -NoProfile -NonInteractive -Command Start-Sleep -Seconds 30' -PassThru; Start-Sleep -Seconds 30",
+            ]);
+            command.creation_flags(flags);
+            command.spawn()
+        };
+        let mut child =
+            match spawn(CREATE_BREAKAWAY_FROM_JOB | CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW) {
+                Ok(child) => child,
+                Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => {
+                    spawn(CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW).unwrap()
+                }
+                Err(error) => panic!("failed to spawn Windows fallback-cleanup test: {error}"),
+            };
+        let pid = child.id().unwrap();
+        let mut observed = std::collections::HashSet::new();
+        for _ in 0..30 {
+            observed = super::windows_descendants(pid, &super::windows_process_snapshot().unwrap());
+            if observed.len() > 1 {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+        assert!(
+            observed.len() > 1,
+            "test process did not create a descendant"
+        );
+
+        let error = ProcessTreeGuard::attach_or_terminate_with(
+            &mut child,
+            pid,
+            "forced-attach-failure",
+            |_, _| anyhow::bail!("forced attachment failure"),
+        )
+        .await
+        .unwrap_err();
+
+        assert!(error.to_string().contains("spawned tree was terminated"));
+        assert!(child.try_wait().unwrap().is_some());
+        for owned_pid in observed {
+            assert!(
+                !crate::process::identity::is_pid_alive(owned_pid),
+                "fallback cleanup left PID {owned_pid} alive"
+            );
+        }
     }
 }

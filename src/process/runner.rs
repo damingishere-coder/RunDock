@@ -277,14 +277,8 @@ pub async fn spawn_process(
     let pid = child
         .id()
         .ok_or_else(|| anyhow::anyhow!("spawned process did not expose a PID"))?;
-    let process_tree = match ProcessTreeGuard::new(pid, &process_id.to_string()) {
-        Ok(process_tree) => process_tree,
-        Err(error) => {
-            let _ = child.kill().await;
-            let _ = child.wait().await;
-            return Err(error).context("failed to establish process-tree ownership");
-        }
-    };
+    let process_tree =
+        ProcessTreeGuard::attach_or_terminate(&mut child, pid, &process_id.to_string()).await?;
 
     Ok(ManagedChild {
         child,

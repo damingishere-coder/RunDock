@@ -184,15 +184,31 @@ impl ProcessManager {
         process: &Arc<RwLock<ManagedProcess>>,
         generation: u64,
     ) -> Result<()> {
-        let process_tree = {
+        let mut cleanup_waits = 0u16;
+        let (process_tree, owned_pid) = loop {
             let mut process = process.write().await;
+            if process.process_tree_cleanup_in_progress {
+                cleanup_waits = cleanup_waits.saturating_add(1);
+                if cleanup_waits >= 240 {
+                    return Err(anyhow!(
+                        "another process-tree cleanup did not finish within 6 seconds"
+                    ));
+                }
+                drop(process);
+                tokio::time::sleep(tokio::time::Duration::from_millis(25)).await;
+                continue;
+            }
             if process.generation != generation {
                 return Err(anyhow!(
                     "process lifecycle changed while cleaning up its process tree"
                 ));
             }
             match process.process_tree.take() {
-                Some(process_tree) => process_tree,
+                Some(process_tree) => {
+                    let owned_pid = process.pid;
+                    process.process_tree_cleanup_in_progress = true;
+                    break (process_tree, owned_pid);
+                }
                 None if process.pid.is_none() => return Ok(()),
                 None => {
                     return Err(anyhow!(
@@ -205,10 +221,17 @@ impl ProcessManager {
 
         if let Err(error) = process_tree.terminate_and_wait().await {
             let mut process = process.write().await;
-            if process.generation == generation && process.process_tree.is_none() {
+            process.process_tree_cleanup_in_progress = false;
+            if process.process_tree.is_none() && process.pid == owned_pid {
                 process.process_tree = Some(process_tree);
             }
             return Err(error);
+        }
+        let mut process = process.write().await;
+        process.process_tree_cleanup_in_progress = false;
+        if process.process_tree.is_none() && process.pid == owned_pid {
+            process.pid = None;
+            process.process_identity = None;
         }
         Ok(())
     }
@@ -2180,6 +2203,80 @@ impl ProcessManager {
         true
     }
 
+    /// Complete one Cron run only after the complete retained process tree is
+    /// confirmed gone. Cleanup failure is terminal for the scheduler and keeps
+    /// ownership metadata available for a later explicit Stop/Delete retry.
+    async fn finish_cron_run(
+        &self,
+        process_id: Uuid,
+        process: &Arc<RwLock<ManagedProcess>>,
+        generation: u64,
+        run: CronRun,
+    ) -> Result<Option<ProcessInfo>> {
+        if let Err(error) = Self::terminate_retained_process_tree(process, generation).await {
+            let changed = {
+                let mut process = process.write().await;
+                if process.generation != generation || !process.desired_running {
+                    false
+                } else {
+                    process.status = ProcessStatus::Errored;
+                    process.desired_running = false;
+                    process.last_exit_code = run.exit_code;
+                    process.stopped_at = Some(Utc::now());
+                    if let Some(handle) = process.health_check_handle.take() {
+                        handle.abort();
+                    }
+                    process.file_watcher = None;
+                    process.log_writer = None;
+                    process.cron_next_run = None;
+                    process.cron_run_history.push(run);
+                    if process.cron_run_history.len() > MAX_CRON_HISTORY {
+                        process.cron_run_history.remove(0);
+                    }
+                    true
+                }
+            };
+            if changed {
+                if let Some(scheduler) = self.cron_schedulers.lock().await.remove(&process_id) {
+                    scheduler.abort();
+                }
+                let _ = self.persistence_tx.send(());
+            }
+            return Err(anyhow!(
+                "cron run exited but its retained process tree could not be confirmed terminated: {error}"
+            ));
+        }
+
+        let info_for_failure = {
+            let mut process = process.write().await;
+            if process.generation != generation || !process.desired_running {
+                return Ok(None);
+            }
+            process.status = ProcessStatus::Sleeping;
+            process.cron_next_run = process.config.cron.as_deref().and_then(next_run);
+            process.pid = None;
+            process.process_identity = None;
+            process.process_tree.take();
+            if let Some(handle) = process.health_check_handle.take() {
+                handle.abort();
+            }
+            process.file_watcher = None;
+            process.log_writer = None;
+            process.last_exit_code = run.exit_code;
+            process.stopped_at = Some(Utc::now());
+            process.cron_run_history.push(run);
+            if process.cron_run_history.len() > MAX_CRON_HISTORY {
+                process.cron_run_history.remove(0);
+            }
+            process
+                .last_exit_code
+                .filter(|code| *code != 0)
+                .map(|_| process.to_info())
+        };
+        let _ = self.persistence_tx.send(());
+        Ok(info_for_failure)
+    }
+
     // @group BusinessLogic > Cron : Background loop that re-spawns cron processes on each tick
     async fn cron_trigger_loop(
         manager: Self,
@@ -2294,7 +2391,7 @@ impl ProcessManager {
                         mpsc::channel::<crate::process::restarter::RestartEvent>(4);
                     let arc2 = Arc::clone(&arc);
                     let notif_exit = Arc::clone(&notif_cron);
-                    let persistence_exit = persistence_tx.clone();
+                    let manager_exit = manager.clone();
 
                     // Handle the exit event inline — record run history, transition to Sleeping, fire CronFailed if needed
                     tokio::spawn(async move {
@@ -2315,48 +2412,29 @@ impl ProcessManager {
                                 exit_code,
                                 duration_secs,
                             };
-                            let info_for_fail = {
-                                let mut proc = arc2.write().await;
-                                if proc.generation != generation || !proc.desired_running {
-                                    return;
+                            let info_for_fail = match manager_exit
+                                .finish_cron_run(process_id, &arc2, generation, run)
+                                .await
+                            {
+                                Ok(info) => info,
+                                Err(error) => {
+                                    tracing::error!(
+                                        %error,
+                                        %process_id,
+                                        "cron run cleanup failed; scheduler stopped to prevent overlapping descendants"
+                                    );
+                                    let proc = arc2.read().await;
+                                    (proc.generation == generation).then(|| proc.to_info())
                                 }
-                                // Only transition back to Sleeping if the job wasn't manually stopped.
-                                // If status is Stopped, the user explicitly stopped it while it was
-                                // running — don't override that decision.
-                                if proc.status != ProcessStatus::Stopped {
-                                    proc.status = ProcessStatus::Sleeping;
-                                    if let Some(expr) = &proc.config.cron.clone() {
-                                        proc.cron_next_run = next_run(expr);
-                                    }
-                                }
-                                proc.pid = None;
-                                proc.process_identity = None;
-                                if let Some(handle) = proc.health_check_handle.take() {
-                                    handle.abort();
-                                }
-                                proc.log_writer = None;
-                                proc.last_exit_code = exit_code;
-                                proc.stopped_at = Some(finished_at);
-                                // Append to history, capped at MAX_CRON_HISTORY
-                                proc.cron_run_history.push(run);
-                                if proc.cron_run_history.len() > MAX_CRON_HISTORY {
-                                    proc.cron_run_history.remove(0);
-                                }
-                                // Capture info for notification (only needed if failed)
-                                exit_code.map(|_| proc.to_info())
                             };
-                            let _ = persistence_exit.send(());
-                            // Fire CronFailed notification on non-zero exit
-                            if let Some(false) = exit_code.map(|c| c == 0) {
-                                if let Some(info) = info_for_fail {
-                                    let store = notif_exit.read().await;
-                                    fire_event(&store, &info, ProcessEvent::CronFailed).await;
-                                    crate::telegram::commands::fire_telegram_notification(
-                                        &info,
-                                        ProcessEvent::CronFailed,
-                                    )
-                                    .await;
-                                }
+                            if let Some(info) = info_for_fail {
+                                let store = notif_exit.read().await;
+                                fire_event(&store, &info, ProcessEvent::CronFailed).await;
+                                crate::telegram::commands::fire_telegram_notification(
+                                    &info,
+                                    ProcessEvent::CronFailed,
+                                )
+                                .await;
                             }
                         }
                     });
@@ -2485,6 +2563,11 @@ impl ProcessManager {
                                 tracing::error!(
                                     "cron: process-tree ownership was lost for PID {pid}; cleanup error: {cleanup_error:?}"
                                 );
+                                if let Some(scheduler) =
+                                    cron_schedulers.lock().await.remove(&process_id)
+                                {
+                                    scheduler.abort();
+                                }
                                 return;
                             };
                             {
@@ -3098,6 +3181,40 @@ mod lifecycle_tests {
     }
 
     #[tokio::test]
+    async fn manual_stop_waits_for_an_in_progress_tree_cleanup() {
+        let manager = ProcessManager::new(Arc::new(RwLock::new(NotificationsStore::default())));
+        let id = Uuid::new_v4();
+        manager
+            .register_stopped(id, test_config(format!("stop-cleanup-race-{id}")))
+            .await;
+        let arc = Arc::clone(manager.registry.get(&id).unwrap().value());
+        {
+            let mut process = arc.write().await;
+            process.status = ProcessStatus::Running;
+            process.desired_running = true;
+            process.generation = 5;
+            process.pid = Some(std::process::id());
+            process.process_tree_cleanup_in_progress = true;
+        }
+        let cleanup_arc = Arc::clone(&arc);
+        tokio::spawn(async move {
+            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+            let mut process = cleanup_arc.write().await;
+            process.process_tree_cleanup_in_progress = false;
+            process.pid = None;
+            process.process_identity = None;
+        });
+
+        let stopped = manager.stop(id).await.unwrap();
+
+        assert_eq!(stopped.status, ProcessStatus::Stopped);
+        assert_eq!(stopped.pid, None);
+        let process = arc.read().await;
+        assert!(!process.desired_running);
+        assert!(!process.process_tree_cleanup_in_progress);
+    }
+
+    #[tokio::test]
     async fn disabled_config_cancels_a_queued_adopted_restart() {
         let manager = ProcessManager::new(Arc::new(RwLock::new(NotificationsStore::default())));
         let id = Uuid::new_v4();
@@ -3202,6 +3319,55 @@ mod lifecycle_tests {
         if let Some(scheduler) = manager.cron_schedulers.lock().await.remove(&id) {
             scheduler.abort();
         };
+    }
+
+    #[tokio::test]
+    async fn cron_cleanup_failure_stops_scheduler_and_retains_diagnostics() {
+        let manager = ProcessManager::new(Arc::new(RwLock::new(NotificationsStore::default())));
+        let id = Uuid::new_v4();
+        let mut config = test_config(format!("cron-cleanup-failure-{id}"));
+        let expression = "0 * * * * *".to_string();
+        config.cron = Some(expression.clone());
+        manager.register_stopped(id, config).await;
+        let scheduler =
+            CronScheduler::start(id, &expression, manager.cron_trigger_tx.clone()).unwrap();
+        manager.cron_schedulers.lock().await.insert(id, scheduler);
+        let generation = {
+            let entry = manager.registry.get(&id).unwrap();
+            let mut process = entry.write().await;
+            process.status = ProcessStatus::Running;
+            process.desired_running = true;
+            process.generation = 12;
+            process.pid = Some(std::process::id());
+            process.generation
+        };
+        let run = CronRun {
+            run_at: Utc::now(),
+            exit_code: Some(0),
+            duration_secs: 1,
+        };
+
+        let error = manager
+            .finish_cron_run(
+                id,
+                manager.registry.get(&id).unwrap().value(),
+                generation,
+                run,
+            )
+            .await
+            .unwrap_err();
+
+        assert!(error
+            .to_string()
+            .contains("retained process tree could not be confirmed terminated"));
+        assert!(!manager.cron_schedulers.lock().await.contains_key(&id));
+        let entry = manager.registry.get(&id).unwrap();
+        let process = entry.read().await;
+        assert_eq!(process.status, ProcessStatus::Errored);
+        assert!(!process.desired_running);
+        assert_eq!(process.pid, Some(std::process::id()));
+        assert_eq!(process.cron_run_history.len(), 1);
+        assert!(process.cron_next_run.is_none());
     }
 
     #[tokio::test]
@@ -3413,6 +3579,84 @@ mod lifecycle_tests {
             descendant_pid,
             &descendant_identity
         ));
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn cron_root_exit_terminates_descendants_before_sleeping() {
+        let manager = ProcessManager::new(Arc::new(RwLock::new(NotificationsStore::default())));
+        let id = Uuid::new_v4();
+        let directory = std::env::temp_dir().join(format!("rundock-cron-tree-{id}"));
+        std::fs::create_dir_all(&directory).unwrap();
+        let pid_file = directory.join("descendant.pid");
+        let pid_path = pid_file.to_string_lossy().replace('\'', "''");
+        let command = format!(
+            "$child = Start-Process -FilePath powershell.exe -ArgumentList @('-NoProfile', '-Command', 'Start-Sleep -Seconds 30') -PassThru; $child.Id | Set-Content -Encoding ascii '{pid_path}'; Start-Sleep -Seconds 1"
+        );
+        let mut config = test_config(format!("cron-tree-{id}"));
+        config.script = "powershell.exe".to_string();
+        config.args = vec![
+            "-NoLogo".to_string(),
+            "-NoProfile".to_string(),
+            "-NonInteractive".to_string(),
+            "-Command".to_string(),
+            command,
+        ];
+        config.autorestart = false;
+        config.cron = Some("0 0 0 1 1 *".to_string());
+
+        let started = manager.start(config).await.unwrap();
+        tokio::time::timeout(tokio::time::Duration::from_secs(10), async {
+            loop {
+                let info = manager.get(started.id).await.unwrap();
+                if info.status == ProcessStatus::Sleeping && info.pid.is_none() {
+                    break;
+                }
+                tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+            }
+        })
+        .await
+        .expect("initial cron run did not settle");
+        if pid_file.exists() {
+            std::fs::remove_file(&pid_file).unwrap();
+        }
+        manager.cron_trigger_tx.send(started.id).await.unwrap();
+        for _ in 0..50 {
+            if pid_file.exists() {
+                break;
+            }
+            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+        }
+        let descendant_pid: u32 = std::fs::read_to_string(&pid_file)
+            .expect("descendant did not publish its PID")
+            .trim()
+            .parse()
+            .unwrap();
+        let descendant_identity =
+            crate::process::identity::capture_process_identity(descendant_pid)
+                .expect("managed descendant process has no identity");
+
+        let info = tokio::time::timeout(tokio::time::Duration::from_secs(10), async {
+            loop {
+                let info = manager.get(started.id).await.unwrap();
+                if info.status == ProcessStatus::Errored || !info.cron_run_history.is_empty() {
+                    break info;
+                }
+                tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+            }
+        })
+        .await
+        .expect("cron exit did not settle");
+
+        assert_eq!(info.status, ProcessStatus::Sleeping);
+        assert_eq!(info.pid, None);
+        assert_eq!(info.cron_run_history.len(), 1);
+        assert!(!crate::process::identity::process_identity_matches(
+            descendant_pid,
+            &descendant_identity
+        ));
+        manager.stop(started.id).await.unwrap();
         std::fs::remove_dir_all(directory).unwrap();
     }
 

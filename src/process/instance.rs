@@ -47,6 +47,9 @@ pub struct ManagedProcess {
     pub process_identity: Option<ProcessIdentity>,
     /// Re-opened process-tree ownership for a process adopted after daemon handoff.
     pub process_tree: Option<ProcessTreeGuard>,
+    /// Another lifecycle path is currently terminating `process_tree`. Other
+    /// stop requests wait for that proof instead of treating the guard as lost.
+    pub process_tree_cleanup_in_progress: bool,
     pub restart_count: u32,
     pub created_at: DateTime<Utc>,
     pub started_at: Option<DateTime<Utc>>,
@@ -96,6 +99,7 @@ impl ManagedProcess {
             pid: None,
             process_identity: None,
             process_tree: None,
+            process_tree_cleanup_in_progress: false,
             restart_count: 0,
             created_at: Utc::now(),
             started_at: None,

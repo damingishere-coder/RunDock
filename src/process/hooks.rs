@@ -1,7 +1,7 @@
 // @group BusinessLogic > Hooks : Pre/post lifecycle hook executor
 
 use crate::process::tree::ProcessTreeGuard;
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use std::collections::HashMap;
 use std::process::Stdio;
 
@@ -57,14 +57,10 @@ pub async fn run_hook(
     let pid = child
         .id()
         .ok_or_else(|| anyhow::anyhow!("lifecycle hook did not expose a PID"))?;
-    let process_tree = match ProcessTreeGuard::new(pid, &format!("hook-{pid}")) {
-        Ok(process_tree) => process_tree,
-        Err(error) => {
-            let _ = child.kill().await;
-            let _ = child.wait().await;
-            return Err(error.context("failed to contain lifecycle hook process tree"));
-        }
-    };
+    let process_tree =
+        ProcessTreeGuard::attach_or_terminate(&mut child, pid, &format!("hook-{pid}"))
+            .await
+            .context("failed to contain lifecycle hook process tree")?;
     let status = match tokio::time::timeout(std::time::Duration::from_secs(60), child.wait()).await
     {
         Ok(result) => result?,
