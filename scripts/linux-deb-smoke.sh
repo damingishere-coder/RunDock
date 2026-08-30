@@ -24,6 +24,19 @@ cleanup() {
 }
 trap cleanup EXIT
 
+wait_for_health() {
+    for _ in $(seq 1 80); do
+        if curl --fail --silent --max-time 1 http://127.0.0.1:2999/api/v1/system/health \
+            | grep -Eq '"status":"(ok|degraded)"'; then
+            return 0
+        fi
+        sleep 0.25
+    done
+    sudo systemctl status --no-pager alter-daemon.service || true
+    sudo journalctl --no-pager -u alter-daemon.service -n 100 || true
+    return 1
+}
+
 [[ -x "$BINARY" ]] || { echo "release binary is not executable: $BINARY" >&2; exit 66; }
 [[ -d /run/systemd/system ]] || { echo "systemd is required for the Debian lifecycle smoke" >&2; exit 69; }
 
@@ -39,19 +52,14 @@ sudo dpkg -i "$SMOKE_DIR/alter_0.0.0_amd64.deb"
 dpkg-query -W -f='${Status}' alter | grep -F 'install ok installed'
 systemctl cat alter-daemon.service | grep -F 'ExecStart=/usr/local/bin/alter --internal-daemon --port 2999'
 sudo systemctl enable --now alter-daemon.service
-
-for _ in $(seq 1 80); do
-    if curl --fail --silent --max-time 1 http://127.0.0.1:2999/api/v1/system/health >/dev/null; then break; fi
-    sleep 0.25
-done
-curl --fail --silent --show-error http://127.0.0.1:2999/api/v1/system/health | grep -Eq '"status":"(ok|degraded)"'
+wait_for_health
 sudo install -m 600 /dev/null "$MARKER"
 printf 'preserve\n' | sudo tee "$MARKER" >/dev/null
 
 sudo dpkg -i "$SMOKE_DIR/alter_0.0.1_amd64.deb"
 systemctl is-enabled --quiet alter-daemon.service
 systemctl is-active --quiet alter-daemon.service
-curl --fail --silent --show-error http://127.0.0.1:2999/api/v1/system/health | grep -Eq '"status":"(ok|degraded)"'
+wait_for_health
 sudo grep -Fx 'preserve' "$MARKER"
 dpkg-query -W -f='${Version}' alter | grep -Fx '0.0.1'
 
