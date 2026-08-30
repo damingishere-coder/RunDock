@@ -217,9 +217,7 @@ async fn cleanup_unowned_spawned_pty_tree(
             "failed to terminate fallback PTY process group {process_group}: {error}"
         );
     }
-    child
-        .wait()
-        .map_err(|error| anyhow::anyhow!("failed to reap fallback PTY root: {error}"))?;
+    reap_spawned_pty_bounded(child, "fallback PTY root").await?;
     for _ in 0..50 {
         let exists = unsafe { libc::kill(-process_group, 0) } == 0
             || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM);
@@ -229,6 +227,23 @@ async fn cleanup_unowned_spawned_pty_tree(
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     }
     anyhow::bail!("fallback PTY process group still contains descendants")
+}
+
+async fn reap_spawned_pty_bounded(
+    child: &mut (dyn portable_pty::Child + Send),
+    description: &str,
+) -> anyhow::Result<()> {
+    for _ in 0..50 {
+        if child
+            .try_wait()
+            .map_err(|error| anyhow::anyhow!("failed to query {description}: {error}"))?
+            .is_some()
+        {
+            return Ok(());
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+    anyhow::bail!("{description} did not exit within 5 seconds")
 }
 
 #[cfg(windows)]
@@ -350,7 +365,10 @@ fn suspend_windows_tree_threads(
 }
 
 #[cfg(windows)]
-fn cleanup_unowned_spawned_windows_tree(pid: u32) -> anyhow::Result<()> {
+fn cleanup_unowned_spawned_windows_tree_with_root(
+    pid: u32,
+    stable_root: Option<windows::Win32::Foundation::HANDLE>,
+) -> anyhow::Result<()> {
     use anyhow::Context;
     use windows::Win32::Foundation::{CloseHandle, HANDLE, WAIT_OBJECT_0};
     use windows::Win32::System::Threading::{
@@ -359,14 +377,20 @@ fn cleanup_unowned_spawned_windows_tree(pid: u32) -> anyhow::Result<()> {
 
     let mut suspended_threads = Vec::new();
     let mut owned = std::collections::HashSet::from([pid]);
+    let mut suspended_pids = std::collections::HashSet::new();
     let containment = (|| -> anyhow::Result<()> {
         for _ in 0..4 {
             let snapshot = windows_process_snapshot()?;
             let discovered = windows_descendants(pid, &snapshot);
             let new_owned = discovered.difference(&owned).copied().collect::<Vec<_>>();
+            let to_suspend = discovered
+                .difference(&suspended_pids)
+                .copied()
+                .collect::<std::collections::HashSet<_>>();
             owned.extend(discovered);
-            let newly_suspended = suspend_windows_tree_threads(&owned)?;
+            let newly_suspended = suspend_windows_tree_threads(&to_suspend)?;
             suspended_threads.extend(newly_suspended);
+            suspended_pids.extend(to_suspend);
             if new_owned.is_empty() {
                 break;
             }
@@ -390,24 +414,30 @@ fn cleanup_unowned_spawned_windows_tree(pid: u32) -> anyhow::Result<()> {
         return Err(error);
     }
 
-    let mut process_handles: Vec<(u32, HANDLE)> = Vec::new();
+    let mut process_handles: Vec<(u32, HANDLE, bool)> = Vec::new();
     let mut open_failures = Vec::new();
     for owned_pid in &owned {
+        if *owned_pid == pid {
+            if let Some(root) = stable_root {
+                process_handles.push((*owned_pid, root, false));
+                continue;
+            }
+        }
         match unsafe { OpenProcess(PROCESS_TERMINATE | PROCESS_SYNCHRONIZE, false, *owned_pid) } {
-            Ok(handle) => process_handles.push((*owned_pid, handle)),
+            Ok(handle) => process_handles.push((*owned_pid, handle, true)),
             Err(error) => open_failures.push(format!("PID {owned_pid}: {error}")),
         }
     }
 
     let cleanup = (|| -> anyhow::Result<()> {
-        process_handles.sort_by_key(|(owned_pid, _)| *owned_pid == pid);
-        for &(owned_pid, handle) in &process_handles {
+        process_handles.sort_by_key(|(owned_pid, _, _)| *owned_pid == pid);
+        for &(owned_pid, handle, _) in &process_handles {
             if unsafe { WaitForSingleObject(handle, 0) } != WAIT_OBJECT_0 {
                 unsafe { TerminateProcess(handle, 1) }
                     .with_context(|| format!("failed to terminate fallback process {owned_pid}"))?;
             }
         }
-        for &(owned_pid, handle) in &process_handles {
+        for &(owned_pid, handle, _) in &process_handles {
             anyhow::ensure!(
                 unsafe { WaitForSingleObject(handle, 5_000) } == WAIT_OBJECT_0,
                 "fallback process {owned_pid} did not exit within 5 seconds"
@@ -416,13 +446,20 @@ fn cleanup_unowned_spawned_windows_tree(pid: u32) -> anyhow::Result<()> {
         Ok(())
     })();
 
-    for (_, handle) in process_handles {
-        unsafe {
-            let _ = CloseHandle(handle);
+    for (_, handle, close_when_done) in process_handles {
+        if close_when_done {
+            unsafe {
+                let _ = CloseHandle(handle);
+            }
         }
     }
+    let cleanup_confirmed = cleanup.is_ok() && open_failures.is_empty();
     for thread in suspended_threads {
         unsafe {
+            if !cleanup_confirmed {
+                use windows::Win32::System::Threading::ResumeThread;
+                let _ = ResumeThread(thread);
+            }
             let _ = CloseHandle(thread);
         }
     }
@@ -444,6 +481,11 @@ fn cleanup_unowned_spawned_windows_tree(pid: u32) -> anyhow::Result<()> {
         std::thread::sleep(std::time::Duration::from_millis(100));
     }
     anyhow::bail!("fallback Windows process tree still contains a known root or descendant")
+}
+
+#[cfg(windows)]
+fn cleanup_unowned_spawned_windows_tree(pid: u32) -> anyhow::Result<()> {
+    cleanup_unowned_spawned_windows_tree_with_root(pid, None)
 }
 
 #[cfg(windows)]
@@ -472,7 +514,7 @@ fn cleanup_unowned_existing_windows_tree(
             crate::process::identity::process_identity_matches(pid, expected),
             "refusing fallback tree cleanup for PID {pid}: immutable process identity no longer matches"
         );
-        cleanup_unowned_spawned_windows_tree(pid)
+        cleanup_unowned_spawned_windows_tree_with_root(pid, Some(root))
     })();
     unsafe {
         let _ = CloseHandle(root);
@@ -514,12 +556,12 @@ async fn cleanup_unowned_spawned_pty_tree(
         .map_err(|error| anyhow::anyhow!("Windows PTY fallback cleanup task failed: {error}"))?;
     match cleanup {
         Ok(()) => {
-            child.wait()?;
+            reap_spawned_pty_bounded(child, "fallback Windows PTY root").await?;
             Ok(())
         }
         Err(cleanup_error) => match child.kill() {
-            Ok(()) => match child.wait() {
-                Ok(_) => Err(cleanup_error),
+            Ok(()) => match reap_spawned_pty_bounded(child, "fallback Windows PTY root").await {
+                Ok(()) => Err(cleanup_error),
                 Err(reap_error) => Err(anyhow::anyhow!(
                     "{cleanup_error}; fallback PTY root reap also failed: {reap_error}"
                 )),
@@ -536,7 +578,9 @@ async fn cleanup_unowned_spawned_tree(
     child: &mut tokio::process::Child,
     pid: u32,
 ) -> anyhow::Result<()> {
-    let cleanup = cleanup_unowned_spawned_windows_tree(pid);
+    let cleanup = tokio::task::spawn_blocking(move || cleanup_unowned_spawned_windows_tree(pid))
+        .await
+        .map_err(|error| anyhow::anyhow!("Windows fallback cleanup task failed: {error}"))?;
     let reap = tokio::time::timeout(std::time::Duration::from_secs(5), child.wait())
         .await
         .map_err(|_| anyhow::anyhow!("fallback root process did not reap within 5 seconds"))?;
@@ -901,7 +945,10 @@ mod tests {
         .await
         .unwrap_err();
 
-        assert!(error.to_string().contains("spawned tree was terminated"));
+        assert!(
+            error.to_string().contains("spawned tree was terminated"),
+            "unexpected fallback result: {error:#}"
+        );
         assert!(child.try_wait().unwrap().is_some());
         let group = libc::pid_t::try_from(pid).unwrap();
         assert_ne!(unsafe { libc::kill(-group, 0) }, 0);
@@ -1003,7 +1050,10 @@ mod windows_tests {
         .await
         .unwrap_err();
 
-        assert!(error.to_string().contains("spawned tree was terminated"));
+        assert!(
+            error.to_string().contains("spawned tree was terminated"),
+            "unexpected fallback result: {error:#}"
+        );
         assert!(child.try_wait().unwrap().is_some());
         for owned_pid in observed {
             assert!(

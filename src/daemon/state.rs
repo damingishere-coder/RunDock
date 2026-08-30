@@ -766,6 +766,15 @@ pub(crate) struct RestartAttempt {
 
 fn saved_app_from_snapshot(snapshot: ManagedProcessSnapshot) -> SavedApp {
     let info = snapshot.info;
+    let cron_was_active = info.cron.is_some()
+        && snapshot.desired_running
+        && matches!(
+            info.status,
+            crate::models::process_status::ProcessStatus::Sleeping
+                | crate::models::process_status::ProcessStatus::Starting
+                | crate::models::process_status::ProcessStatus::Running
+                | crate::models::process_status::ProcessStatus::Stopping
+        );
     SavedApp {
         id: info.id,
         config: snapshot.config,
@@ -773,13 +782,9 @@ fn saved_app_from_snapshot(snapshot: ManagedProcessSnapshot) -> SavedApp {
         cron_run_history: info.cron_run_history,
         last_pid: info.pid,
         process_identity: snapshot.process_identity,
-        // Cron scheduler was active if the job was Sleeping at save time.
-        // Stopped = user manually stopped it; don't re-arm on next daemon start.
-        cron_was_active: info.cron.is_some()
-            && !matches!(
-                info.status,
-                crate::models::process_status::ProcessStatus::Stopped
-            ),
+        // A transient in-flight state can still belong to an active Cron job,
+        // but failed/crashed/stopped jobs must remain fail-closed after restart.
+        cron_was_active,
     }
 }
 
@@ -787,6 +792,7 @@ fn saved_app_from_snapshot(snapshot: ManagedProcessSnapshot) -> SavedApp {
 mod tests {
     use super::*;
     use crate::models::process_status::ProcessStatus;
+    use crate::process::instance::ManagedProcess;
     use std::collections::HashMap;
 
     fn isolated_state_path() -> std::path::PathBuf {
@@ -801,6 +807,50 @@ mod tests {
         let loaded = load_saved_state(&path).unwrap();
         assert!(loaded.apps.is_empty());
         std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn cron_snapshot_rearms_only_normal_desired_running_states() {
+        let config: AppConfig = serde_json::from_value(serde_json::json!({
+            "name": "cron-snapshot",
+            "script": "job.exe",
+            "cwd": null,
+            "cron": "0 * * * *"
+        }))
+        .unwrap();
+        let id = Uuid::new_v4();
+
+        let saved_for = |status, desired_running| {
+            let mut process = ManagedProcess::new_with_id(id, config.clone());
+            process.status = status;
+            process.desired_running = desired_running;
+            saved_app_from_snapshot(ManagedProcessSnapshot {
+                info: process.to_info(),
+                config: config.clone(),
+                process_identity: None,
+                desired_running,
+                generation: 1,
+            })
+            .cron_was_active
+        };
+
+        for status in [
+            ProcessStatus::Sleeping,
+            ProcessStatus::Starting,
+            ProcessStatus::Running,
+            ProcessStatus::Stopping,
+        ] {
+            assert!(saved_for(status, true));
+        }
+        for status in [
+            ProcessStatus::Stopped,
+            ProcessStatus::Crashed,
+            ProcessStatus::Errored,
+            ProcessStatus::Watching,
+        ] {
+            assert!(!saved_for(status, true));
+        }
+        assert!(!saved_for(ProcessStatus::Sleeping, false));
     }
 
     #[test]
