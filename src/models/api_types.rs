@@ -100,9 +100,10 @@ pub struct UpdateProcessRequest {
 }
 
 // @group Types > Request : Update only the per-process notification override
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 pub struct ProcessNotificationRequest {
-    pub notify: Option<crate::models::notification::NotificationConfig>,
+    #[serde(default)]
+    pub notify: PatchField<crate::models::notification::NotificationConfig>,
 }
 
 // @group Types > Request : Load an ecosystem config file
@@ -142,7 +143,7 @@ pub struct LogLineDto {
 
 #[cfg(test)]
 mod tests {
-    use super::{PatchField, UpdateProcessRequest};
+    use super::{PatchField, ProcessNotificationRequest, UpdateProcessRequest};
 
     #[test]
     fn update_request_distinguishes_missing_null_and_value() {
@@ -174,5 +175,20 @@ mod tests {
             PatchField::Value("new".to_string()).resolve_optional(Some("old".to_string())),
             Some("new".to_string())
         );
+    }
+
+    #[test]
+    fn notification_request_distinguishes_missing_null_and_value() {
+        let missing: ProcessNotificationRequest =
+            serde_json::from_value(serde_json::json!({})).unwrap();
+        assert!(matches!(missing.notify, PatchField::Missing));
+
+        let cleared: ProcessNotificationRequest =
+            serde_json::from_value(serde_json::json!({ "notify": null })).unwrap();
+        assert!(matches!(cleared.notify, PatchField::Null));
+
+        let replaced: ProcessNotificationRequest =
+            serde_json::from_value(serde_json::json!({ "notify": {} })).unwrap();
+        assert!(matches!(replaced.notify, PatchField::Value(_)));
     }
 }

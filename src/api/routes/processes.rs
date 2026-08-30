@@ -496,10 +496,16 @@ async fn set_process_notifications(
         .await
         .map_err(ApiError::from)?
         .notify;
-    let mut notify = body.notify;
-    if let (Some(candidate), Some(current)) = (notify.as_mut(), previous.as_ref()) {
-        candidate.preserve_masked_secrets(current);
-    }
+    let notify = match body.notify {
+        PatchField::Missing => previous.clone(),
+        PatchField::Null => None,
+        PatchField::Value(mut candidate) => {
+            if let Some(current) = previous.as_ref() {
+                candidate.preserve_masked_secrets(current);
+            }
+            Some(candidate)
+        }
+    };
     if let Some(config) = notify.as_ref() {
         config
             .validate()
