@@ -18,6 +18,7 @@ export function useSingleFlightPoll(
   const activeRef = useRef(false)
   const generationRef = useRef(0)
   const inFlightRef = useRef<Promise<void> | null>(null)
+  const inFlightGenerationRef = useRef<number | null>(null)
   const abortRef = useRef<AbortController | null>(null)
   const consecutiveFailuresRef = useRef(0)
 
@@ -27,9 +28,21 @@ export function useSingleFlightPoll(
 
   const reload = useCallback(async () => {
     if (!activeRef.current) return
-    if (inFlightRef.current) return inFlightRef.current
-
     const generation = generationRef.current
+    const existing = inFlightRef.current
+    if (existing) {
+      const existingGeneration = inFlightGenerationRef.current
+      await existing
+      if (
+        !activeRef.current ||
+        generationRef.current !== generation ||
+        existingGeneration === generation
+      ) {
+        return
+      }
+      if (inFlightRef.current) return inFlightRef.current
+    }
+
     const controller = new AbortController()
     abortRef.current = controller
     const isCurrent = () =>
@@ -46,10 +59,14 @@ export function useSingleFlightPoll(
         }
       })
       .finally(() => {
-        if (inFlightRef.current === request) inFlightRef.current = null
+        if (inFlightRef.current === request) {
+          inFlightRef.current = null
+          inFlightGenerationRef.current = null
+        }
         if (abortRef.current === controller) abortRef.current = null
       })
     inFlightRef.current = request
+    inFlightGenerationRef.current = generation
     return request
   }, [])
 

@@ -87,6 +87,32 @@ describe('useSingleFlightPoll', () => {
     expect(task).toHaveBeenCalledTimes(1)
   })
 
+  it('starts the new generation immediately after an aborted request settles', async () => {
+    const task = vi.fn((_isCurrent: () => boolean, signal: AbortSignal) => {
+      if (task.mock.calls.length === 1) {
+        return new Promise<void>(resolve => {
+          signal.addEventListener('abort', () => resolve(), { once: true })
+        })
+      }
+      return Promise.resolve()
+    })
+
+    const { rerender } = renderHook(
+      ({ refreshKey }) => useSingleFlightPoll(task, { intervalMs: 10_000, refreshKey }),
+      { initialProps: { refreshKey: 'server-a' } }
+    )
+    await act(async () => Promise.resolve())
+    expect(task).toHaveBeenCalledTimes(1)
+
+    rerender({ refreshKey: 'server-b' })
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(task).toHaveBeenCalledTimes(2)
+  })
+
   it('backs off after failures', async () => {
     vi.useFakeTimers()
     const task = vi.fn().mockRejectedValue(new Error('offline'))
