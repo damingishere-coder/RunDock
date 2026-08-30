@@ -1,7 +1,9 @@
 [CmdletBinding()]
 param(
     [string]$HostUrl = 'http://127.0.0.1:9000',
-    [string]$ScannerPath
+    [string]$ScannerPath,
+    [string]$RustLcovPath,
+    [string]$RustLcovRevision
 )
 
 $ErrorActionPreference = 'Stop'
@@ -67,13 +69,28 @@ try {
     npm --prefix web-ui run build
     if ($LASTEXITCODE -ne 0) { throw 'Embedded frontend build failed.' }
 
-    cargo llvm-cov --version *> $null
-    if ($LASTEXITCODE -ne 0) {
-        throw 'cargo-llvm-cov is required. Install the pinned project version before running this gate.'
-    }
     New-Item -ItemType Directory -Force -Path coverage | Out-Null
-    cargo llvm-cov --all-targets --locked --lcov --output-path coverage/rust-lcov.info --fail-under-lines 20
-    if ($LASTEXITCODE -ne 0) { throw 'Rust LCOV generation failed.' }
+    $rustLcovTarget = Join-Path $repositoryRoot 'coverage\rust-lcov.info'
+    if ([string]::IsNullOrWhiteSpace($RustLcovPath)) {
+        cargo llvm-cov --version *> $null
+        if ($LASTEXITCODE -ne 0) {
+            throw 'cargo-llvm-cov is required. Install the pinned project version before running this gate.'
+        }
+        cargo llvm-cov --all-targets --locked --lcov --output-path $rustLcovTarget --fail-under-lines 20
+        if ($LASTEXITCODE -ne 0) { throw 'Rust LCOV generation failed.' }
+    } else {
+        if ($RustLcovRevision -ne $revision) {
+            throw 'An external Rust LCOV file must declare the exact current HEAD with -RustLcovRevision.'
+        }
+        $resolvedRustLcov = (Resolve-Path -LiteralPath $RustLcovPath).Path
+        if ((Get-Item -LiteralPath $resolvedRustLcov).Length -eq 0) {
+            throw 'The supplied Rust LCOV file is empty.'
+        }
+        if ($resolvedRustLcov -ne $rustLcovTarget) {
+            Copy-Item -LiteralPath $resolvedRustLcov -Destination $rustLcovTarget -Force
+        }
+        Write-Host "Using externally generated Rust LCOV for revision $revision"
+    }
 
     & $scanner "-Dsonar.host.url=$HostUrl" "-Dsonar.scm.revision=$revision"
     if ($LASTEXITCODE -ne 0) { throw 'SonarScanner failed.' }
