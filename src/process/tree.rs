@@ -416,6 +416,10 @@ fn cleanup_unowned_spawned_windows_tree_with_root(
                 stable_rounds = 0;
             }
         }
+        anyhow::ensure!(
+            stable_rounds >= 2,
+            "Windows process tree did not reach two stable containment snapshots"
+        );
         let final_snapshot = windows_process_snapshot()?;
         let final_owned = windows_descendants(pid, &final_snapshot);
         anyhow::ensure!(
