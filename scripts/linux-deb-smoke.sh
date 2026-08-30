@@ -89,7 +89,7 @@ if dpkg-query -W -f='${Status}' alter 2>/dev/null | grep -q 'install ok installe
     echo "alter package is still installed after dpkg -r" >&2
     exit 1
 fi
-if [[ ! -f "$MARKER_BACKING" ]]; then
+if ! sudo test -f "$MARKER_BACKING"; then
     echo "package removal deleted persisted state: $MARKER_BACKING" >&2
     sudo ls -la "$(dirname "$MARKER_BACKING")" || true
     exit 1
