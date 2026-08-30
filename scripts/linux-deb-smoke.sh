@@ -64,7 +64,26 @@ sudo grep -Fx 'preserve' "$MARKER"
 dpkg-query -W -f='${Version}' alter | grep -Fx '0.0.1'
 
 sudo dpkg -r alter
-! systemctl is-active --quiet alter-daemon.service
-! dpkg-query -W -f='${Status}' alter 2>/dev/null | grep -q 'install ok installed'
-[[ -f "$MARKER" ]]
-[[ ! -e /lib/systemd/system/alter-daemon.service ]]
+for _ in $(seq 1 40); do
+    if ! systemctl is-active --quiet alter-daemon.service; then break; fi
+    sleep 0.25
+done
+if systemctl is-active --quiet alter-daemon.service; then
+    echo "alter-daemon remained active after package removal" >&2
+    sudo systemctl status --no-pager alter-daemon.service || true
+    exit 1
+fi
+if dpkg-query -W -f='${Status}' alter 2>/dev/null | grep -q 'install ok installed'; then
+    echo "alter package is still installed after dpkg -r" >&2
+    exit 1
+fi
+if [[ ! -f "$MARKER" ]]; then
+    echo "package removal deleted persisted state: $MARKER" >&2
+    sudo ls -la /var/lib/alter-pm2 || true
+    exit 1
+fi
+if [[ -e /lib/systemd/system/alter-daemon.service || -e /usr/lib/systemd/system/alter-daemon.service ]]; then
+    echo "systemd unit still exists after package removal" >&2
+    sudo ls -l /lib/systemd/system/alter-daemon.service /usr/lib/systemd/system/alter-daemon.service 2>/dev/null || true
+    exit 1
+fi
