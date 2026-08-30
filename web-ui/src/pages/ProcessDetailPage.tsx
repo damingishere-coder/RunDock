@@ -497,7 +497,7 @@ export default function ProcessDetailPage({ reload, settings, onOpenTerminal }: 
           processId={envTarget.id}
           processName={envTarget.name}
           onClose={() => setEnvTarget(null)}
-          onRestart={doRestart}
+          onRestarted={reload}
         />
       )}
 

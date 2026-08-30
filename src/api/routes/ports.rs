@@ -22,7 +22,7 @@ pub fn router(state: Arc<DaemonState>) -> Router {
 }
 
 // @group Types > Ports : A single network port entry
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 struct PortEntry {
     port: u16,
     protocol: String,
@@ -43,6 +43,18 @@ struct KillPortRequest {
     process_name: Option<String>,
 }
 
+#[derive(Clone, Copy)]
+enum PortCommandFormat {
+    Netstat,
+    #[cfg(not(windows))]
+    Ss,
+}
+
+struct PortCommandOutput {
+    format: PortCommandFormat,
+    raw: String,
+}
+
 // @group APIEndpoints > Ports : GET /ports — list all open ports with owning process names
 async fn list_ports(State(state): State<Arc<DaemonState>>) -> Result<Json<Value>, ApiError> {
     let _capacity = state
@@ -59,8 +71,8 @@ async fn list_ports(State(state): State<Arc<DaemonState>>) -> Result<Json<Value>
 // @group BusinessLogic > Ports : Collect port entries, resolve names, and annotate ancestor chains
 fn collect_ports() -> anyhow::Result<Vec<PortEntry>> {
     const MAX_PORT_ENTRIES: usize = 5_000;
-    let raw = run_netstat()?;
-    let mut entries = parse_netstat(&raw);
+    let output = run_netstat()?;
+    let mut entries = parse_port_output(&output);
     if entries.len() > MAX_PORT_ENTRIES {
         tracing::warn!(
             total = entries.len(),
@@ -177,27 +189,40 @@ fn bounded_port_command(program: &str, args: &[&str]) -> anyhow::Result<String> 
 }
 
 #[cfg(windows)]
-fn run_netstat() -> anyhow::Result<String> {
-    bounded_port_command("netstat", &["-ano"])
+fn run_netstat() -> anyhow::Result<PortCommandOutput> {
+    Ok(PortCommandOutput {
+        format: PortCommandFormat::Netstat,
+        raw: bounded_port_command("netstat", &["-ano"])?,
+    })
 }
 
 #[cfg(not(windows))]
-fn run_netstat() -> anyhow::Result<String> {
+fn run_netstat() -> anyhow::Result<PortCommandOutput> {
     // Try ss first (modern Linux), fall back to netstat
     if let Ok(output) = bounded_port_command("ss", &["-Hntlpu"]) {
-        return Ok(output);
+        return Ok(PortCommandOutput {
+            format: PortCommandFormat::Ss,
+            raw: output,
+        });
     }
-    bounded_port_command("netstat", &["-tlnpu"])
+    Ok(PortCommandOutput {
+        format: PortCommandFormat::Netstat,
+        raw: bounded_port_command("netstat", &["-tlnpu"])?,
+    })
 }
 
-// @group Utilities > Ports : Parse netstat/ss stdout into PortEntry list (no process names yet)
-fn parse_netstat(raw: &str) -> Vec<PortEntry> {
-    raw.lines().filter_map(parse_line).collect()
+// @group Utilities > Ports : Parse command stdout with the format selected by the command runner
+fn parse_port_output(output: &PortCommandOutput) -> Vec<PortEntry> {
+    match output.format {
+        PortCommandFormat::Netstat => output.raw.lines().filter_map(parse_netstat_line).collect(),
+        #[cfg(not(windows))]
+        PortCommandFormat::Ss => output.raw.lines().filter_map(parse_ss_line).collect(),
+    }
 }
 
 // @group Utilities > Ports : Parse one line of netstat output into a PortEntry
 #[cfg(windows)]
-fn parse_line(line: &str) -> Option<PortEntry> {
+fn parse_netstat_line(line: &str) -> Option<PortEntry> {
     let fields: Vec<&str> = line.split_whitespace().collect();
     match fields.as_slice() {
         // TCP  local  remote  STATE  pid
@@ -233,77 +258,140 @@ fn parse_line(line: &str) -> Option<PortEntry> {
 }
 
 #[cfg(not(windows))]
-fn parse_line(line: &str) -> Option<PortEntry> {
+fn parse_ss_line(line: &str) -> Option<PortEntry> {
     let fields: Vec<&str> = line.split_whitespace().collect();
-
-    // ss -Hntlpu output: Netid  State  RecvQ  SendQ  LocalAddr:Port  PeerAddr:Port  [users:...]
-    // netstat -tlnpu:    Proto  RecvQ  SendQ  Local            Foreign          State  PID/Name
-    if fields.len() < 5 {
+    // ss -Hntlpu: Netid State RecvQ SendQ LocalAddr:Port PeerAddr:Port [users:...]
+    if fields.len() < 6 {
         return None;
     }
-
     let first = fields[0].to_ascii_lowercase();
-    if first.contains("tcp") || first.contains("udp") {
-        // Could be netstat or ss netid column
-        if fields.len() >= 7 && (first.starts_with("tcp") || first.starts_with("udp")) {
-            // netstat format: proto recvq sendq local remote state pid/name
-            if fields[0].starts_with("tcp") || fields[0].starts_with("udp") {
-                let proto = if first.contains("tcp") { "TCP" } else { "UDP" };
-                let local = fields[3];
-                let remote = fields[4];
-                let state = fields.get(5).copied().unwrap_or("").to_string();
-                let pid = fields
-                    .get(6)
-                    .and_then(|s| s.split('/').next())
-                    .and_then(|s| s.parse::<u32>().ok());
-                let port = extract_port(local)?;
-                return Some(PortEntry {
-                    port,
-                    protocol: proto.into(),
-                    local_address: local.into(),
-                    remote_address: remote.into(),
-                    state,
-                    pid,
-                    process_name: None,
-                    ancestor_pids: Vec::new(),
-                });
-            }
-        }
-        // ss format: netid state recvq sendq local peer [users]
-        let proto = if first.contains("tcp") { "TCP" } else { "UDP" };
-        let local = fields.get(4).copied().unwrap_or("");
-        let remote = fields.get(5).copied().unwrap_or("");
-        let state = fields.get(1).copied().unwrap_or("").to_string();
-        let pid = fields
-            .iter()
-            .find(|f| f.starts_with("users:"))
-            .and_then(|s| {
-                let start = s.find("pid=")?;
-                let rest = &s[start + 4..];
-                let end = rest
-                    .find(|c: char| !c.is_ascii_digit())
-                    .unwrap_or(rest.len());
-                rest[..end].parse::<u32>().ok()
-            });
-        let port = extract_port(local)?;
-        Some(PortEntry {
-            port,
-            protocol: proto.into(),
-            local_address: local.into(),
-            remote_address: remote.into(),
-            state,
-            pid,
-            process_name: None,
-            ancestor_pids: Vec::new(),
-        })
-    } else {
-        None
+    let proto = match first.as_str() {
+        value if value.contains("tcp") => "TCP",
+        value if value.contains("udp") => "UDP",
+        _ => return None,
+    };
+    let local = fields[4];
+    let remote = fields[5];
+    let pid = fields.iter().find_map(|field| parse_ss_pid(field));
+    Some(PortEntry {
+        port: extract_port(local)?,
+        protocol: proto.into(),
+        local_address: local.into(),
+        remote_address: remote.into(),
+        state: fields[1].to_string(),
+        pid,
+        process_name: None,
+        ancestor_pids: Vec::new(),
+    })
+}
+
+#[cfg(not(windows))]
+fn parse_ss_pid(field: &str) -> Option<u32> {
+    let start = field.find("pid=")?;
+    let rest = &field[start + 4..];
+    let end = rest
+        .find(|character: char| !character.is_ascii_digit())
+        .unwrap_or(rest.len());
+    rest[..end].parse().ok()
+}
+
+#[cfg(not(windows))]
+fn parse_netstat_line(line: &str) -> Option<PortEntry> {
+    let fields: Vec<&str> = line.split_whitespace().collect();
+    if fields.len() < 6 {
+        return None;
     }
+    let first = fields[0].to_ascii_lowercase();
+    let proto = if first.starts_with("tcp") {
+        "TCP"
+    } else if first.starts_with("udp") {
+        "UDP"
+    } else {
+        return None;
+    };
+    let local = fields[3];
+    let remote = fields[4];
+    let (state, owner) = if proto == "TCP" {
+        (fields[5], fields.get(6).copied())
+    } else {
+        ("", fields.get(5).copied())
+    };
+    let pid = owner
+        .and_then(|value| value.split('/').next())
+        .and_then(|value| value.parse().ok());
+    Some(PortEntry {
+        port: extract_port(local)?,
+        protocol: proto.into(),
+        local_address: local.into(),
+        remote_address: remote.into(),
+        state: state.into(),
+        pid,
+        process_name: None,
+        ancestor_pids: Vec::new(),
+    })
 }
 
 // @group Utilities > Ports : Extract port number from "addr:port" or "[::1]:port"
 fn extract_port(addr: &str) -> Option<u16> {
     addr.rsplit(':').next()?.parse().ok()
+}
+
+#[cfg(all(test, not(windows)))]
+mod parser_tests {
+    use super::*;
+
+    #[test]
+    fn parses_ss_tcp_with_users_and_ipv6() {
+        let tcp = parse_ss_line(
+            r#"tcp LISTEN 0 4096 127.0.0.1:2999 0.0.0.0:* users:(("alter",pid=1234,fd=9))"#,
+        )
+        .unwrap();
+        assert_eq!(tcp.port, 2999);
+        assert_eq!(tcp.protocol, "TCP");
+        assert_eq!(tcp.state, "LISTEN");
+        assert_eq!(tcp.pid, Some(1234));
+
+        let ipv6 = parse_ss_line("tcp LISTEN 0 128 [::1]:5173 [::]:*").unwrap();
+        assert_eq!(ipv6.port, 5173);
+        assert_eq!(ipv6.local_address, "[::1]:5173");
+        assert_eq!(ipv6.pid, None);
+
+        let tcp6_without_users = parse_ss_line("tcp LISTEN 0 4096 [::1]:2999 [::]:*").unwrap();
+        assert_eq!(tcp6_without_users.port, 2999);
+        assert_eq!(tcp6_without_users.local_address, "[::1]:2999");
+        assert_eq!(tcp6_without_users.pid, None);
+    }
+
+    #[test]
+    fn parses_ss_udp_and_unix_netstat_fixtures() {
+        let udp =
+            parse_ss_line(r#"udp UNCONN 0 0 0.0.0.0:5353 0.0.0.0:* users:(("mdns",pid=42,fd=7))"#)
+                .unwrap();
+        assert_eq!(udp.port, 5353);
+        assert_eq!(udp.protocol, "UDP");
+        assert_eq!(udp.pid, Some(42));
+
+        let tcp = parse_netstat_line("tcp 0 0 127.0.0.1:2999 0.0.0.0:* LISTEN 1234/alter").unwrap();
+        assert_eq!(tcp.port, 2999);
+        assert_eq!(tcp.pid, Some(1234));
+        assert_eq!(tcp.state, "LISTEN");
+
+        let udp = parse_netstat_line("udp 0 0 0.0.0.0:68 0.0.0.0:* 42/dhclient").unwrap();
+        assert_eq!(udp.port, 68);
+        assert_eq!(udp.pid, Some(42));
+        assert_eq!(udp.state, "");
+    }
+
+    #[test]
+    fn selects_the_parser_from_the_command_source() {
+        let output = PortCommandOutput {
+            format: PortCommandFormat::Ss,
+            raw: "tcp LISTEN 0 4096 127.0.0.1:2999 0.0.0.0:*".into(),
+        };
+        let entries = parse_port_output(&output);
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].port, 2999);
+    }
 }
 
 // @group APIEndpoints > Ports : POST /ports/kill/:pid — stop the verified managed root that owns a port

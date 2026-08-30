@@ -12,10 +12,10 @@ interface Props {
   processId: string
   processName: string
   onClose: () => void
-  onRestart: () => void
+  onRestarted: () => void | Promise<void>
 }
 
-export function EnvFileModal({ processId, processName, onClose, onRestart }: Props) {
+export function EnvFileModal({ processId, processName, onClose, onRestarted }: Props) {
   // @group BusinessLogic > State : Tab and file management
   const [files, setFiles] = useState<EnvFileEntry[]>([])
   const [activeTab, setActiveTab] = useState<string>('.env')
@@ -140,7 +140,7 @@ export function EnvFileModal({ processId, processName, onClose, onRestart }: Pro
       setSaved(true)
       if (andRestart) {
         await api.restartProcess(processId)
-        onRestart()
+        await onRestarted()
         onClose()
       } else {
         setTimeout(() => setSaved(false), 2500)

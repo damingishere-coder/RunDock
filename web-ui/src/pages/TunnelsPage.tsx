@@ -515,6 +515,10 @@ export default function TunnelsPage() {
     enabled: hasStarting && !startingPollTimedOut,
   })
 
+  useEffect(() => {
+    void reloadTunnels()
+  }, [reloadTunnels])
+
   function handleManualReload() {
     setStartingPollTimedOut(false)
     setPollError(null)

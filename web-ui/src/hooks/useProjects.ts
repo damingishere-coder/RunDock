@@ -1,6 +1,6 @@
 // @group BusinessLogic : Poll logical projects at the same cadence as process data
 
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { api } from '@/lib/api'
 import type { ProjectInfo } from '@/types'
 import { useSingleFlightPoll } from './useSingleFlightPoll'
@@ -28,6 +28,10 @@ export function useProjects(autoRefresh = true, intervalMs = 3000) {
   }, [])
 
   const reload = useSingleFlightPoll(load, { intervalMs, enabled: autoRefresh })
+
+  useEffect(() => {
+    if (!autoRefresh) void reload()
+  }, [autoRefresh, reload])
 
   return { projects, error, reload }
 }

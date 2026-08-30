@@ -1,6 +1,6 @@
 // @group BusinessLogic : Poll /api/v1/processes at a configurable interval
 
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { api } from '@/lib/api'
 import type { ProcessInfo } from '@/types'
 import { useSingleFlightPoll } from './useSingleFlightPoll'
@@ -29,6 +29,10 @@ export function useProcesses(autoRefresh = true, intervalMs = 3000) {
   }, [])
 
   const reload = useSingleFlightPoll(load, { intervalMs, enabled: autoRefresh })
+
+  useEffect(() => {
+    if (!autoRefresh) void reload()
+  }, [autoRefresh, reload])
 
   return { processes, error, reload }
 }
