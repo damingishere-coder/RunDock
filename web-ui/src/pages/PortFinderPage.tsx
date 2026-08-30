@@ -4,6 +4,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'rea
 import { RefreshCw, Search, X, XCircle, Globe } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '@/lib/api'
+import { isListeningPortState, isListeningTcpPort } from '@/lib/processWeb'
 import type { PortEntry } from '@/types'
 
 // @group Utilities > Ports : Fetch full port list from the daemon
@@ -20,6 +21,7 @@ async function killPid(entry: PortEntry): Promise<{ success: boolean; error?: st
 // @group Utilities > Ports : Returns color for connection state label
 function stateColor(state: string): string {
   switch (state.toUpperCase()) {
+    case 'LISTEN':
     case 'LISTENING':
       return 'var(--color-status-running)'
     case 'ESTABLISHED':
@@ -35,6 +37,7 @@ function stateColor(state: string): string {
 
 function stateLabel(state: string): string {
   switch (state.toUpperCase()) {
+    case 'LISTEN':
     case 'LISTENING':
       return '监听中'
     case 'ESTABLISHED':
@@ -229,7 +232,13 @@ export default function PortFinderPage() {
   // @group BusinessLogic > Filtering : Apply search + protocol + state + process filters
   const filtered = ports.filter(p => {
     if (protoFilter !== 'ALL' && p.protocol !== protoFilter) return false
-    if (stateFilter !== 'ALL' && p.state.toUpperCase() !== stateFilter) return false
+    if (stateFilter === 'LISTENING' && !isListeningPortState(p.state)) return false
+    if (
+      stateFilter !== 'ALL' &&
+      stateFilter !== 'LISTENING' &&
+      p.state.toUpperCase() !== stateFilter
+    )
+      return false
     if (procFilter !== 'ALL' && (p.process_name ?? '') !== procFilter) return false
     if (search) {
       const q = search.toLowerCase()
@@ -361,7 +370,7 @@ export default function PortFinderPage() {
           }}
         >
           {/* @group BusinessLogic > Tunnel : Quick-create tunnel button (LISTENING TCP only) */}
-          {entry.state.toUpperCase() === 'LISTENING' && entry.protocol === 'TCP' && (
+          {isListeningTcpPort(entry) && (
             <button
               onClick={() => handleTunnel(entry.port, entry.process_name)}
               disabled={tunnelingPort !== null}

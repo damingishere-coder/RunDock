@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  isListeningPortState,
   isListeningTcpPort,
   isPortScanEntries,
   listeningPortsByManagedPid,
@@ -7,6 +8,14 @@ import {
   projectWebUrl,
 } from './processWeb'
 import type { RemoteServer } from './servers'
+
+describe('isListeningPortState', () => {
+  it('normalizes Unix and Windows listener states', () => {
+    expect(isListeningPortState('LISTEN')).toBe(true)
+    expect(isListeningPortState('listening')).toBe(true)
+    expect(isListeningPortState('ESTABLISHED')).toBe(false)
+  })
+})
 
 const localServer: RemoteServer = {
   id: 'local',

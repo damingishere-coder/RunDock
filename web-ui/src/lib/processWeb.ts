@@ -39,8 +39,12 @@ export function isPortScanEntries(value: unknown): value is PortScanEntry[] {
 export function isListeningTcpPort(entry: PortScanEntry): boolean {
   if (typeof entry.protocol !== 'string' || typeof entry.state !== 'string') return false
   if (entry.protocol.toUpperCase() !== 'TCP') return false
-  const state = entry.state.toUpperCase()
-  return state === 'LISTEN' || state === 'LISTENING'
+  return isListeningPortState(entry.state)
+}
+
+export function isListeningPortState(state: string): boolean {
+  const normalized = state.toUpperCase()
+  return normalized === 'LISTEN' || normalized === 'LISTENING'
 }
 
 export function listeningPortsByManagedPid(
