@@ -1,7 +1,7 @@
 // @group BusinessLogic : `alter delete` command handler
 
+use crate::cli::commands::stop::{process_targets, require_alive, resolve_id};
 use crate::client::daemon_client::DaemonClient;
-use crate::cli::commands::stop::{require_alive, resolve_id};
 use anyhow::Result;
 
 pub async fn run(client: &DaemonClient, target: &str, json_mode: bool) -> Result<()> {
@@ -9,13 +9,17 @@ pub async fn run(client: &DaemonClient, target: &str, json_mode: bool) -> Result
 
     if target == "all" {
         let list = client.get("/api/v1/processes").await?;
-        let processes = list["processes"].as_array().cloned().unwrap_or_default();
-        for p in &processes {
-            let id = p["id"].as_str().unwrap_or_default();
-            let _ = client.delete(&format!("/api/v1/processes/{id}")).await;
-            if !json_mode {
-                println!("[alter] deleted '{}'", p["name"].as_str().unwrap_or(id));
+        let processes = process_targets(&list)?;
+        let mut failures = Vec::new();
+        for (id, name) in &processes {
+            match client.delete(&format!("/api/v1/processes/{id}")).await {
+                Ok(_) if !json_mode => println!("[RunDock] deleted '{name}'"),
+                Ok(_) => {}
+                Err(error) => failures.push(format!("{name}: {error}")),
             }
+        }
+        if !failures.is_empty() {
+            anyhow::bail!("failed to delete: {}", failures.join("; "));
         }
         return Ok(());
     }
@@ -24,7 +28,7 @@ pub async fn run(client: &DaemonClient, target: &str, json_mode: bool) -> Result
     let _ = client.delete(&format!("/api/v1/processes/{id}")).await?;
 
     if !json_mode {
-        println!("[alter] deleted '{target}'");
+        println!("[RunDock] deleted '{target}'");
     }
     Ok(())
 }

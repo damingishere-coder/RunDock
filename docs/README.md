@@ -26,7 +26,7 @@
 
 ## Why RunDock?
 
-Managing background processes on Windows has always been awkward. RunDock gives you a polished dashboard while retaining the compatible `alter` command:
+Managing background processes on Windows has always been awkward. RunDock gives you a polished dashboard and command-line workflows:
 
 - **No console window popups** — processes run silently in the background
 - **Auto-restart** on crash with exponential backoff
@@ -34,7 +34,7 @@ Managing background processes on Windows has always been awkward. RunDock gives 
 - **Structured logging** with rotation and historical browsing
 - **Web dashboard** — manage everything from your browser, with keyboard shortcuts
 - **Notifications** — get alerted on crashes, restarts, or stops via Slack, Teams, Discord, or webhook
-- **Single binary** — no runtime dependencies, no Node.js, no Python required
+- **Windows desktop app** — WebView2 window, system tray, single instance, and login startup
 
 ---
 
@@ -54,19 +54,21 @@ Managing background processes on Windows has always been awkward. RunDock gives 
 | **State Persistence** | Save and restore your process list across reboots |
 | **Ecosystem Config** | Define multiple apps in a single TOML or JSON file |
 | **REST API** | Full HTTP API — automate anything |
-| **OS Startup** | Register the daemon as a system startup task |
+| **OS Startup** | Installed desktop app starts in the tray at login; CLI-only installs can use a task |
 
 ---
 
 ## Windows Notes
 
-RunDock is **designed with Windows in mind** while retaining the compatible `alter` CLI:
+RunDock is **designed with Windows in mind**:
 
 - Processes spawn with `CREATE_NO_WINDOW` — **no black console windows** appearing on your taskbar
 - Daemon runs as a detached hidden background process
+- The installed `rundock.exe` uses a single WebView2 window and system tray
+- Window close hides to the tray; tray exit leaves the daemon and projects running
 - Terminal button opens **Windows Terminal** (`wt.exe`) or falls back to `cmd.exe`
 - Data stored in `%APPDATA%\alter-pm2\` (no cluttering your home directory)
-- Startup integration via PowerShell Scheduled Tasks
+- Current-user login startup is enabled by default and can be toggled from the tray
 
 **Windows-specific paths:**
 ```
@@ -83,20 +85,45 @@ RunDock is **designed with Windows in mind** while retaining the compatible `alt
 
 ## Installation
 
+### Debian / Ubuntu package
+
+The signed APT repository and matching public key are published by the release workflow. Inspect the downloaded key fingerprint against `rundock-release-key.asc` on the corresponding GitHub Release before trusting it:
+
+```bash
+curl -fsSL https://damingishere-coder.github.io/RunDock/gpg-key.asc -o rundock-release-key.asc
+gpg --show-keys --fingerprint rundock-release-key.asc
+sudo gpg --dearmor --yes -o /usr/share/keyrings/rundock-archive-keyring.gpg rundock-release-key.asc
+echo "deb [signed-by=/usr/share/keyrings/rundock-archive-keyring.gpg] https://damingishere-coder.github.io/RunDock/apt stable main" | sudo tee /etc/apt/sources.list.d/rundock.list
+sudo apt update
+sudo apt install alter
+sudo systemctl enable --now alter-daemon.service
+```
+
+The system service stores state in `/var/lib/alter-pm2` and logs in `/var/log/alter-pm2`. It uses a dynamic, sandboxed account and cannot access home directories. Release downloads also contain `SHA256SUMS` and `SHA256SUMS.asc` for offline verification.
+
+Release maintainers must configure the armored private key as the `APT_GPG_KEY` repository secret and its exact uppercase primary-key fingerprint as the `APT_GPG_FINGERPRINT` repository variable. The workflow fails closed when either value is missing or the imported key does not match the pinned fingerprint.
+
 ### Build from Source
 
-**Prerequisites:** [Rust toolchain](https://rustup.rs/) (stable, 1.75+)
+**Prerequisites:** [Rust 1.98](https://rustup.rs/) (repository-pinned toolchain),
+Node.js 24, and npm.
 
 ```powershell
 # Clone the repo
 git clone https://github.com/damingishere-coder/RunDock.git
 cd RunDock
 
-# Release build (optimized, stripped binary)
-cargo build --release
+# Build the dashboard that Rust embeds, then the locked release binary
+cd web-ui
+npm ci
+npm run build
+cd ..
+cargo build --release --locked
+cargo build --manifest-path desktop-shell\Cargo.toml --release --locked
 
 # The binary is at:
 .\target\release\alter.exe
+.\desktop-shell\target\release\rundock.exe
 
 # Optional: add to PATH
 $env:PATH += ";$(Get-Location)\target\release"
@@ -104,7 +131,7 @@ $env:PATH += ";$(Get-Location)\target\release"
 
 > **Dev build** (faster compile, includes debug info):
 > ```powershell
-> cargo build
+> cargo build --locked
 > # Binary: .\target\debug\alter.exe
 > ```
 
@@ -118,8 +145,8 @@ alter daemon start
 
 # 2. Start a process
 alter start python -- -m http.server 8080
-alter start node -- server.js --name api
-alter start "go run main.go" --name backend --cwd C:\projects\api
+alter start node --name api -- server.js
+alter start go --name backend --cwd C:\projects\api -- run main.go
 
 # 3. List running processes
 alter list
@@ -209,7 +236,7 @@ alter resurrect
 alter startup
 ```
 
-Processes saved with `alter save` will be available after reboot. Processes that were `running` at save time are automatically restarted on `resurrect`. Stopped processes are registered but not started.
+Processes saved with `alter save` remain visible after reboot. RunDock persists the last PID and an immutable process-start identity: a still-live, matching process is safely re-adopted; a missing or mismatched PID is restored as stopped instead of being started automatically. Active cron schedules are restored as sleeping schedulers. `alter resurrect` performs the same conservative restore and never guesses that an ordinary process should be relaunched.
 
 ---
 
@@ -318,4 +345,4 @@ excluded/
 
 ## License
 
-MIT License — see [LICENSE](../../LICENSE) for details.
+MIT License — see [LICENSE](../LICENSE) for details.

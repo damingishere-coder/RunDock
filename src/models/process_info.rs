@@ -45,8 +45,10 @@ pub struct ProcessInfo {
     /// Resident memory in bytes — None when process is not running
     pub memory_bytes: Option<u64>,
     /// Environment variables passed to the process
+    #[serde(serialize_with = "serialize_redacted_env")]
     pub env: HashMap<String, String>,
     /// Process-level notification override
+    #[serde(serialize_with = "serialize_redacted_notification")]
     pub notify: Option<crate::models::notification::NotificationConfig>,
     /// Process-level log alert override
     pub log_alert: Option<crate::config::log_alert_config::LogAlertOverride>,
@@ -56,4 +58,40 @@ pub struct ProcessInfo {
     pub git_branch: Option<String>,
     /// Whether this process participates in bulk start (Start All) operations
     pub enabled: bool,
+}
+
+fn serialize_redacted_env<S>(
+    env: &HashMap<String, String>,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    let redacted: HashMap<&String, &str> = env
+        .iter()
+        .map(|(key, value)| {
+            (
+                key,
+                if value.is_empty() {
+                    ""
+                } else {
+                    crate::models::notification::MASKED_SECRET
+                },
+            )
+        })
+        .collect();
+    redacted.serialize(serializer)
+}
+
+fn serialize_redacted_notification<S>(
+    config: &Option<crate::models::notification::NotificationConfig>,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    config
+        .as_ref()
+        .map(|value| value.redacted())
+        .serialize(serializer)
 }

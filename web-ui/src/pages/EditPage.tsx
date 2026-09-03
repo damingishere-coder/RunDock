@@ -5,11 +5,13 @@ import { useParams } from 'react-router-dom'
 import { FolderOpen, Save, Bell, ChevronDown, ChevronRight } from 'lucide-react'
 import { NamespaceInput } from '@/components/NamespaceInput'
 import { api } from '@/lib/api'
-import { parseArgs, parseDotEnv, envToString } from '@/lib/utils'
+import { envToString } from '@/lib/utils'
+import { buildProcessUpdateBody } from '@/lib/processPatch'
 import { FormCard, FormField, FormRow } from '@/components/FormLayout'
 import { FolderBrowser } from '@/components/FolderBrowser'
-import { inputStyle, primaryBtnStyle, browseBtnStyle } from './StartPage'
+import { inputStyle, primaryBtnStyle, browseBtnStyle } from './formStyles'
 import type { NotificationConfig } from '@/types'
+import { secretInputPlaceholder, secretInputValue } from '@/lib/secrets'
 
 interface Props {
   onDone: () => void
@@ -17,75 +19,110 @@ interface Props {
 
 export default function EditPage({ onDone }: Props) {
   const { id } = useParams<{ id: string }>()
-  const [script, setScript]           = useState('')
-  const [name, setName]               = useState('')
-  const [cwd, setCwd]                 = useState('')
-  const [namespace, setNamespace]     = useState('default')
-  const [argsStr, setArgsStr]         = useState('')
-  const [envStr, setEnvStr]           = useState('')
+  const [script, setScript] = useState('')
+  const [name, setName] = useState('')
+  const [cwd, setCwd] = useState('')
+  const [namespace, setNamespace] = useState('default')
+  const [argsStr, setArgsStr] = useState('')
+  const [envStr, setEnvStr] = useState('')
   const [autorestart, setAutorestart] = useState(true)
-  const [watch, setWatch]             = useState(false)
-  const [cron, setCron]               = useState('')
+  const [watch, setWatch] = useState(false)
+  const [cron, setCron] = useState('')
   const [maxRestarts, setMaxRestarts] = useState(10)
-  const [notify, setNotify]           = useState<NotificationConfig | undefined>(undefined)
-  const [notifyOpen, setNotifyOpen]   = useState(false)
-  const [error, setError]             = useState('')
-  const [loading, setLoading]         = useState(false)
-  const [loaded, setLoaded]           = useState(false)
+  const [notify, setNotify] = useState<NotificationConfig | undefined>(undefined)
+  const [notifyOpen, setNotifyOpen] = useState(false)
+  const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [loaded, setLoaded] = useState(false)
+  const [loadError, setLoadError] = useState('')
+  const [loadAttempt, setLoadAttempt] = useState(0)
 
   // @group BusinessLogic > EnvFile : .env file load / save UI state
-  const [loadingEnv, setLoadingEnv]       = useState(false)
-  const [savingEnv, setSavingEnv]         = useState(false)
-  const [saveToFile, setSaveToFile]       = useState(false)
+  const [loadingEnv, setLoadingEnv] = useState(false)
+  const [savingEnv, setSavingEnv] = useState(false)
+  const [saveToFile, setSaveToFile] = useState(false)
   const [envFileStatus, setEnvFileStatus] = useState<{ msg: string; ok: boolean } | null>(null)
 
   // @group BusinessLogic > EnvCheck : Live .env existence badge for the cwd field
-  const [envStatus, setEnvStatus]   = useState<{ exists: boolean } | null>(null)
+  const [envStatus, setEnvStatus] = useState<{ exists: boolean } | null>(null)
   const [browseOpen, setBrowseOpen] = useState(false)
-  const envCheckTimer               = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const envCheckTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const envCheckVersion = useRef(0)
 
   function handleCwdChange(val: string) {
+    const requestVersion = ++envCheckVersion.current
     setCwd(val)
     setEnvStatus(null)
     if (envCheckTimer.current) clearTimeout(envCheckTimer.current)
     const trimmed = val.trim()
     if (!trimmed) return
     envCheckTimer.current = setTimeout(() => {
-      api.checkEnvPath(trimmed)
-        .then(r => setEnvStatus({ exists: r.exists }))
-        .catch(() => {})
+      api
+        .checkEnvPath(trimmed)
+        .then(r => {
+          if (requestVersion === envCheckVersion.current) setEnvStatus({ exists: r.exists })
+        })
+        .catch(checkError => {
+          if (requestVersion === envCheckVersion.current) {
+            setError(checkError instanceof Error ? checkError.message : '检查环境文件失败')
+          }
+        })
     }, 500)
   }
 
   // @group BusinessLogic > DataFetch : Load process config on mount
   useEffect(() => {
     if (!id) return
-    api.getProcess(id).then(p => {
-      setScript(p.script || '')
-      setName(p.name || '')
-      const cwdVal = p.cwd || ''
-      setCwd(cwdVal)
-      setNamespace(p.namespace || 'default')
-      setArgsStr((p.args || []).join(' '))
-      setEnvStr(envToString(p.env || {}))
-      setAutorestart(!!p.autorestart)
-      setWatch(!!p.watch)
-      setCron(p.cron || '')
-      setMaxRestarts(p.max_restarts ?? 10)
-      setNotify(p.notify)
-      setLoaded(true)
-      // Check .env existence for the loaded cwd immediately
-      if (cwdVal.trim()) {
-        api.checkEnvPath(cwdVal.trim())
-          .then(r => setEnvStatus({ exists: r.exists }))
-          .catch(() => {})
-      }
-    }).catch(() => setError('加载进程配置失败'))
-  }, [id])
+    const controller = new AbortController()
+    setLoaded(false)
+    setLoadError('')
+    setError('')
+    api
+      .getProcess(id, { signal: controller.signal })
+      .then(p => {
+        if (controller.signal.aborted) return
+        setScript(p.script || '')
+        setName(p.name || '')
+        const cwdVal = p.cwd || ''
+        setCwd(cwdVal)
+        setNamespace(p.namespace || 'default')
+        setArgsStr((p.args || []).join(' '))
+        setEnvStr(envToString(p.env || {}))
+        setAutorestart(!!p.autorestart)
+        setWatch(!!p.watch)
+        setCron(p.cron || '')
+        setMaxRestarts(p.max_restarts ?? 10)
+        setNotify(p.notify)
+        setLoaded(true)
+        // Check .env existence for the loaded cwd immediately
+        if (cwdVal.trim()) {
+          const requestVersion = ++envCheckVersion.current
+          api
+            .checkEnvPath(cwdVal.trim())
+            .then(r => {
+              if (requestVersion === envCheckVersion.current) setEnvStatus({ exists: r.exists })
+            })
+            .catch(checkError => {
+              if (requestVersion === envCheckVersion.current) {
+                setError(checkError instanceof Error ? checkError.message : '检查环境文件失败')
+              }
+            })
+        }
+      })
+      .catch(loadFailure => {
+        if (controller.signal.aborted) return
+        setLoadError(loadFailure instanceof Error ? loadFailure.message : '加载进程配置失败')
+      })
+    return () => {
+      controller.abort()
+      envCheckVersion.current += 1
+      if (envCheckTimer.current) clearTimeout(envCheckTimer.current)
+    }
+  }, [id, loadAttempt])
 
   // @group BusinessLogic > EnvFile : Load .env file content from process working directory
   async function handleLoadEnvFile() {
-    if (!id) return
+    if (!id || !loaded) return
     setLoadingEnv(true)
     setEnvFileStatus(null)
     try {
@@ -124,33 +161,53 @@ export default function EditPage({ onDone }: Props) {
     if (!id) return
     setError('')
     setLoading(true)
+    let processUpdated = false
     try {
-      const cronVal = cron.trim() || undefined
-      await api.updateProcess(id, {
-        script: script.trim(),
-        ...(name.trim()    && { name: name.trim() }),
-        ...(cwd.trim()     && { cwd: cwd.trim() }),
-        namespace: namespace.trim() || 'default',
-        ...(argsStr.trim() && { args: parseArgs(argsStr.trim()) }),
-        env: parseDotEnv(envStr),
-        autorestart,
-        watch,
-        max_restarts: maxRestarts,
-        ...(cronVal && { cron: cronVal }),
-        ...(notify && { notify }),
-      })
+      await api.updateProcess(
+        id,
+        buildProcessUpdateBody({
+          script,
+          name,
+          cwd,
+          namespace,
+          args: argsStr,
+          env: envStr,
+          autorestart,
+          watch,
+          maxRestarts,
+          cron,
+          notify,
+        })
+      )
+      processUpdated = true
       if (saveToFile && envStr.trim()) {
-        await api.saveEnvFile(id, envStr).catch(() => {})
+        await api.saveEnvFile(id, envStr)
       }
       onDone()
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : '更新进程失败')
+      const detail = e instanceof Error ? e.message : '更新进程失败'
+      setError(processUpdated ? `进程配置已更新，但 .env 文件保存失败：${detail}` : detail)
     } finally {
       setLoading(false)
     }
   }
 
-  if (!loaded && !error) return <div style={{ padding: 24, color: 'var(--color-muted-foreground)' }}>加载中…</div>
+  if (!loaded && !loadError)
+    return <div style={{ padding: 24, color: 'var(--color-muted-foreground)' }}>加载中…</div>
+  if (loadError)
+    return (
+      <div style={{ padding: 24, color: 'var(--color-destructive)' }} role="alert">
+        <div>加载进程配置失败：{loadError}</div>
+        <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+          <button type="button" onClick={() => setLoadAttempt(attempt => attempt + 1)}>
+            重试
+          </button>
+          <button type="button" onClick={onDone}>
+            返回
+          </button>
+        </div>
+      </div>
+    )
 
   return (
     <div style={{ padding: '20px 24px' }}>
@@ -163,7 +220,16 @@ export default function EditPage({ onDone }: Props) {
       )}
       <div style={{ marginBottom: 20, display: 'flex', alignItems: 'center', gap: 16 }}>
         <h2 style={{ fontSize: 16, fontWeight: 600 }}>编辑进程</h2>
-        <button onClick={onDone} style={{ fontSize: 12, background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--color-muted-foreground)' }}>
+        <button
+          onClick={onDone}
+          style={{
+            fontSize: 12,
+            background: 'transparent',
+            border: 'none',
+            cursor: 'pointer',
+            color: 'var(--color-muted-foreground)',
+          }}
+        >
           ← 返回
         </button>
       </div>
@@ -171,30 +237,58 @@ export default function EditPage({ onDone }: Props) {
       <FormCard onSubmit={handleSubmit}>
         <FormRow>
           <FormField label="命令 *">
-            <input style={inputStyle} value={script} onChange={e => setScript(e.target.value)} required />
+            <input
+              style={inputStyle}
+              value={script}
+              onChange={e => setScript(e.target.value)}
+              required
+            />
           </FormField>
           <FormField label="名称">
             <input style={inputStyle} value={name} onChange={e => setName(e.target.value)} />
           </FormField>
         </FormRow>
         <FormRow>
-          <FormField label={
-            <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              工作目录
-              {envStatus !== null && (
-                <span style={{
-                  fontSize: 10, padding: '1px 6px', borderRadius: 4, fontWeight: 500,
-                  background: envStatus.exists ? 'rgba(100,200,100,0.15)' : 'rgba(128,128,128,0.1)',
-                  color: envStatus.exists ? 'var(--color-status-running, #4ade80)' : 'var(--color-muted-foreground)',
-                }}>
-                  {envStatus.exists ? '● 已找到 .env' : '○ 没有 .env'}
-                </span>
-              )}
-            </span>
-          }>
+          <FormField
+            associate={false}
+            label={
+              <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                工作目录
+                {envStatus !== null && (
+                  <span
+                    style={{
+                      fontSize: 10,
+                      padding: '1px 6px',
+                      borderRadius: 4,
+                      fontWeight: 500,
+                      background: envStatus.exists
+                        ? 'rgba(100,200,100,0.15)'
+                        : 'rgba(128,128,128,0.1)',
+                      color: envStatus.exists
+                        ? 'var(--color-status-running, #4ade80)'
+                        : 'var(--color-muted-foreground)',
+                    }}
+                  >
+                    {envStatus.exists ? '● 已找到 .env' : '○ 没有 .env'}
+                  </span>
+                )}
+              </span>
+            }
+          >
             <div style={{ display: 'flex', gap: 6 }}>
-              <input style={{ ...inputStyle, flex: 1 }} value={cwd} onChange={e => handleCwdChange(e.target.value)} placeholder="C:\Users\me\app" />
-              <button type="button" onClick={() => setBrowseOpen(true)} title="浏览文件夹" style={browseBtnStyle}>
+              <input
+                aria-label="工作目录"
+                style={{ ...inputStyle, flex: 1 }}
+                value={cwd}
+                onChange={e => handleCwdChange(e.target.value)}
+                placeholder="C:\Users\me\app"
+              />
+              <button
+                type="button"
+                onClick={() => setBrowseOpen(true)}
+                title="浏览文件夹"
+                style={browseBtnStyle}
+              >
                 <FolderOpen size={14} strokeWidth={1.75} />
               </button>
             </div>
@@ -206,8 +300,9 @@ export default function EditPage({ onDone }: Props) {
 
         {/* ── Environment Variables — full-width .env textarea ── */}
         <div style={{ display: 'contents' }}>
-          <FormField label="环境变量">
+          <FormField label="环境变量" associate={false}>
             <textarea
+              aria-label="环境变量"
               value={envStr}
               onChange={e => setEnvStr(e.target.value)}
               placeholder={'KEY=value\nANOTHER_KEY=another_value\n# comments are ignored'}
@@ -223,7 +318,15 @@ export default function EditPage({ onDone }: Props) {
               }}
             />
             {/* @group BusinessLogic > EnvFile : Action bar under textarea */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                marginTop: 6,
+                flexWrap: 'wrap',
+              }}
+            >
               <button
                 type="button"
                 onClick={handleLoadEnvFile}
@@ -244,7 +347,16 @@ export default function EditPage({ onDone }: Props) {
                 <Save size={12} />
                 {savingEnv ? '保存中…' : '保存到 .env'}
               </button>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, cursor: 'pointer', color: 'var(--color-muted-foreground)' }}>
+              <label
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 5,
+                  fontSize: 12,
+                  cursor: 'pointer',
+                  color: 'var(--color-muted-foreground)',
+                }}
+              >
                 <input
                   type="checkbox"
                   checked={saveToFile}
@@ -254,7 +366,14 @@ export default function EditPage({ onDone }: Props) {
                 保存时同时写入 .env
               </label>
               {envFileStatus && (
-                <span style={{ fontSize: 11, color: envFileStatus.ok ? 'var(--color-status-running)' : 'var(--color-destructive)' }}>
+                <span
+                  style={{
+                    fontSize: 11,
+                    color: envFileStatus.ok
+                      ? 'var(--color-status-running)'
+                      : 'var(--color-destructive)',
+                  }}
+                >
                   {envFileStatus.msg}
                 </span>
               )}
@@ -267,16 +386,45 @@ export default function EditPage({ onDone }: Props) {
             <NamespaceInput style={inputStyle} value={namespace} onChange={setNamespace} />
           </FormField>
           <FormField label="最大重启次数">
-            <input style={inputStyle} type="number" value={maxRestarts} onChange={e => setMaxRestarts(parseInt(e.target.value) || 10)} />
+            <input
+              style={inputStyle}
+              type="number"
+              min={0}
+              max={10000}
+              step={1}
+              value={maxRestarts}
+              onChange={e => {
+                const parsed = Number.parseInt(e.target.value, 10)
+                setMaxRestarts(Number.isFinite(parsed) ? Math.min(10_000, Math.max(0, parsed)) : 0)
+              }}
+            />
           </FormField>
         </FormRow>
         <FormRow>
-          <FormField label={<>定时任务计划 <span style={{ color: 'var(--color-muted-foreground)', fontSize: 11 }}>（留空以禁用）</span></>}>
-            <input style={inputStyle} value={cron} onChange={e => setCron(e.target.value)} placeholder="0 * * * *" />
+          <FormField
+            label={
+              <>
+                定时任务计划{' '}
+                <span style={{ color: 'var(--color-muted-foreground)', fontSize: 11 }}>
+                  （留空以禁用）
+                </span>
+              </>
+            }
+          >
+            <input
+              style={inputStyle}
+              value={cron}
+              onChange={e => setCron(e.target.value)}
+              placeholder="0 * * * *"
+            />
           </FormField>
-          <FormField label="">
+          <FormField label="" associate={false}>
             <div style={{ display: 'flex', gap: 20, marginTop: 4 }}>
-              <CheckboxField label="崩溃后自动重启" checked={autorestart} onChange={setAutorestart} />
+              <CheckboxField
+                label="崩溃后自动重启"
+                checked={autorestart}
+                onChange={setAutorestart}
+              />
               <CheckboxField label="监视模式" checked={watch} onChange={setWatch} />
             </div>
           </FormField>
@@ -284,11 +432,21 @@ export default function EditPage({ onDone }: Props) {
 
         {/* @group BusinessLogic > NotifyOverride : Collapsible process-level notification override */}
         <div style={{ display: 'contents' }}>
-          <div style={{
-            border: '1px solid var(--color-border)', borderRadius: 6, padding: '10px 14px',
-          }}>
+          <div
+            style={{
+              border: '1px solid var(--color-border)',
+              borderRadius: 6,
+              padding: '10px 14px',
+            }}
+          >
             <div
-              style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', userSelect: 'none' }}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                cursor: 'pointer',
+                userSelect: 'none',
+              }}
               onClick={() => setNotifyOpen(o => !o)}
             >
               {notifyOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
@@ -300,7 +458,10 @@ export default function EditPage({ onDone }: Props) {
               {notify && (
                 <button
                   type="button"
-                  onClick={e => { e.stopPropagation(); setNotify(undefined) }}
+                  onClick={e => {
+                    e.stopPropagation()
+                    setNotify(undefined)
+                  }}
                   style={{ ...envActionBtn, marginLeft: 'auto', color: 'var(--color-destructive)' }}
                 >
                   清除
@@ -312,24 +473,55 @@ export default function EditPage({ onDone }: Props) {
               <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
                 {/* Events */}
                 <div>
-                  <span style={{ fontSize: 11, color: 'var(--color-muted-foreground)', display: 'block', marginBottom: 6 }}>触发事件</span>
+                  <span
+                    style={{
+                      fontSize: 11,
+                      color: 'var(--color-muted-foreground)',
+                      display: 'block',
+                      marginBottom: 6,
+                    }}
+                  >
+                    触发事件
+                  </span>
                   <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
                     {(['on_crash', 'on_restart', 'on_start', 'on_stop'] as const).map(key => {
-                      const ensureNotify = (): NotificationConfig => notify ?? {
-                        events: { on_crash: false, on_restart: false, on_start: false, on_stop: false },
-                      }
+                      const ensureNotify = (): NotificationConfig =>
+                        notify ?? {
+                          events: {
+                            on_crash: false,
+                            on_restart: false,
+                            on_start: false,
+                            on_stop: false,
+                          },
+                        }
                       return (
-                        <label key={key} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, cursor: 'pointer' }}>
+                        <label
+                          key={key}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 5,
+                            fontSize: 12,
+                            cursor: 'pointer',
+                          }}
+                        >
                           <input
                             type="checkbox"
                             checked={notify?.events[key] ?? false}
                             onChange={e => {
                               const base = ensureNotify()
-                              setNotify({ ...base, events: { ...base.events, [key]: e.target.checked } })
+                              setNotify({
+                                ...base,
+                                events: { ...base.events, [key]: e.target.checked },
+                              })
                             }}
                             style={{ accentColor: 'var(--color-primary)', width: 13, height: 13 }}
                           />
-                          {{ crash: '崩溃', restart: '重启', start: '启动', stop: '停止' }[key.replace('on_', '') as 'crash' | 'restart' | 'start' | 'stop']}
+                          {
+                            { crash: '崩溃', restart: '重启', start: '启动', stop: '停止' }[
+                              key.replace('on_', '') as 'crash' | 'restart' | 'start' | 'stop'
+                            ]
+                          }
                         </label>
                       )
                     })}
@@ -338,13 +530,32 @@ export default function EditPage({ onDone }: Props) {
 
                 {/* Webhook URL */}
                 <div>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, cursor: 'pointer', marginBottom: 4 }}>
+                  <label
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 5,
+                      fontSize: 12,
+                      cursor: 'pointer',
+                      marginBottom: 4,
+                    }}
+                  >
                     <input
                       type="checkbox"
                       checked={notify?.webhook?.enabled ?? false}
                       onChange={e => {
-                        const base = notify ?? { events: { on_crash: false, on_restart: false, on_start: false, on_stop: false } }
-                        setNotify({ ...base, webhook: { url: base.webhook?.url ?? '', enabled: e.target.checked } })
+                        const base = notify ?? {
+                          events: {
+                            on_crash: false,
+                            on_restart: false,
+                            on_start: false,
+                            on_stop: false,
+                          },
+                        }
+                        setNotify({
+                          ...base,
+                          webhook: { url: base.webhook?.url ?? '', enabled: e.target.checked },
+                        })
                       }}
                       style={{ accentColor: 'var(--color-primary)', width: 13, height: 13 }}
                     />
@@ -353,66 +564,160 @@ export default function EditPage({ onDone }: Props) {
                   <input
                     style={{ ...inputStyle, opacity: notify?.webhook?.enabled ? 1 : 0.5 }}
                     type="url"
-                    placeholder="https://example.com/webhook"
-                    value={notify?.webhook?.url ?? ''}
+                    placeholder={secretInputPlaceholder(
+                      notify?.webhook?.url,
+                      'https://example.com/webhook'
+                    )}
+                    value={secretInputValue(notify?.webhook?.url)}
                     disabled={!notify?.webhook?.enabled}
                     onChange={e => {
-                      const base = notify ?? { events: { on_crash: false, on_restart: false, on_start: false, on_stop: false } }
-                      setNotify({ ...base, webhook: { url: e.target.value, enabled: base.webhook?.enabled ?? true } })
+                      const base = notify ?? {
+                        events: {
+                          on_crash: false,
+                          on_restart: false,
+                          on_start: false,
+                          on_stop: false,
+                        },
+                      }
+                      setNotify({
+                        ...base,
+                        webhook: { url: e.target.value, enabled: base.webhook?.enabled ?? true },
+                      })
                     }}
                   />
                 </div>
 
                 {/* Slack */}
                 <div>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, cursor: 'pointer', marginBottom: 4 }}>
+                  <label
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 5,
+                      fontSize: 12,
+                      cursor: 'pointer',
+                      marginBottom: 4,
+                    }}
+                  >
                     <input
                       type="checkbox"
                       checked={notify?.slack?.enabled ?? false}
                       onChange={e => {
-                        const base = notify ?? { events: { on_crash: false, on_restart: false, on_start: false, on_stop: false } }
-                        setNotify({ ...base, slack: { webhook_url: base.slack?.webhook_url ?? '', enabled: e.target.checked } })
+                        const base = notify ?? {
+                          events: {
+                            on_crash: false,
+                            on_restart: false,
+                            on_start: false,
+                            on_stop: false,
+                          },
+                        }
+                        setNotify({
+                          ...base,
+                          slack: {
+                            webhook_url: base.slack?.webhook_url ?? '',
+                            enabled: e.target.checked,
+                          },
+                        })
                       }}
                       style={{ accentColor: 'var(--color-primary)', width: 13, height: 13 }}
                     />
-                    <span style={{ color: 'var(--color-muted-foreground)' }}>Slack Webhook 地址</span>
+                    <span style={{ color: 'var(--color-muted-foreground)' }}>
+                      Slack Webhook 地址
+                    </span>
                   </label>
                   <input
                     style={{ ...inputStyle, opacity: notify?.slack?.enabled ? 1 : 0.5 }}
                     type="url"
-                    placeholder="https://hooks.slack.com/services/..."
-                    value={notify?.slack?.webhook_url ?? ''}
+                    placeholder={secretInputPlaceholder(
+                      notify?.slack?.webhook_url,
+                      'https://hooks.slack.com/services/...'
+                    )}
+                    value={secretInputValue(notify?.slack?.webhook_url)}
                     disabled={!notify?.slack?.enabled}
                     onChange={e => {
-                      const base = notify ?? { events: { on_crash: false, on_restart: false, on_start: false, on_stop: false } }
-                      setNotify({ ...base, slack: { webhook_url: e.target.value, enabled: base.slack?.enabled ?? true, channel: base.slack?.channel } })
+                      const base = notify ?? {
+                        events: {
+                          on_crash: false,
+                          on_restart: false,
+                          on_start: false,
+                          on_stop: false,
+                        },
+                      }
+                      setNotify({
+                        ...base,
+                        slack: {
+                          webhook_url: e.target.value,
+                          enabled: base.slack?.enabled ?? true,
+                          channel: base.slack?.channel,
+                        },
+                      })
                     }}
                   />
                 </div>
 
                 {/* Teams */}
                 <div>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, cursor: 'pointer', marginBottom: 4 }}>
+                  <label
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 5,
+                      fontSize: 12,
+                      cursor: 'pointer',
+                      marginBottom: 4,
+                    }}
+                  >
                     <input
                       type="checkbox"
                       checked={notify?.teams?.enabled ?? false}
                       onChange={e => {
-                        const base = notify ?? { events: { on_crash: false, on_restart: false, on_start: false, on_stop: false } }
-                        setNotify({ ...base, teams: { webhook_url: base.teams?.webhook_url ?? '', enabled: e.target.checked } })
+                        const base = notify ?? {
+                          events: {
+                            on_crash: false,
+                            on_restart: false,
+                            on_start: false,
+                            on_stop: false,
+                          },
+                        }
+                        setNotify({
+                          ...base,
+                          teams: {
+                            webhook_url: base.teams?.webhook_url ?? '',
+                            enabled: e.target.checked,
+                          },
+                        })
                       }}
                       style={{ accentColor: 'var(--color-primary)', width: 13, height: 13 }}
                     />
-                    <span style={{ color: 'var(--color-muted-foreground)' }}>Teams Webhook 地址</span>
+                    <span style={{ color: 'var(--color-muted-foreground)' }}>
+                      Teams Webhook 地址
+                    </span>
                   </label>
                   <input
                     style={{ ...inputStyle, opacity: notify?.teams?.enabled ? 1 : 0.5 }}
                     type="url"
-                    placeholder="https://outlook.office.com/webhook/..."
-                    value={notify?.teams?.webhook_url ?? ''}
+                    placeholder={secretInputPlaceholder(
+                      notify?.teams?.webhook_url,
+                      'https://outlook.office.com/webhook/...'
+                    )}
+                    value={secretInputValue(notify?.teams?.webhook_url)}
                     disabled={!notify?.teams?.enabled}
                     onChange={e => {
-                      const base = notify ?? { events: { on_crash: false, on_restart: false, on_start: false, on_stop: false } }
-                      setNotify({ ...base, teams: { webhook_url: e.target.value, enabled: base.teams?.enabled ?? true } })
+                      const base = notify ?? {
+                        events: {
+                          on_crash: false,
+                          on_restart: false,
+                          on_start: false,
+                          on_stop: false,
+                        },
+                      }
+                      setNotify({
+                        ...base,
+                        teams: {
+                          webhook_url: e.target.value,
+                          enabled: base.teams?.enabled ?? true,
+                        },
+                      })
                     }}
                   />
                 </div>
@@ -422,10 +727,12 @@ export default function EditPage({ onDone }: Props) {
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 8 }}>
-          <button type="submit" disabled={loading} style={primaryBtnStyle}>
+          <button type="submit" disabled={loading || !loaded} style={primaryBtnStyle}>
             {loading ? '保存中…' : '💾 保存并应用'}
           </button>
-          {error && <span style={{ fontSize: 12, color: 'var(--color-destructive)' }}>{error}</span>}
+          {error && (
+            <span style={{ fontSize: 12, color: 'var(--color-destructive)' }}>{error}</span>
+          )}
         </div>
       </FormCard>
     </div>
@@ -433,11 +740,25 @@ export default function EditPage({ onDone }: Props) {
 }
 
 // @group BusinessLogic > CheckboxField : Inline checkbox with label
-function CheckboxField({ label, checked, onChange }: { label: string; checked: boolean; onChange: (v: boolean) => void }) {
+function CheckboxField({
+  label,
+  checked,
+  onChange,
+}: {
+  label: string
+  checked: boolean
+  onChange: (v: boolean) => void
+}) {
   return (
-    <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 13 }}>
-      <input type="checkbox" checked={checked} onChange={e => onChange(e.target.checked)}
-        style={{ accentColor: 'var(--color-primary)', width: 14, height: 14 }} />
+    <label
+      style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 13 }}
+    >
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={e => onChange(e.target.checked)}
+        style={{ accentColor: 'var(--color-primary)', width: 14, height: 14 }}
+      />
       {label}
     </label>
   )
@@ -445,9 +766,16 @@ function CheckboxField({ label, checked, onChange }: { label: string; checked: b
 
 // @group Utilities > Styles : Env file action button
 const envActionBtn: React.CSSProperties = {
-  display: 'flex', alignItems: 'center', gap: 5,
-  padding: '4px 10px', fontSize: 11, fontWeight: 500,
-  background: 'var(--color-secondary)', border: '1px solid var(--color-border)',
-  borderRadius: 4, cursor: 'pointer', color: 'var(--color-foreground)',
+  display: 'flex',
+  alignItems: 'center',
+  gap: 5,
+  padding: '4px 10px',
+  fontSize: 11,
+  fontWeight: 500,
+  background: 'var(--color-secondary)',
+  border: '1px solid var(--color-border)',
+  borderRadius: 4,
+  cursor: 'pointer',
+  color: 'var(--color-foreground)',
   whiteSpace: 'nowrap',
 }

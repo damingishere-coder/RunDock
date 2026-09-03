@@ -18,16 +18,23 @@ pub fn rotate_if_needed(log_path: &Path, max_size_bytes: u64, max_files: usize) 
         return Ok(false);
     }
 
-    // Shift existing rotated files: out.log.4 -> deleted, out.log.3 -> out.log.4, …
+    if max_files == 0 {
+        fs::remove_file(log_path)?;
+        return Ok(true);
+    }
+
+    // Delete the oldest copy first so rename has consistent semantics on Windows.
+    let oldest = rotated_path(log_path, max_files);
+    if oldest.exists() {
+        fs::remove_file(&oldest)?;
+    }
+
+    // Shift existing rotated files: out.log.4 -> out.log.5, out.log.3 -> out.log.4, …
     for i in (1..max_files).rev() {
         let old = rotated_path(log_path, i);
         let new = rotated_path(log_path, i + 1);
         if old.exists() {
-            if i + 1 > max_files {
-                fs::remove_file(&old)?;
-            } else {
-                fs::rename(&old, &new)?;
-            }
+            fs::rename(&old, &new)?;
         }
     }
 
@@ -114,11 +121,37 @@ fn purge_old_dated_logs(base: &Path, today: NaiveDate, keep_days: u32) -> Result
         if let Some(date_str) = fname.strip_prefix(&format!("{stem}.")) {
             if let Ok(file_date) = NaiveDate::parse_from_str(date_str, "%Y-%m-%d") {
                 if file_date < cutoff {
-                    let _ = fs::remove_file(entry.path());
+                    fs::remove_file(entry.path())?;
                 }
             }
         }
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use uuid::Uuid;
+
+    #[test]
+    fn size_rotation_replaces_oldest_copy_portably() {
+        let directory = std::env::temp_dir().join(format!("alter-log-rotation-{}", Uuid::new_v4()));
+        fs::create_dir_all(&directory).unwrap();
+        let log = directory.join("out.log");
+        fs::write(&log, b"current").unwrap();
+        for index in 1..=5 {
+            fs::write(rotated_path(&log, index), format!("old-{index}")).unwrap();
+        }
+
+        assert!(rotate_if_needed(&log, 1, 5).unwrap());
+        assert_eq!(
+            fs::read_to_string(rotated_path(&log, 1)).unwrap(),
+            "current"
+        );
+        assert_eq!(fs::read_to_string(rotated_path(&log, 5)).unwrap(), "old-4");
+
+        fs::remove_dir_all(directory).unwrap();
+    }
 }

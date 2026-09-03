@@ -3,17 +3,26 @@
 use crate::models::tunnel::{
     CreateTunnelRequest, TunnelEntry, TunnelProvider, TunnelSettings, TunnelStatus,
 };
+use crate::process::instance::ProcessIdentity;
+use crate::process::tree::ProcessTreeGuard;
 use chrono::Utc;
 use dashmap::DashMap;
 use std::sync::Arc;
-use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::io::{AsyncBufRead, AsyncBufReadExt, BufReader};
 use uuid::Uuid;
 
 // @group BusinessLogic > TunnelManager : Shared handle — cheap to clone, backed by Arc
 #[derive(Clone)]
 pub struct TunnelManager {
     pub entries: Arc<DashMap<String, TunnelEntry>>,
-    pids: Arc<DashMap<String, u32>>,
+    pids: Arc<DashMap<String, TunnelProcess>>,
+    create_lock: Arc<tokio::sync::Mutex<()>>,
+}
+
+#[derive(Clone)]
+struct TunnelProcess {
+    pid: u32,
+    identity: ProcessIdentity,
 }
 
 impl TunnelManager {
@@ -21,6 +30,7 @@ impl TunnelManager {
         Self {
             entries: Arc::new(DashMap::new()),
             pids: Arc::new(DashMap::new()),
+            create_lock: Arc::new(tokio::sync::Mutex::new(())),
         }
     }
 
@@ -30,8 +40,42 @@ impl TunnelManager {
         req: CreateTunnelRequest,
         settings: &TunnelSettings,
     ) -> Result<TunnelEntry, String> {
+        const MAX_TRACKED_TUNNELS: usize = 256;
+        const MAX_ACTIVE_TUNNELS: usize = 32;
+        const MAX_TUNNEL_LABEL_BYTES: usize = 256;
+
+        if req.port == 0 {
+            return Err("Tunnel port must be between 1 and 65535".to_string());
+        }
+        for (label, value) in [
+            ("process_name", req.process_name.as_deref()),
+            ("process_id", req.process_id.as_deref()),
+        ] {
+            if value.is_some_and(|value| {
+                value.len() > MAX_TUNNEL_LABEL_BYTES || value.chars().any(char::is_control)
+            }) {
+                return Err(format!(
+                    "Tunnel {label} must be at most {MAX_TUNNEL_LABEL_BYTES} bytes and contain no control characters"
+                ));
+            }
+        }
+
+        let _create_guard = self.create_lock.lock().await;
+        if self.entries.len() >= MAX_TRACKED_TUNNELS {
+            return Err(format!(
+                "At most {MAX_TRACKED_TUNNELS} tunnel records may be retained; remove an old stopped or failed tunnel first"
+            ));
+        }
+        if self.pids.len() >= MAX_ACTIVE_TUNNELS {
+            return Err(format!(
+                "At most {MAX_ACTIVE_TUNNELS} tunnels may run at the same time"
+            ));
+        }
         let id = Uuid::new_v4().to_string();
-        let provider = req.provider.clone().unwrap_or_else(|| settings.provider.clone());
+        let provider = req
+            .provider
+            .clone()
+            .unwrap_or_else(|| settings.provider.clone());
 
         let entry = TunnelEntry {
             id: id.clone(),
@@ -51,40 +95,80 @@ impl TunnelManager {
         let mut cmd = match build_command(&provider, req.port, settings) {
             Ok(c) => c,
             Err(e) => {
-                if let Some(mut ent) = self.entries.get_mut(&id) {
-                    ent.status = TunnelStatus::Failed;
-                    ent.error = Some(e.clone());
-                }
+                self.entries.remove(&id);
                 return Err(e);
             }
         };
 
-        // @group BusinessLogic > TunnelManager : Hide console window on Windows
+        cmd.kill_on_drop(true);
+
+        // @group BusinessLogic > TunnelManager : Own the complete tunnel process tree
         #[cfg(windows)]
         {
-            use std::os::windows::process::CommandExt;
-            cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+            // CREATE_NO_WINDOW | CREATE_BREAKAWAY_FROM_JOB lets this manager own
+            // a dedicated kill-on-close Job Object instead of inheriting an
+            // unrelated parent job.
+            cmd.creation_flags(0x0900_0000);
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::CommandExt;
+            cmd.as_std_mut().process_group(0);
         }
 
-        let mut child = match cmd
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .spawn()
-        {
+        cmd.stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped());
+        #[cfg(windows)]
+        let spawn_result = match cmd.spawn() {
+            Ok(child) => Ok(child),
+            Err(initial_error) if initial_error.kind() == std::io::ErrorKind::PermissionDenied => {
+                tracing::warn!(
+                    "tunnel process breakaway was denied; retrying without CREATE_BREAKAWAY_FROM_JOB"
+                );
+                cmd.creation_flags(0x0800_0000);
+                cmd.spawn()
+            }
+            Err(error) => Err(error),
+        };
+        #[cfg(not(windows))]
+        let spawn_result = cmd.spawn();
+
+        let mut child = match spawn_result {
             Ok(c) => c,
             Err(e) => {
                 let msg = format!("Failed to spawn tunnel process: {e}");
-                if let Some(mut ent) = self.entries.get_mut(&id) {
-                    ent.status = TunnelStatus::Failed;
-                    ent.error = Some(msg.clone());
-                }
+                self.entries.remove(&id);
                 return Err(msg);
             }
         };
 
-        if let Some(pid) = child.id() {
-            self.pids.insert(id.clone(), pid);
-        }
+        let pid = child
+            .id()
+            .ok_or_else(|| "Tunnel process did not expose a PID".to_string())?;
+        let process_tree =
+            match ProcessTreeGuard::attach_or_terminate(&mut child, pid, &format!("tunnel-{id}"))
+                .await
+            {
+                Ok(guard) => guard,
+                Err(error) => {
+                    let message =
+                        format!("Could not establish tunnel process-tree ownership: {error}");
+                    self.entries.remove(&id);
+                    return Err(message);
+                }
+            };
+        let Some(identity) =
+            crate::process::identity::capture_process_identity_with_retry(pid).await
+        else {
+            let cleanup = crate::process::identity::kill_spawned_process(&mut child, pid).await;
+            let message = format!(
+                "Could not capture a verifiable tunnel process identity; cleanup result: {cleanup:?}"
+            );
+            self.entries.remove(&id);
+            return Err(message);
+        };
+        self.pids
+            .insert(id.clone(), TunnelProcess { pid, identity });
 
         // Spawn background task: scan output for URL, then monitor process exit
         let entries = Arc::clone(&self.entries);
@@ -96,25 +180,35 @@ impl TunnelManager {
         let stderr = child.stderr.take();
 
         tokio::spawn(async move {
+            let _process_tree = process_tree;
             let url = watch_output(stdout, stderr, &provider_for_task).await;
 
             match url {
-                Some(found_url) => {
-                    if let Some(mut e) = entries.get_mut(&tunnel_id) {
-                        e.public_url = Some(found_url);
-                        e.status = TunnelStatus::Active;
+                Ok(Some(found_url)) => {
+                    if pids.contains_key(&tunnel_id) {
+                        if let Some(mut entry) = entries.get_mut(&tunnel_id) {
+                            if entry.status == TunnelStatus::Starting {
+                                entry.public_url = Some(found_url);
+                                entry.status = TunnelStatus::Active;
+                            }
+                        }
                     }
                 }
-                None => {
+                outcome @ (Ok(None) | Err(_)) => {
                     // Timed out or process exited before URL was found
+                    let cleanup = crate::process::identity::kill_spawned_process(&mut child, pid)
+                        .await
+                        .err()
+                        .map(|error| format!("; cleanup failed: {error}"))
+                        .unwrap_or_default();
                     if let Some(mut e) = entries.get_mut(&tunnel_id) {
                         if e.status == TunnelStatus::Starting {
                             e.status = TunnelStatus::Failed;
-                            e.error = Some(
-                                "Process exited or timed out before a public URL was found. \
-                                 Check that the binary is installed and in PATH."
-                                    .into(),
-                            );
+                            let reason = match &outcome {
+                                Err(error) => format!("Tunnel output could not be read: {error}"),
+                                Ok(_) => "Process exited or timed out before a public URL was found. Check that the binary is installed and in PATH.".to_string(),
+                            };
+                            e.error = Some(format!("{reason}{cleanup}"));
                         }
                     }
                     pids.remove(&tunnel_id);
@@ -139,29 +233,41 @@ impl TunnelManager {
     // @group BusinessLogic > TunnelManager : Return all tunnel entries (any status)
     pub fn list(&self) -> Vec<TunnelEntry> {
         let mut list: Vec<TunnelEntry> = self.entries.iter().map(|e| e.value().clone()).collect();
-        list.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+        list.sort_by_key(|entry| std::cmp::Reverse(entry.created_at));
         list
     }
 
     // @group BusinessLogic > TunnelManager : Kill a tunnel by ID and mark it stopped
-    pub fn stop(&self, id: &str) -> bool {
-        if let Some((_, pid)) = self.pids.remove(id) {
-            kill_pid(pid);
+    pub async fn stop(&self, id: &str) -> Result<bool, String> {
+        // Serialize against create so a stop cannot mark a Starting entry as
+        // stopped before its owned PID has been registered.
+        let _create_guard = self.create_lock.lock().await;
+        if let Some(process) = self.pids.get(id).map(|entry| entry.value().clone()) {
+            crate::process::identity::kill_orphan_pid(process.pid, &process.identity)
+                .await
+                .map_err(|error| format!("Refusing to stop unverified tunnel PID: {error}"))?;
+            self.pids.remove(id);
         }
-        match self.entries.get_mut(id) {
+        Ok(match self.entries.get_mut(id) {
             Some(mut e) => {
                 e.status = TunnelStatus::Stopped;
                 e.error = None;
                 true
             }
             None => false,
-        }
+        })
     }
 
     // @group BusinessLogic > TunnelManager : Remove a stopped/failed tunnel from the list
     pub fn remove(&self, id: &str) -> bool {
         self.pids.remove(id);
         self.entries.remove(id).is_some()
+    }
+}
+
+impl Default for TunnelManager {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -177,7 +283,8 @@ fn build_command(
             // Named tunnel when a token is configured; quick tunnel otherwise
             if let Some(token) = &settings.cloudflare.token {
                 if !token.is_empty() {
-                    cmd.args(["tunnel", "run", "--token", token]);
+                    cmd.env("TUNNEL_TOKEN", token);
+                    cmd.args(["tunnel", "run"]);
                     return Ok(cmd);
                 }
             }
@@ -191,7 +298,12 @@ fn build_command(
         }
         TunnelProvider::Ngrok => {
             let mut cmd = tokio::process::Command::new("ngrok");
-            cmd.args(["http", &port.to_string(), "--log=stdout", "--log-format=json"]);
+            cmd.args([
+                "http",
+                &port.to_string(),
+                "--log=stdout",
+                "--log-format=json",
+            ]);
             if let Some(token) = &settings.ngrok.auth_token {
                 if !token.is_empty() {
                     cmd.env("NGROK_AUTHTOKEN", token);
@@ -212,10 +324,134 @@ fn build_command(
                 .args_template
                 .replace("{port}", &port.to_string());
             if !args_raw.is_empty() {
-                let args: Vec<&str> = args_raw.split_whitespace().collect();
+                let args = parse_argument_template(&args_raw)?;
                 cmd.args(&args);
             }
             Ok(cmd)
+        }
+    }
+}
+
+fn parse_argument_template(input: &str) -> Result<Vec<String>, String> {
+    let mut args = Vec::new();
+    let mut current = String::new();
+    let mut quote: Option<char> = None;
+    let mut chars = input.chars().peekable();
+    while let Some(ch) = chars.next() {
+        match (quote, ch) {
+            (Some(expected), value) if value == expected => quote = None,
+            (None, '\'' | '"') => quote = Some(ch),
+            (None, value) if value.is_whitespace() => {
+                if !current.is_empty() {
+                    args.push(std::mem::take(&mut current));
+                }
+            }
+            (_, '\\')
+                if chars
+                    .peek()
+                    .is_some_and(|next| matches!(*next, '\\' | '\'' | '"')) =>
+            {
+                current.push(chars.next().expect("peeked argument character"));
+            }
+            (_, value) => current.push(value),
+        }
+    }
+    if let Some(unclosed) = quote {
+        return Err(format!(
+            "Custom tunnel arguments contain an unclosed {unclosed} quote"
+        ));
+    }
+    if !current.is_empty() {
+        args.push(current);
+    }
+    if args.len() > 128 || args.iter().any(|arg| arg.len() > 4_096) {
+        return Err("Custom tunnel arguments exceed the configured safety limit".into());
+    }
+    Ok(args)
+}
+
+const MAX_TUNNEL_OUTPUT_LINE_BYTES: usize = 64 * 1024;
+
+enum OutputEvent {
+    Line(String),
+    ReadError(String),
+}
+
+enum BoundedOutputLine {
+    Line(String),
+    Oversized,
+    Eof,
+}
+
+async fn read_bounded_output_line<R>(reader: &mut R) -> Result<BoundedOutputLine, String>
+where
+    R: AsyncBufRead + Unpin,
+{
+    let mut line = Vec::new();
+    let mut oversized = false;
+    loop {
+        let available = reader.fill_buf().await.map_err(|error| error.to_string())?;
+        if available.is_empty() {
+            if line.is_empty() && !oversized {
+                return Ok(BoundedOutputLine::Eof);
+            }
+            break;
+        }
+        let newline = available.iter().position(|byte| *byte == b'\n');
+        let consumed = newline.map_or(available.len(), |position| position + 1);
+        let content_len = newline.unwrap_or(available.len());
+        if !oversized {
+            if line.len().saturating_add(content_len) > MAX_TUNNEL_OUTPUT_LINE_BYTES {
+                oversized = true;
+            } else {
+                line.extend_from_slice(&available[..content_len]);
+            }
+        }
+        reader.consume(consumed);
+        if newline.is_some() {
+            break;
+        }
+    }
+    if oversized {
+        Ok(BoundedOutputLine::Oversized)
+    } else {
+        if line.last() == Some(&b'\r') {
+            line.pop();
+        }
+        Ok(BoundedOutputLine::Line(
+            String::from_utf8_lossy(&line).into_owned(),
+        ))
+    }
+}
+
+async fn forward_tunnel_output<R>(reader: R, tx: tokio::sync::mpsc::Sender<OutputEvent>)
+where
+    R: tokio::io::AsyncRead + Unpin,
+{
+    let mut reader = BufReader::new(reader);
+    loop {
+        match read_bounded_output_line(&mut reader).await {
+            Ok(BoundedOutputLine::Line(line)) => {
+                // Once the URL watcher returns, keep draining the pipe so the
+                // long-running tunnel cannot deadlock on a full stdout/stderr buffer.
+                let _ = tx.send(OutputEvent::Line(line)).await;
+            }
+            Ok(BoundedOutputLine::Oversized) => {
+                if tx
+                    .send(OutputEvent::ReadError(
+                        "tunnel output line exceeded the 64 KiB safety limit".into(),
+                    ))
+                    .await
+                    .is_ok()
+                {
+                    break;
+                }
+            }
+            Ok(BoundedOutputLine::Eof) => break,
+            Err(error) => {
+                let _ = tx.send(OutputEvent::ReadError(error)).await;
+                break;
+            }
         }
     }
 }
@@ -225,30 +461,20 @@ async fn watch_output(
     stdout: Option<tokio::process::ChildStdout>,
     stderr: Option<tokio::process::ChildStderr>,
     provider: &TunnelProvider,
-) -> Option<String> {
-    let (tx, mut rx) = tokio::sync::mpsc::channel::<String>(128);
+) -> Result<Option<String>, String> {
+    let (tx, mut rx) = tokio::sync::mpsc::channel::<OutputEvent>(128);
 
     if let Some(out) = stdout {
         let tx2 = tx.clone();
         tokio::spawn(async move {
-            let mut reader = BufReader::new(out).lines();
-            while let Ok(Some(line)) = reader.next_line().await {
-                if tx2.send(line).await.is_err() {
-                    break;
-                }
-            }
+            forward_tunnel_output(out, tx2).await;
         });
     }
 
     if let Some(err) = stderr {
         let tx2 = tx.clone();
         tokio::spawn(async move {
-            let mut reader = BufReader::new(err).lines();
-            while let Ok(Some(line)) = reader.next_line().await {
-                if tx2.send(line).await.is_err() {
-                    break;
-                }
-            }
+            forward_tunnel_output(err, tx2).await;
         });
     }
     drop(tx); // close sender so channel closes when both readers finish
@@ -259,21 +485,39 @@ async fn watch_output(
     loop {
         let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
         if remaining.is_zero() {
-            return None;
+            return Ok(None);
         }
         match tokio::time::timeout(remaining, rx.recv()).await {
-            Ok(Some(line)) => {
+            Ok(Some(OutputEvent::Line(line))) => {
                 if let Some(url) = extract_url(&line, provider) {
-                    return Some(url);
+                    return Ok(Some(url));
                 }
             }
-            Ok(None) => return None, // channel closed — process exited
-            Err(_) => return None,   // 45-second timeout
+            Ok(Some(OutputEvent::ReadError(error))) => return Err(error),
+            Ok(None) => return Ok(None), // channel closed — process exited
+            Err(_) => return Ok(None),   // 45-second timeout
         }
     }
 }
 
 // @group Utilities > TunnelManager : Provider-specific URL extraction from one output line
+fn validated_tunnel_url(candidate: &str) -> Option<String> {
+    let candidate = candidate.trim_end_matches(['.', ',', ';', ')', ']', '}']);
+    let parsed = reqwest::Url::parse(candidate).ok()?;
+    if parsed.scheme() != "https"
+        || parsed.host_str().is_none_or(str::is_empty)
+        || !parsed.username().is_empty()
+        || parsed.password().is_some()
+    {
+        return None;
+    }
+    let mut normalized = parsed.to_string();
+    if parsed.path() == "/" && parsed.query().is_none() && parsed.fragment().is_none() {
+        normalized.pop();
+    }
+    Some(normalized)
+}
+
 fn extract_url(line: &str, provider: &TunnelProvider) -> Option<String> {
     match provider {
         TunnelProvider::Cloudflare => {
@@ -283,12 +527,11 @@ fn extract_url(line: &str, provider: &TunnelProvider) -> Option<String> {
             if let Some(start) = line.find("https://") {
                 let rest = &line[start..];
                 let end = rest
-                    .find(|c: char| c.is_whitespace() || c == '"' || c == '|' || c == '\'' || c == '>')
+                    .find(|c: char| {
+                        c.is_whitespace() || c == '"' || c == '|' || c == '\'' || c == '>'
+                    })
                     .unwrap_or(rest.len());
-                let url = rest[..end].trim_end_matches('/');
-                if url.len() > 10 && url.contains('.') {
-                    return Some(url.to_string());
-                }
+                return validated_tunnel_url(&rest[..end]);
             }
             None
         }
@@ -298,7 +541,7 @@ fn extract_url(line: &str, provider: &TunnelProvider) -> Option<String> {
                 let rest = &line[idx + 7..];
                 if rest.starts_with("https://") {
                     let end = rest.find('"').unwrap_or(rest.len());
-                    return Some(rest[..end].to_string());
+                    return validated_tunnel_url(&rest[..end]);
                 }
             }
             // Fallback: any https:// URL on a line mentioning ngrok or tunnel
@@ -308,9 +551,7 @@ fn extract_url(line: &str, provider: &TunnelProvider) -> Option<String> {
                     let end = rest
                         .find(|c: char| c.is_whitespace() || c == '"')
                         .unwrap_or(rest.len());
-                    if end > 8 {
-                        return Some(rest[..end].to_string());
-                    }
+                    return validated_tunnel_url(&rest[..end]);
                 }
             }
             None
@@ -322,36 +563,18 @@ fn extract_url(line: &str, provider: &TunnelProvider) -> Option<String> {
                 let end = rest
                     .find(|c: char| c.is_whitespace() || c == '"' || c == '\'')
                     .unwrap_or(rest.len());
-                if end > 8 {
-                    return Some(rest[..end].to_string());
-                }
+                return validated_tunnel_url(&rest[..end]);
             }
             None
         }
     }
 }
 
-// @group Utilities > TunnelManager : Kill a process by PID cross-platform
-fn kill_pid(pid: u32) {
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        // /T kills child processes too (e.g. cloudflared spawns its own children)
-        let _ = std::process::Command::new("taskkill")
-            .args(["/F", "/T", "/PID", &pid.to_string()])
-            .creation_flags(0x0800_0000)
-            .output();
-    }
-    #[cfg(not(windows))]
-    {
-        unsafe {
-            libc::kill(pid as libc::pid_t, libc::SIGTERM);
-        }
-    }
-}
-
 // @group Utilities > TunnelManager : Check whether a provider binary is reachable
-pub async fn check_provider(provider: &TunnelProvider, settings: &TunnelSettings) -> (bool, String) {
+pub async fn check_provider(
+    provider: &TunnelProvider,
+    settings: &TunnelSettings,
+) -> (bool, String) {
     let binary = match provider {
         TunnelProvider::Cloudflare => "cloudflared".to_string(),
         TunnelProvider::Ngrok => "ngrok".to_string(),
@@ -366,24 +589,61 @@ pub async fn check_provider(provider: &TunnelProvider, settings: &TunnelSettings
     cmd.arg("--version")
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null());
+    cmd.kill_on_drop(true);
 
     #[cfg(windows)]
     {
-        use std::os::windows::process::CommandExt;
-        cmd.creation_flags(0x0800_0000);
+        cmd.creation_flags(0x0900_0000);
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        cmd.as_std_mut().process_group(0);
     }
 
-    match cmd.spawn() {
-        Ok(mut child) => {
-            let _ = child.wait().await;
+    let mut child = match cmd.spawn() {
+        Ok(child) => child,
+        Err(_) => {
+            return (
+                false,
+                format!("`{binary}` not found — install it and make sure it is in your PATH"),
+            )
+        }
+    };
+    let Some(pid) = child.id() else {
+        let _ = child.kill().await;
+        let _ = child.wait().await;
+        return (false, format!("`{binary}` did not expose a process ID"));
+    };
+    let _tree = match ProcessTreeGuard::attach_or_terminate(
+        &mut child,
+        pid,
+        &format!("tunnel-probe-{pid}"),
+    )
+    .await
+    {
+        Ok(tree) => tree,
+        Err(error) => {
+            return (
+                false,
+                format!("`{binary}` probe could not be contained: {error}"),
+            );
+        }
+    };
+
+    match tokio::time::timeout(std::time::Duration::from_secs(10), child.wait()).await {
+        Ok(Ok(status)) if status.success() => {
             (true, format!("`{binary}` is installed and reachable"))
         }
-        Err(_) => (
+        Ok(Ok(status)) => (
             false,
-            format!(
-                "`{binary}` not found — install it and make sure it is in your PATH"
-            ),
+            format!("`{binary}` returned a non-success status: {status}"),
         ),
+        Ok(Err(_)) => (false, format!("`{binary}` version check failed")),
+        Err(_) => {
+            let _ = crate::process::identity::kill_spawned_process(&mut child, pid).await;
+            (false, format!("`{binary}` version check timed out"))
+        }
     }
 }
 
@@ -391,6 +651,20 @@ pub async fn check_provider(provider: &TunnelProvider, settings: &TunnelSettings
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn custom_argument_parser_preserves_quoted_values_and_windows_paths() {
+        assert_eq!(
+            parse_argument_template(r#"--header "foo bar" --bin C:\tools\tunnel.exe"#).unwrap(),
+            vec!["--header", "foo bar", "--bin", r"C:\tools\tunnel.exe"]
+        );
+    }
+
+    #[test]
+    fn custom_argument_parser_rejects_unclosed_quotes_and_oversized_sets() {
+        assert!(parse_argument_template("--header 'unfinished").is_err());
+        assert!(parse_argument_template(&vec!["x"; 129].join(" ")).is_err());
+    }
 
     // @group UnitTests > Cloudflare : Quick-tunnel line yields the trycloudflare URL
     #[test]
@@ -426,7 +700,8 @@ mod tests {
     // @group UnitTests > Ngrok : JSON log line with "url" key yields the tunnel URL
     #[test]
     fn test_ngrok_json_url() {
-        let line = r#"{"level":"info","msg":"started tunnel","url":"https://abc123.ngrok-free.app"}"#;
+        let line =
+            r#"{"level":"info","msg":"started tunnel","url":"https://abc123.ngrok-free.app"}"#;
         let url = extract_url(line, &TunnelProvider::Ngrok).unwrap();
         assert_eq!(url, "https://abc123.ngrok-free.app");
     }
@@ -469,10 +744,36 @@ mod tests {
         assert!(url.is_none());
     }
 
+    #[test]
+    fn test_custom_rejects_malformed_or_credentialed_urls() {
+        assert!(extract_url("ready https://", &TunnelProvider::Custom).is_none());
+        assert!(extract_url(
+            "ready https://user:pass@example.com",
+            &TunnelProvider::Custom
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn test_custom_trims_log_punctuation() {
+        assert_eq!(
+            extract_url(
+                "ready (https://custom.example.com/path).",
+                &TunnelProvider::Custom
+            )
+            .as_deref(),
+            Some("https://custom.example.com/path")
+        );
+    }
+
     // @group UnitTests > EdgeCases : Empty line returns None for all providers
     #[test]
     fn test_empty_line_all_providers() {
-        for provider in [TunnelProvider::Cloudflare, TunnelProvider::Ngrok, TunnelProvider::Custom] {
+        for provider in [
+            TunnelProvider::Cloudflare,
+            TunnelProvider::Ngrok,
+            TunnelProvider::Custom,
+        ] {
             assert!(extract_url("", &provider).is_none());
         }
     }

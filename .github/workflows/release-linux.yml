@@ -1,4 +1,4 @@
-# RunDock — Linux Release Workflow (compatible alter CLI packages)
+# RunDock — Linux Release Workflow
 # Triggers on version tags (v*) → builds Linux binaries → packages .deb → publishes APT repo on GitHub Pages
 # https://github.com/damingishere-coder/RunDock
 
@@ -10,40 +10,74 @@ on:
       - "v*"
 
 permissions:
-  contents: write
-  pages: write
-  id-token: write
+  contents: read
+
+# APT publication uses one shared gh-pages branch, so releases must not overlap.
+concurrency:
+  group: release-linux-publication
+  cancel-in-progress: false
 
 env:
   CARGO_TERM_COLOR: always
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  NPM_VERSION: 11.12.1
 
 jobs:
+  validate-release-tag:
+    name: Validate release tag
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Require a matching semantic version
+        env:
+          RELEASE_REF: ${{ github.ref_name }}
+        run: |
+          printf '%s\n' "$RELEASE_REF" | grep -Eq '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?(\+[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?$' || {
+            echo "::error::Release tag must be a strict v-prefixed semantic version"
+            exit 1
+          }
+          TAG_VERSION="${RELEASE_REF#v}"
+          CARGO_VERSION="$(sed -n 's/^version *= *"\([^"]*\)"/\1/p' Cargo.toml | head -n 1)"
+          test "$TAG_VERSION" = "$CARGO_VERSION" || {
+            echo "::error::Release tag version does not match Cargo.toml"
+            exit 1
+          }
+
+  quality:
+    name: Required quality gate
+    uses: ./.github/workflows/quality.yml
+    needs: validate-release-tag
+
   # ─────────────────────────────────────────────────────────────────────────────
   # Build web UI (shared asset, embedded into the binary via rust-embed)
   # ─────────────────────────────────────────────────────────────────────────────
   build-web-ui:
     name: Build Web UI
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
+    needs: quality
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: 22
+          node-version: 24.15.0
           cache: npm
           cache-dependency-path: web-ui/package-lock.json
 
       - name: Build web UI
         run: |
+          npm install --global "npm@$NPM_VERSION"
+          test "$(npm --version)" = "$NPM_VERSION"
           cd web-ui
           npm ci
           npm run build
 
       - name: Upload web UI artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: web-ui-dist
           path: web-ui/dist/
@@ -53,26 +87,24 @@ jobs:
   # ─────────────────────────────────────────────────────────────────────────────
   build-linux-amd64:
     name: Build (Linux amd64)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     needs: build-web-ui
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Restore web UI
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: web-ui-dist
           path: web-ui/dist/
 
-      - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: x86_64-unknown-linux-gnu
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install 1.98.0 --profile minimal --target x86_64-unknown-linux-gnu
 
       - name: Cache Cargo registry
-        uses: actions/cache@v4
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
         with:
           path: |
             ~/.cargo/registry
@@ -84,10 +116,10 @@ jobs:
       - name: Build release binary
         env:
           GH_OAUTH_CLIENT_ID: ${{ secrets.GH_OAUTH_CLIENT_ID }}
-        run: cargo build --release --target x86_64-unknown-linux-gnu
+        run: cargo build --release --locked --target x86_64-unknown-linux-gnu
 
       - name: Upload binary artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: alter-linux-amd64
           path: target/x86_64-unknown-linux-gnu/release/alter
@@ -97,15 +129,15 @@ jobs:
   # ─────────────────────────────────────────────────────────────────────────────
   build-linux-arm64:
     name: Build (Linux arm64)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     needs: build-web-ui
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Restore web UI
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: web-ui-dist
           path: web-ui/dist/
@@ -115,13 +147,11 @@ jobs:
           sudo apt-get update -q
           sudo apt-get install -y gcc-aarch64-linux-gnu
 
-      - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-unknown-linux-gnu
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install 1.98.0 --profile minimal --target aarch64-unknown-linux-gnu
 
       - name: Cache Cargo registry
-        uses: actions/cache@v4
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
         with:
           path: |
             ~/.cargo/registry
@@ -134,10 +164,10 @@ jobs:
         env:
           CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
           GH_OAUTH_CLIENT_ID: ${{ secrets.GH_OAUTH_CLIENT_ID }}
-        run: cargo build --release --target aarch64-unknown-linux-gnu
+        run: cargo build --release --locked --target aarch64-unknown-linux-gnu
 
       - name: Upload binary artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: alter-linux-arm64
           path: target/aarch64-unknown-linux-gnu/release/alter
@@ -147,31 +177,37 @@ jobs:
   # ─────────────────────────────────────────────────────────────────────────────
   package-deb:
     name: Package .deb
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     needs: [build-linux-amd64, build-linux-arm64]
+    concurrency:
+      group: github-release-${{ github.ref }}
+      cancel-in-progress: false
 
     outputs:
       version: ${{ steps.version.outputs.VERSION }}
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Extract version from tag
         id: version
+        env:
+          RELEASE_REF: ${{ github.ref_name }}
         run: |
-          TAG="${{ github.ref_name }}"
+          printf '%s\n' "$RELEASE_REF" | grep -Eq '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?(\+[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?$' || exit 1
+          TAG="$RELEASE_REF"
           VERSION="${TAG#v}"
           echo "VERSION=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Download amd64 binary
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: alter-linux-amd64
           path: binaries/amd64/
 
       - name: Download arm64 binary
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: alter-linux-arm64
           path: binaries/arm64/
@@ -185,33 +221,86 @@ jobs:
         run: chmod +x scripts/build-deb.sh
 
       - name: Build amd64 .deb
-        run: ./scripts/build-deb.sh binaries/amd64/alter ${{ steps.version.outputs.VERSION }} amd64
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.VERSION }}
+        run: ./scripts/build-deb.sh binaries/amd64/alter "$RELEASE_VERSION" amd64
 
       - name: Build arm64 .deb
-        run: ./scripts/build-deb.sh binaries/arm64/alter ${{ steps.version.outputs.VERSION }} arm64
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.VERSION }}
+        run: ./scripts/build-deb.sh binaries/arm64/alter "$RELEASE_VERSION" arm64
+
+      - name: Generate and sign checksum manifest (required)
+        env:
+          APT_GPG_KEY: ${{ secrets.APT_GPG_KEY }}
+          APT_GPG_FINGERPRINT: ${{ vars.APT_GPG_FINGERPRINT }}
+        run: |
+          if [ -z "$APT_GPG_KEY" ]; then
+            echo "::error::APT_GPG_KEY is required; refusing to publish unverifiable packages."
+            exit 1
+          fi
+          if [ -z "$APT_GPG_FINGERPRINT" ]; then
+            echo "::error::APT_GPG_FINGERPRINT repository variable is required."
+            exit 1
+          fi
+          printf '%s' "$APT_GPG_KEY" | gpg --batch --import
+          KEY_ID=$(gpg --list-secret-keys --with-colons --fingerprint | awk -F: '/^fpr/{print $10; exit}')
+          test -n "$KEY_ID" || { echo "::error::No signing key was imported"; exit 1; }
+          test "$KEY_ID" = "$APT_GPG_FINGERPRINT" || {
+            echo "::error::Imported signing key fingerprint does not match APT_GPG_FINGERPRINT"
+            exit 1
+          }
+          sha256sum ./*.deb > SHA256SUMS
+          gpg --batch --yes --armor --default-key "$KEY_ID" \
+            --detach-sign --output SHA256SUMS.asc SHA256SUMS
+          gpg --armor --export "$KEY_ID" > rundock-release-key.asc
 
       - name: Upload .deb artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: alter-deb-packages
-          path: "*.deb"
+          path: |
+            *.deb
+            SHA256SUMS
+            SHA256SUMS.asc
+            rundock-release-key.asc
+
+  publish-release-assets:
+    name: Publish Linux release assets
+    runs-on: ubuntu-22.04
+    needs: package-deb
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download signed .deb packages
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: alter-deb-packages
+          path: release-assets/
 
       - name: Attach .deb files to GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@72f2c25fcb47643c292f7107632f7a47c1df5cd8 # v2.3.2
         with:
-          files: "*.deb"
+          files: |
+            release-assets/*.deb
+            release-assets/SHA256SUMS
+            release-assets/SHA256SUMS.asc
+            release-assets/rundock-release-key.asc
 
   # ─────────────────────────────────────────────────────────────────────────────
   # Publish: update APT repository on gh-pages branch
   # ─────────────────────────────────────────────────────────────────────────────
   publish-apt-repo:
     name: Publish APT Repository
-    runs-on: ubuntu-latest
-    needs: package-deb
+    runs-on: ubuntu-22.04
+    needs: [package-deb, publish-release-assets]
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout main repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           fetch-depth: 0
 
@@ -221,8 +310,8 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
           if git ls-remote --exit-code origin gh-pages; then
-            git fetch origin gh-pages
-            git worktree add gh-pages gh-pages
+            git fetch origin gh-pages:refs/remotes/origin/gh-pages
+            git worktree add -b publish-gh-pages gh-pages origin/gh-pages
           else
             echo "gh-pages branch does not exist — creating orphan branch"
             git worktree add --orphan gh-pages
@@ -233,7 +322,7 @@ jobs:
           fi
 
       - name: Download .deb packages
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: alter-deb-packages
           path: new-debs/
@@ -268,19 +357,28 @@ jobs:
             -o APT::FTPArchive::Release::Description="RunDock process manager APT repository" \
             release dists/stable > dists/stable/Release
 
-      - name: Sign Release (optional — requires APT_GPG_KEY secret)
+      - name: Sign Release (required)
         env:
           APT_GPG_KEY: ${{ secrets.APT_GPG_KEY }}
+          APT_GPG_FINGERPRINT: ${{ vars.APT_GPG_FINGERPRINT }}
         run: |
           if [ -z "$APT_GPG_KEY" ]; then
-            echo "::warning::APT_GPG_KEY secret is not set — skipping GPG signing. Packages will be unsigned."
-            exit 0
+            echo "::error::APT_GPG_KEY secret is required; refusing to publish an unsigned repository."
+            exit 1
+          fi
+          if [ -z "$APT_GPG_FINGERPRINT" ]; then
+            echo "::error::APT_GPG_FINGERPRINT repository variable is required."
+            exit 1
           fi
 
           echo "$APT_GPG_KEY" | gpg --batch --import
 
-          KEY_ID=$(gpg --list-secret-keys --with-colons | awk -F: '/^sec/{print $5; exit}')
-          echo "Signing with key: $KEY_ID"
+          KEY_ID=$(gpg --list-secret-keys --with-colons --fingerprint | awk -F: '/^fpr/{print $10; exit}')
+          test -n "$KEY_ID"
+          test "$KEY_ID" = "$APT_GPG_FINGERPRINT" || {
+            echo "::error::Imported signing key fingerprint does not match APT_GPG_FINGERPRINT"
+            exit 1
+          }
 
           cd gh-pages/apt
           gpg --batch --yes --default-key "$KEY_ID" \
@@ -290,12 +388,25 @@ jobs:
 
           # Export public key for users to download
           gpg --armor --export "$KEY_ID" > ../gpg-key.asc
+          test -s dists/stable/InRelease
+          test -s dists/stable/Release.gpg
+          test -s ../gpg-key.asc
 
       - name: Commit and push to gh-pages
+        env:
+          RELEASE_VERSION: ${{ needs.package-deb.outputs.version }}
         run: |
           cd gh-pages
+          test -s gpg-key.asc
           git add apt/
-          # Only add the GPG public key if signing ran
-          [ -f gpg-key.asc ] && git add gpg-key.asc || true
-          git commit -m "apt: release ${{ needs.package-deb.outputs.version }}" || echo "Nothing to commit"
-          git push origin gh-pages
+          git add gpg-key.asc
+          if git diff --cached --quiet; then
+            echo "No APT repository changes to publish"
+          else
+            git commit -m "apt: release $RELEASE_VERSION"
+          fi
+          git fetch origin gh-pages
+          git rebase origin/gh-pages
+          git push origin HEAD:gh-pages
+          git fetch origin gh-pages
+          test "$(git rev-parse HEAD)" = "$(git rev-parse origin/gh-pages)"

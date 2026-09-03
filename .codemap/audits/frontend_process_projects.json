@@ -1,0 +1,22 @@
+{
+  "score": 64,
+  "grade": "C",
+  "tags": ["bloat", "god-component"],
+  "findings": [
+    {
+      "sev": "MED",
+      "loc": "web-ui/src/pages/ProcessesPage.tsx:64",
+      "text": "ProcessesPage 约 1,794 行，列表、批量操作、筛选、排序和多种弹窗仍在同一组件中，功能已受契约测试保护但维护耦合仍高。"
+    },
+    {
+      "sev": "MED",
+      "loc": "web-ui/src/pages/ProcessDetailPage.tsx:95",
+      "text": "ProcessDetailPage 约 1,690 行，同时承载运行信息、日志、指标、Git、环境变量与操作面板；轮询已收敛为 single-flight，但视图职责仍需后续按面板拆分。"
+    },
+    {
+      "sev": "MED",
+      "loc": "web-ui/src/pages/ProjectsPage.tsx:41",
+      "text": "ProjectsPage 约 1,022 行，项目 CRUD、成员操作与桌面启动配置仍集中维护，结构性回归面偏大。"
+    }
+  ]
+}

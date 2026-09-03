@@ -10,31 +10,58 @@ on:
       - "v*"
 
 permissions:
-  contents: write
+  contents: read
 
 env:
   CARGO_TERM_COLOR: always
   BINARY_NAME: alter
+  DESKTOP_BINARY_NAME: rundock
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  NPM_VERSION: 11.12.1
 
 jobs:
+  validate-release-tag:
+    name: Validate release tag
+    runs-on: windows-2022
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Require a matching semantic version
+        shell: pwsh
+        env:
+          RELEASE_REF: ${{ github.ref_name }}
+        run: |
+          if ($env:RELEASE_REF -notmatch '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?(?:\+[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?$') {
+            throw "Release tag must be a strict v-prefixed semantic version"
+          }
+          $tagVersion = $env:RELEASE_REF.Substring(1)
+          $cargoVersion = (Select-String -Path Cargo.toml -Pattern '^version\s*=\s*"([^"]+)"').Matches[0].Groups[1].Value
+          if ($tagVersion -ne $cargoVersion) {
+            throw "Release tag version does not match Cargo.toml"
+          }
+
+  quality:
+    name: Required quality gate
+    uses: ./.github/workflows/quality.yml
+    needs: validate-release-tag
+
   # ─────────────────────────────────────────────────────────────────────────────
   # Build Windows x64 release binary
   # ─────────────────────────────────────────────────────────────────────────────
   build-windows:
     name: Build (Windows x64)
-    runs-on: windows-latest
+    runs-on: windows-2022
+    needs: quality
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-      - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: x86_64-pc-windows-msvc
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install 1.98.0 --profile minimal --target x86_64-pc-windows-msvc
 
       - name: Cache Cargo registry
-        uses: actions/cache@v4
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
         with:
           path: |
             ~/.cargo/registry
@@ -45,128 +72,268 @@ jobs:
             ${{ runner.os }}-cargo-
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: 22
+          node-version: 24.15.0
           cache: npm
           cache-dependency-path: web-ui/package-lock.json
 
       - name: Build web UI
+        shell: pwsh
         run: |
+          npm install --global "npm@$env:NPM_VERSION"
+          if ((npm --version) -ne $env:NPM_VERSION) { throw "Unexpected npm version" }
           cd web-ui
           npm ci
           npm run build
 
-      - name: Build release binary
+      - name: Build release binaries
         env:
           GH_OAUTH_CLIENT_ID: ${{ secrets.GH_OAUTH_CLIENT_ID }}
-        run: cargo build --release --target x86_64-pc-windows-msvc
+          ALTER_UPDATE_PUBLISHER_SHA256: ${{ vars.WINDOWS_SIGNER_SHA256 }}
+          RELEASE_REF: ${{ github.ref_name }}
+        shell: pwsh
+        run: |
+          $tagVersion = $env:RELEASE_REF.Substring(1)
+          $cargoVersion = (Select-String -Path Cargo.toml -Pattern '^version\s*=\s*"([^"]+)"').Matches[0].Groups[1].Value
+          if ($tagVersion -ne $cargoVersion) {
+            throw "Release tag version $tagVersion does not match Cargo.toml $cargoVersion"
+          }
+          if ($env:ALTER_UPDATE_PUBLISHER_SHA256 -notmatch '^[0-9A-Fa-f]{64}$') {
+            throw "WINDOWS_SIGNER_SHA256 repository variable must contain the 64-character publisher certificate SHA-256."
+          }
+          cargo build --release --locked --target x86_64-pc-windows-msvc
+          if ($LASTEXITCODE -ne 0) { throw "alter release binary build failed" }
+          cargo build --manifest-path desktop-shell\Cargo.toml --release --locked --target x86_64-pc-windows-msvc
+          if ($LASTEXITCODE -ne 0) { throw "desktop shell release binary build failed" }
 
-      # Copy binary to target/release/ where Inno Setup script expects it
-      - name: Stage binary
+      # Copy binaries to the stable paths consumed by Inno Setup.
+      - name: Stage binaries
         run: |
           New-Item -ItemType Directory -Force -Path target\release | Out-Null
+          New-Item -ItemType Directory -Force -Path desktop-shell\target\release | Out-Null
           Copy-Item target\x86_64-pc-windows-msvc\release\alter.exe target\release\alter.exe
+          Copy-Item desktop-shell\target\x86_64-pc-windows-msvc\release\rundock.exe desktop-shell\target\release\rundock.exe
+          $loader = 'desktop-shell\target\x86_64-pc-windows-msvc\release\WebView2Loader.dll'
+          if (-not (Test-Path -LiteralPath $loader)) {
+            $loader = Get-ChildItem 'desktop-shell\target\x86_64-pc-windows-msvc\release\build' -Filter WebView2Loader.dll -File -Recurse |
+              Where-Object FullName -Match '[\\/]out[\\/]x64[\\/]WebView2Loader\.dll$' |
+              Sort-Object LastWriteTimeUtc -Descending |
+              Select-Object -First 1 -ExpandProperty FullName
+          }
+          if (-not $loader) { throw 'WebView2Loader.dll was not produced by the desktop build' }
+          $signature = Get-AuthenticodeSignature -LiteralPath $loader
+          if ($signature.Status -ne 'Valid' -or
+              $signature.SignerCertificate.Subject -notmatch '(^|,\s*)O=Microsoft Corporation(,|$)') {
+            throw 'WebView2Loader.dll does not have the expected Microsoft signature'
+          }
+          Copy-Item $loader desktop-shell\target\release\WebView2Loader.dll
 
-      - name: Upload binary artifact
-        uses: actions/upload-artifact@v4
+      - name: Sign and verify binaries (required)
+        shell: pwsh
+        env:
+          WINDOWS_SIGNING_CERT_BASE64: ${{ secrets.WINDOWS_SIGNING_CERT_BASE64 }}
+          WINDOWS_SIGNING_CERT_PASSWORD: ${{ secrets.WINDOWS_SIGNING_CERT_PASSWORD }}
+          WINDOWS_SIGNER_SHA256: ${{ vars.WINDOWS_SIGNER_SHA256 }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:WINDOWS_SIGNING_CERT_BASE64) -or
+              [string]::IsNullOrWhiteSpace($env:WINDOWS_SIGNING_CERT_PASSWORD)) {
+            throw "WINDOWS_SIGNING_CERT_BASE64 and WINDOWS_SIGNING_CERT_PASSWORD are required; refusing to publish unsigned Windows binaries."
+          }
+          $pfx = Join-Path $env:RUNNER_TEMP "rundock-signing.pfx"
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WINDOWS_SIGNING_CERT_BASE64))
+          $certificate = [Security.Cryptography.X509Certificates.X509Certificate2]::new(
+            $pfx,
+            $env:WINDOWS_SIGNING_CERT_PASSWORD
+          )
+          $certificateSha256 = $certificate.GetCertHashString([Security.Cryptography.HashAlgorithmName]::SHA256)
+          if ($certificateSha256 -ne $env:WINDOWS_SIGNER_SHA256) {
+            throw "signing certificate does not match WINDOWS_SIGNER_SHA256"
+          }
+          $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" |
+            Sort-Object FullName -Descending | Select-Object -First 1
+          if (-not $signtool) { throw "signtool.exe was not found" }
+          $binaries = @('target\release\alter.exe', 'desktop-shell\target\release\rundock.exe')
+          foreach ($binary in $binaries) {
+            & $signtool.FullName sign /fd SHA256 /td SHA256 /tr https://timestamp.digicert.com /f $pfx /p $env:WINDOWS_SIGNING_CERT_PASSWORD $binary
+            if ($LASTEXITCODE -ne 0) { throw "binary signing failed: $binary" }
+            & $signtool.FullName verify /pa /all $binary
+            if ($LASTEXITCODE -ne 0) { throw "binary signature verification failed: $binary" }
+          }
+
+      - name: Remove signing material
+        if: always()
+        shell: pwsh
+        run: Remove-Item -LiteralPath (Join-Path $env:RUNNER_TEMP "rundock-signing.pfx") -Force -ErrorAction SilentlyContinue
+
+      - name: Upload binary artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: rundock-windows-x64
-          path: target/release/alter.exe
+          path: |
+            target/release/alter.exe
+            desktop-shell/target/release/rundock.exe
+            desktop-shell/target/release/WebView2Loader.dll
+          if-no-files-found: error
 
   # ─────────────────────────────────────────────────────────────────────────────
   # Package: Inno Setup installer
   # ─────────────────────────────────────────────────────────────────────────────
   package-installer:
     name: Package Installer
-    runs-on: windows-latest
+    runs-on: windows-2022
     needs: build-windows
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Download binary
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: rundock-windows-x64
-          path: target/release
+          path: .
+
+      - name: Stage verified WebView2 bootstrapper
+        shell: pwsh
+        run: .\scripts\stage-webview2.ps1
 
       - name: Extract version from tag
         id: version
         shell: pwsh
+        env:
+          RELEASE_REF: ${{ github.ref_name }}
         run: |
-          $tag = "${{ github.ref_name }}"
-          $version = $tag.TrimStart("v")
+          if ($env:RELEASE_REF -notmatch '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?(?:\+[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?$') {
+            throw "Release tag must be a strict v-prefixed semantic version"
+          }
+          $tag = $env:RELEASE_REF
+          $version = $tag.Substring(1)
           echo "VERSION=$version" >> $env:GITHUB_OUTPUT
           echo "TAG=$tag"         >> $env:GITHUB_OUTPUT
 
       - name: Update version in Inno Setup script
         shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.VERSION }}
         run: |
           $iss = Get-Content installer\alter-setup.iss -Raw
-          $iss = $iss -replace '#define AppVersion\s+"[^"]+"', "#define AppVersion  `"${{ steps.version.outputs.VERSION }}`""
+          $pattern = '#define AppVersion\s+"[^"]+"'
+          $matches = [regex]::Matches($iss, $pattern)
+          if ($matches.Count -ne 1) {
+            throw "Expected exactly one AppVersion definition, found $($matches.Count)"
+          }
+          $iss = [regex]::Replace($iss, $pattern, "#define AppVersion  `"$env:RELEASE_VERSION`"")
           Set-Content installer\alter-setup.iss $iss
 
       - name: Install Inno Setup
-        run: choco install innosetup --no-progress -y
+        run: choco install innosetup --version=6.7.1 --no-progress -y
 
       - name: Build installer
         run: |
           New-Item -ItemType Directory -Force -Path dist | Out-Null
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer\alter-setup.iss
 
+      - name: Sign and verify installer (required)
+        shell: pwsh
+        env:
+          WINDOWS_SIGNING_CERT_BASE64: ${{ secrets.WINDOWS_SIGNING_CERT_BASE64 }}
+          WINDOWS_SIGNING_CERT_PASSWORD: ${{ secrets.WINDOWS_SIGNING_CERT_PASSWORD }}
+          WINDOWS_SIGNER_SHA256: ${{ vars.WINDOWS_SIGNER_SHA256 }}
+          RELEASE_VERSION: ${{ steps.version.outputs.VERSION }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:WINDOWS_SIGNING_CERT_BASE64) -or
+              [string]::IsNullOrWhiteSpace($env:WINDOWS_SIGNING_CERT_PASSWORD)) {
+            throw "WINDOWS_SIGNING_CERT_BASE64 and WINDOWS_SIGNING_CERT_PASSWORD are required; refusing to publish unsigned Windows installers."
+          }
+          $pfx = Join-Path $env:RUNNER_TEMP "rundock-signing.pfx"
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WINDOWS_SIGNING_CERT_BASE64))
+          $certificate = [Security.Cryptography.X509Certificates.X509Certificate2]::new(
+            $pfx,
+            $env:WINDOWS_SIGNING_CERT_PASSWORD
+          )
+          $certificateSha256 = $certificate.GetCertHashString([Security.Cryptography.HashAlgorithmName]::SHA256)
+          if ($certificateSha256 -ne $env:WINDOWS_SIGNER_SHA256) {
+            throw "signing certificate does not match WINDOWS_SIGNER_SHA256"
+          }
+          $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" |
+            Sort-Object FullName -Descending | Select-Object -First 1
+          if (-not $signtool) { throw "signtool.exe was not found" }
+          $expectedName = "RunDock-$env:RELEASE_VERSION-windows-x64-setup.exe"
+          $installer = Get-Item -LiteralPath (Join-Path "dist" $expectedName) -ErrorAction Stop
+          & $signtool.FullName sign /fd SHA256 /td SHA256 /tr https://timestamp.digicert.com /f $pfx /p $env:WINDOWS_SIGNING_CERT_PASSWORD $installer.FullName
+          if ($LASTEXITCODE -ne 0) { throw "installer signing failed" }
+          & $signtool.FullName verify /pa /all $installer.FullName
+          if ($LASTEXITCODE -ne 0) { throw "installer signature verification failed" }
+
+      - name: Remove signing material
+        if: always()
+        shell: pwsh
+        run: Remove-Item -LiteralPath (Join-Path $env:RUNNER_TEMP "rundock-signing.pfx") -Force -ErrorAction SilentlyContinue
+
+      - name: Smoke the signed installer
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.VERSION }}
+        run: .\scripts\windows-installer-smoke.ps1 -InstallerPath "dist\RunDock-$env:RELEASE_VERSION-windows-x64-setup.exe" -InstallDirectory (Join-Path $env:RUNNER_TEMP 'RunDockReleaseSmoke')
+
       - name: Compute SHA256
         id: sha256
         shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.VERSION }}
         run: |
-          $file = Get-ChildItem dist\*.exe | Select-Object -First 1
+          $expectedName = "RunDock-$env:RELEASE_VERSION-windows-x64-setup.exe"
+          $file = Get-Item -LiteralPath (Join-Path "dist" $expectedName) -ErrorAction Stop
           $hash = (Get-FileHash $file.FullName -Algorithm SHA256).Hash.ToLower()
           echo "HASH=$hash"            >> $env:GITHUB_OUTPUT
           echo "INSTALLER=$($file.Name)" >> $env:GITHUB_OUTPUT
           Write-Host "SHA256: $hash"
 
       - name: Upload installer artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: rundock-installer
           path: dist/*.exe
 
-      - name: Save hash for manifest step
-        uses: actions/upload-artifact@v4
-        with:
-          name: installer-hash
-          path: dist/
-
     outputs:
-      version:   ${{ steps.version.outputs.VERSION }}
+      version: ${{ steps.version.outputs.VERSION }}
       installer: ${{ steps.sha256.outputs.INSTALLER }}
-      sha256:    ${{ steps.sha256.outputs.HASH }}
+      sha256: ${{ steps.sha256.outputs.HASH }}
 
   # ─────────────────────────────────────────────────────────────────────────────
   # Publish GitHub Release
   # ─────────────────────────────────────────────────────────────────────────────
   publish-release:
     name: Publish GitHub Release
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: package-installer
+    concurrency:
+      group: github-release-${{ github.ref }}
+      cancel-in-progress: false
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Download installer
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: rundock-installer
           path: dist/
 
       - name: Generate release notes
         id: notes
+        env:
+          RELEASE_VERSION: ${{ needs.package-installer.outputs.version }}
+          RELEASE_INSTALLER: ${{ needs.package-installer.outputs.installer }}
+          RELEASE_SHA256: ${{ needs.package-installer.outputs.sha256 }}
         run: |
-          VERSION="${{ needs.package-installer.outputs.version }}"
-          INSTALLER="${{ needs.package-installer.outputs.installer }}"
-          SHA256="${{ needs.package-installer.outputs.sha256 }}"
+          VERSION="$RELEASE_VERSION"
+          INSTALLER="$RELEASE_INSTALLER"
+          SHA256="$RELEASE_SHA256"
 
           cat >> $GITHUB_OUTPUT << EOF
           BODY<<ENDBODY
@@ -187,7 +354,7 @@ jobs:
           EOF
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@72f2c25fcb47643c292f7107632f7a47c1df5cd8 # v2.3.2
         with:
           name: RunDock v${{ needs.package-installer.outputs.version }}
           body: ${{ steps.notes.outputs.BODY }}

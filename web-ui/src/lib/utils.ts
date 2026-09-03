@@ -10,8 +10,8 @@ export function cn(...inputs: ClassValue[]) {
 
 // @group Utilities > Formatting
 export function formatUptime(secs: number): string {
-  if (secs < 60)    return `${secs}秒`
-  if (secs < 3600)  return `${Math.floor(secs / 60)}分 ${secs % 60}秒`
+  if (secs < 60) return `${secs}秒`
+  if (secs < 3600) return `${Math.floor(secs / 60)}分 ${secs % 60}秒`
   if (secs < 86400) return `${Math.floor(secs / 3600)}小时 ${Math.floor((secs % 3600) / 60)}分`
   return `${Math.floor(secs / 86400)}天 ${Math.floor((secs % 86400) / 3600)}小时`
 }
@@ -37,10 +37,16 @@ export function formatNextRun(isoStr: string | null): string {
   const diffMs = d.getTime() - Date.now()
   if (diffMs < 0) return '现在'
   const diffSecs = Math.floor(diffMs / 1000)
-  if (diffSecs < 60)    return `${diffSecs}秒后`
-  if (diffSecs < 3600)  return `${Math.floor(diffSecs / 60)}分钟后`
-  if (diffSecs < 86400) return `${Math.floor(diffSecs / 3600)}小时 ${Math.floor((diffSecs % 3600) / 60)}分钟后`
-  return d.toLocaleString('zh-CN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+  if (diffSecs < 60) return `${diffSecs}秒后`
+  if (diffSecs < 3600) return `${Math.floor(diffSecs / 60)}分钟后`
+  if (diffSecs < 86400)
+    return `${Math.floor(diffSecs / 3600)}小时 ${Math.floor((diffSecs % 3600) / 60)}分钟后`
+  return d.toLocaleString('zh-CN', {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
 }
 
 export function formatLastRun(p: ProcessInfo): string {
@@ -48,18 +54,23 @@ export function formatLastRun(p: ProcessInfo): string {
   if (!ts) return '-'
   const d = new Date(ts)
   const diffSecs = Math.floor((Date.now() - d.getTime()) / 1000)
-  if (diffSecs < 60)    return `${diffSecs}秒前`
-  if (diffSecs < 3600)  return `${Math.floor(diffSecs / 60)}分钟前`
+  if (diffSecs < 60) return `${diffSecs}秒前`
+  if (diffSecs < 3600) return `${Math.floor(diffSecs / 60)}分钟前`
   if (diffSecs < 86400) return `${Math.floor(diffSecs / 3600)}小时前`
-  return d.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+  return d.toLocaleDateString('zh-CN', {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
 }
 
 export const STATUS_COLORS: Record<ProcessStatus, string> = {
-  running:  'var(--color-status-running)',
+  running: 'var(--color-status-running)',
   watching: 'var(--color-status-watching)',
-  stopped:  'var(--color-status-stopped)',
-  crashed:  'var(--color-status-crashed)',
-  errored:  'var(--color-status-errored)',
+  stopped: 'var(--color-status-stopped)',
+  crashed: 'var(--color-status-crashed)',
+  errored: 'var(--color-status-errored)',
   starting: 'var(--color-status-starting)',
   stopping: 'var(--color-status-stopping)',
   sleeping: 'var(--color-status-sleeping)',
@@ -92,7 +103,9 @@ export function parseDotEnv(raw: string): Record<string, string> {
 
 // @group Utilities > Env : Serialize env record to .env file format (one KEY=VALUE per line)
 export function envToString(env: Record<string, string>): string {
-  return Object.entries(env).map(([k, v]) => `${k}=${v}`).join('\n')
+  return Object.entries(env)
+    .map(([k, v]) => `${k}=${v}`)
+    .join('\n')
 }
 
 export function parseArgs(raw: string): string[] {
@@ -101,9 +114,9 @@ export function parseArgs(raw: string): string[] {
 
 // @group Utilities > Formatting : Format memory bytes into a human-readable string
 export function formatBytes(bytes: number): string {
-  if (bytes < 1024)        return `${bytes} B`
-  if (bytes < 1024 ** 2)   return `${(bytes / 1024).toFixed(1)} KB`
-  if (bytes < 1024 ** 3)   return `${(bytes / 1024 ** 2).toFixed(1)} MB`
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KB`
+  if (bytes < 1024 ** 3) return `${(bytes / 1024 ** 2).toFixed(1)} MB`
   return `${(bytes / 1024 ** 3).toFixed(2)} GB`
 }
 

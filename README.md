@@ -4,7 +4,7 @@
   <img src="./assets/rundock-icon.svg" width="112" alt="RunDock icon" />
 </p>
 
-> A polished local project and process manager for Windows (and cross-platform). RunDock keeps related services together, exposes logs and ports when needed, and retains the compatible `alter` CLI for existing scripts.
+> A polished local project and process manager for Windows (and cross-platform). RunDock keeps related services together and exposes logs and ports when needed.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 [![Built with Rust](https://img.shields.io/badge/Built%20with-Rust-orange.svg)](https://www.rust-lang.org/)
@@ -18,7 +18,27 @@
 ### Manual installer
 
 Download the latest `RunDock-x.x.x-windows-x64-setup.exe` from [Releases](https://github.com/damingishere-coder/RunDock/releases) and run it.
-RunDock is the product name; the compatible `alter.exe` command is added to your `PATH` automatically.
+The installer adds the RunDock command-line tools to your `PATH` automatically.
+The installer adds the `rundock.exe` desktop app. It opens the local dashboard in
+its own window, starts the daemon when needed, stays available in the system
+tray, and enables current-user login startup by default. Closing the window
+hides it to the tray; **Exit RunDock** closes only the desktop app and leaves the
+daemon and managed projects running.
+
+### Debian / Ubuntu (signed APT repository)
+
+Download the public key, inspect its fingerprint against the key attached to the matching [GitHub Release](https://github.com/damingishere-coder/RunDock/releases), then install it:
+
+```bash
+curl -fsSL https://damingishere-coder.github.io/RunDock/gpg-key.asc -o rundock-release-key.asc
+gpg --show-keys --fingerprint rundock-release-key.asc
+sudo gpg --dearmor --yes -o /usr/share/keyrings/rundock-archive-keyring.gpg rundock-release-key.asc
+echo "deb [signed-by=/usr/share/keyrings/rundock-archive-keyring.gpg] https://damingishere-coder.github.io/RunDock/apt stable main" | sudo tee /etc/apt/sources.list.d/rundock.list
+sudo apt update
+sudo apt install alter
+```
+
+The packaged service is opt-in: `sudo systemctl enable --now alter-daemon.service`. System mode uses `/var/lib/alter-pm2` and `/var/log/alter-pm2`; it is isolated from per-user data.
 
 ---
 
@@ -33,7 +53,7 @@ RunDock is the product name; the compatible `alter.exe` command is added to your
 - **State persistence** — save and restore your process list across reboots
 - **Ecosystem config** — define all apps in one TOML or JSON file
 - **Full REST API** — automate everything
-- **Single binary** — no runtime dependencies
+- **Self-contained Windows installer** — desktop app plus the compatible CLI/daemon
 - **Dashboard authentication** — password-protect the web UI with Argon2id hashing, session tokens, and a PIN quick-unlock
 - **Telegram bot** — control your processes from Telegram: list, start, stop, restart, tail logs, and receive crash/restart alerts
 - **AI assistant** — multi-provider chat panel (Ollama, GitHub Models, Claude, OpenAI-compatible) with streaming responses and process-aware context
@@ -45,13 +65,20 @@ RunDock is the product name; the compatible `alter.exe` command is added to your
 
 ### Build from source
 
-Requires [Rust](https://rustup.rs/).
+Requires [Rust 1.98](https://rustup.rs/), Node.js 24, and npm. The dashboard
+must be built before Rust embeds `web-ui/dist` into the binary.
 
 ```powershell
 git clone https://github.com/damingishere-coder/RunDock
 cd RunDock
-cargo build --release
+cd web-ui
+npm ci
+npm run build
+cd ..
+cargo build --release --locked
 # Binary: target\release\alter.exe
+cargo build --manifest-path desktop-shell\Cargo.toml --release --locked
+# Desktop app: desktop-shell\target\release\rundock.exe
 ```
 
 ---
@@ -65,7 +92,7 @@ alter daemon start
 # Start processes
 alter start python -- -m http.server 8080
 alter start node --name api -- server.js
-alter start "go run main.go" --name backend --cwd C:\projects\api
+alter start go --name backend --cwd C:\projects\api -- run main.go
 
 # List processes
 alter list
@@ -85,9 +112,19 @@ RunDock is built with Windows as a first-class platform:
 
 - Spawned processes use `CREATE_NO_WINDOW` — **no black console popups**
 - Daemon runs completely hidden in the background
+- `rundock.exe` provides a single-instance WebView2 window and system tray
+- Login startup is enabled by default with `--background` and can be toggled from the tray
+- Closing or exiting the desktop app never stops managed projects
 - `npm`, `yarn`, `npx` and other `.cmd` scripts work directly
 - Terminal button opens Windows Terminal or `cmd.exe` in the process directory
 - Data stored in `%APPDATA%\alter-pm2\`
+
+If the desktop window cannot reach the daemon, its local failure page offers
+**Retry**, **Open log directory**, **Copy diagnostics**, and **Open in browser**.
+An occupied or incompatible port 2999 is reported without ending that listener.
+If WebView2 is unavailable, repair the RunDock installation or install the
+Microsoft Edge WebView2 Evergreen Runtime; the installer normally deploys it
+automatically after verifying Microsoft's signature.
 
 ---
 

@@ -1,0 +1,17 @@
+{
+  "score": 85,
+  "grade": "B",
+  "tags": ["bloat"],
+  "findings": [
+    {
+      "sev": "LOW",
+      "loc": "src/config/env_file.rs:37",
+      "text": "env 访问已限制到注册 cwd、直接子文件并拒绝最终符号链接；剩余父目录换位竞态仅能由具备同用户本机文件系统权限的进程触发，属于当前单用户威胁模型之外的平台限制。"
+    },
+    {
+      "sev": "LOW",
+      "loc": "src/api/routes/system.rs:84",
+      "text": "system.rs 约 837 行，仍同时承载健康、状态保存、受限文件访问、统计、重启和桌面打开等系统边界，后续可按能力分路由模块。"
+    }
+  ]
+}

@@ -7,7 +7,14 @@ import { http, HttpResponse } from 'msw'
 export const defaultHandlers = [
   // @group TestSetup > MSW > Stubs : System health
   http.get('/api/v1/system/health', () =>
-    HttpResponse.json({ version: '0.9.0', uptime_secs: 0, process_count: 0 })
+    HttpResponse.json({
+      status: 'ok',
+      version: '0.9.0',
+      uptime_secs: 0,
+      process_count: 0,
+      persistence_healthy: true,
+      persistence_error: null,
+    })
   ),
 
   // @group TestSetup > MSW > Stubs : Process list

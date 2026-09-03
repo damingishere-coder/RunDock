@@ -10,9 +10,27 @@
 
 set -euo pipefail
 
+if [[ "$#" -ne 3 ]]; then
+    echo "usage: $0 <binary-path> <version> <amd64|arm64>" >&2
+    exit 64
+fi
+
 BINARY="$1"
 VERSION="$2"
 ARCH="$3"
+
+if [[ ! -f "$BINARY" ]]; then
+    echo "[build-deb] binary does not exist: $BINARY" >&2
+    exit 66
+fi
+if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([+-][0-9A-Za-z.-]+)?$ ]]; then
+    echo "[build-deb] version must be a semantic version without path characters" >&2
+    exit 64
+fi
+if [[ "$ARCH" != "amd64" && "$ARCH" != "arm64" ]]; then
+    echo "[build-deb] architecture must be amd64 or arm64" >&2
+    exit 64
+fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -49,7 +67,8 @@ sed \
 # @group BuildSystem > Scripts : Install maintainer scripts
 cp "$REPO_ROOT/packaging/debian/postinst" "$STAGE_DIR/DEBIAN/postinst"
 cp "$REPO_ROOT/packaging/debian/prerm"    "$STAGE_DIR/DEBIAN/prerm"
-chmod 755 "$STAGE_DIR/DEBIAN/postinst" "$STAGE_DIR/DEBIAN/prerm"
+cp "$REPO_ROOT/packaging/debian/postrm"   "$STAGE_DIR/DEBIAN/postrm"
+chmod 755 "$STAGE_DIR/DEBIAN/postinst" "$STAGE_DIR/DEBIAN/prerm" "$STAGE_DIR/DEBIAN/postrm"
 
 # @group BuildSystem > Package : Build .deb
 dpkg-deb --build --root-owner-group "$STAGE_DIR" "${PKG_NAME}.deb"

@@ -1,6 +1,6 @@
 # REST API Reference
 
-> The alter daemon exposes a full HTTP REST API on `http://127.0.0.1:2999/api/v1`.
+> The RunDock daemon exposes a full HTTP REST API on `http://127.0.0.1:2999/api/v1`.
 > All request and response bodies use JSON. All endpoints return standard HTTP status codes.
 
 ---
@@ -34,7 +34,17 @@ Removing the dashboard password returns the daemon to passwordless mode. Keep th
 Authorization: Bearer <token>
 ```
 
-For EventSource / SSE connections that cannot set request headers, append `?token=<token>` to the URL.
+For EventSource / SSE connections that cannot set request headers, first use the bearer token to request a one-time, path-bound stream ticket. The ticket expires after 30 seconds and is consumed by the first matching request; never put a session or master token in a URL.
+
+```http
+POST /api/v1/stream-ticket
+Authorization: Bearer <session-token>
+Content-Type: application/json
+
+{ "path": "/processes/<id>/logs/stream" }
+```
+
+Then open `/api/v1/processes/<id>/logs/stream?ticket=<one-time-ticket>` with `EventSource`.
 
 **Unauthenticated response (401):**
 ```json
@@ -122,6 +132,9 @@ Start a new process.
 | `watch_paths` | string[] | no | `[]` | Paths to watch |
 | `watch_ignore` | string[] | no | `[]` | Patterns to ignore |
 | `max_log_size_mb` | number | no | `10` | Log rotation threshold |
+| `cron` | string | no | null | Cron expression for scheduled execution |
+| `notify` | NotificationConfig | no | null | Process-level notification override |
+| `log_alert` | LogAlertOverride | no | null | Process-level log alert override |
 
 **Example:**
 ```json
@@ -334,7 +347,18 @@ GET /api/v1/processes/api/logs/stream
 
 **Client example (JavaScript):**
 ```javascript
-const es = new EventSource('/api/v1/processes/api/logs/stream');
+const path = '/processes/api/logs/stream';
+const ticketResponse = await fetch('/api/v1/stream-ticket', {
+  method: 'POST',
+  headers: {
+    Authorization: `Bearer ${sessionToken}`,
+    'Content-Type': 'application/json',
+  },
+  body: JSON.stringify({ path }),
+});
+if (!ticketResponse.ok) throw new Error(`ticket request failed: ${ticketResponse.status}`);
+const { ticket } = await ticketResponse.json();
+const es = new EventSource(`/api/v1${path}?ticket=${encodeURIComponent(ticket)}`);
 es.onmessage = (e) => {
   const line = JSON.parse(e.data);
   console.log(`[${line.stream}] ${line.content}`);
@@ -357,9 +381,11 @@ GET /api/v1/system/health
 ```json
 {
   "status": "ok",
-  "version": "0.3.0",
+  "version": "1.1.0",
   "uptime_secs": 3600,
-  "process_count": 5
+  "process_count": 5,
+  "persistence_healthy": true,
+  "persistence_error": null
 }
 ```
 
@@ -421,10 +447,11 @@ POST /api/v1/system/restart
 ```
 
 **Behaviour:**
-1. Saves the current process state to disk
-2. Removes the PID file
-3. Spawns a detached watcher (`cmd /C timeout 1 && alter daemon start` on Windows, `sh -c 'sleep 1 && alter daemon start'` on Linux/macOS)
-4. Exits — managed processes survive because they are spawned outside the daemon's job object
+1. Validates and saves the current process/project state
+2. Directly starts the same executable as a replacement with a private handoff token and readiness file
+3. Stops accepting mutations, joins background writers, and releases listener/PID ownership only after the final save
+4. Accepts the replacement only after its PID identity, port ownership, and health response match; otherwise terminates it and resumes the current daemon
+5. Managed processes survive and are re-adopted only when their persisted PID identity still matches
 
 **Response:**
 ```json
@@ -735,17 +762,32 @@ Notification settings are stored at `%APPDATA%\alter-pm2\notifications.json` and
   "webhook": { "url": "https://example.com/hook", "enabled": true },
   "slack":   { "webhook_url": "https://hooks.slack.com/...", "enabled": true, "channel": "#alerts" },
   "teams":   { "webhook_url": "https://outlook.office.com/...", "enabled": false },
+  "discord": { "webhook_url": "https://discord.com/api/webhooks/...", "enabled": false },
+  "events_override": true,
   "events":  { "on_crash": true, "on_restart": true, "on_start": false, "on_stop": false }
 }
 ```
 
-> All channel fields are optional — omit any you don't need. `channel` on Slack overrides the webhook's default channel.
+> All channel fields are optional — omit any you don't need. `channel` on Slack overrides the webhook's default channel. Set `events_override: true` when this scope must explicitly override inherited event flags, including the valid “all events disabled” case; legacy records without it continue to inherit when every event flag is false.
+
+### `PATCH /processes/{id}/notifications`
+
+Update only the process-level notification override without restarting the process.
+
+```json
+PATCH /api/v1/processes/api/notifications
+{ "notify": { /* NotificationConfig, or null to inherit */ } }
+```
+
+**Response:** the updated process object.
+
+---
 
 ---
 
 ### `GET /notifications`
 
-Return the full notifications store (global config + all namespace overrides).
+Return the notification store shape (global config + all namespace overrides). Secret URL fields are redacted as `__RUNDOCK_SECRET_SET__`; sending that placeholder back in an update preserves the currently stored secret instead of replacing it.
 
 ```
 GET /api/v1/notifications
@@ -821,7 +863,7 @@ POST /api/v1/notifications/test
 
 **Response:**
 ```json
-{ "success": true, "message": "test notification dispatched" }
+{ "success": true, "message": "test notification delivered to 1 target(s)" }
 ```
 
 **Config cascade priority:** process-level `notify` → namespace config → global config. The first non-null value per channel wins.
@@ -848,6 +890,25 @@ Desktop launch URIs must use a validated non-HTTP custom protocol such as `wanmo
 
 ---
 
+## Complete Route Inventory
+
+The detailed examples above cover the most common calls. This inventory is kept aligned with `src/api/mod.rs` and the Axum route declarations so less common capabilities remain discoverable. All routes use the `/api/v1` prefix; only `/auth/*` is public. Streaming routes require a short-lived ticket from `POST /stream-ticket`.
+
+| Area | Current routes |
+|------|----------------|
+| Process extensions | `GET /processes/{id}/metrics/history`, `GET /processes/{id}/logs/stats`, `GET /processes/{id}/cron/history`, `PATCH /processes/{id}/enabled`, `PATCH /processes/{id}/project`, `PATCH /processes/{id}/notifications`, `POST /processes/{id}/clone`, `GET /processes/{id}/envfiles`, `GET/PUT /processes/{id}/envfile` |
+| Namespace lifecycle | `POST /processes/namespace/{ns}/start`, `/stop`, `/restart` |
+| Git | `GET /processes/{id}/git`, `POST /processes/{id}/git/pull` |
+| System | `GET /system/stats`, `/paths`, `/check-env`, `/list-env`, `/read-env`, `/browse`; `POST /system/write-env`, `/sync-env`, `/open-folder`; `GET/PUT /system/ui-settings`; `PUT /system/ui-settings/view-mode` |
+| Saved scripts | `GET/POST /scripts`, `GET/DELETE /scripts/{name}`, `GET /scripts/{name}/run` |
+| AI | `GET/PUT /ai/settings`, `POST /ai/chat`, `POST /ai/auth/start`, `GET /ai/auth/status`, `DELETE /ai/auth`, `GET /ai/models` |
+| Ports | `GET /ports`, `POST /ports/kill/{pid}` (body must repeat the confirmed port and process name) |
+| Tunnels | `GET/POST /tunnels`, `POST /tunnels/{id}/stop`, `DELETE /tunnels/{id}`, `GET/PUT /tunnels/settings`, `POST /tunnels/settings/test`, `POST /tunnels/settings/install`, `GET /tunnels/settings/install/stream` |
+| Terminals | `GET /terminals`, `GET /terminals/ws`, `GET/PUT /terminals/history/{key}` |
+| Operations | `GET /metrics`, `GET/PUT /log-alerts`, `PUT/DELETE /log-alerts/namespace/{ns}`, `GET /system/update/check`, `POST /system/update/apply` |
+
+---
+
 ## HTTP Status Codes
 
 | Code | Meaning |
@@ -864,7 +925,7 @@ Desktop launch URIs must use a validated non-HTTP custom protocol such as `wanmo
 
 ## CORS
 
-The API allows cross-origin requests from any origin. All HTTP methods and headers are permitted.
+Same-origin calls are supported normally. Cross-origin browser calls are accepted only from loopback HTTP origins on the daemon port or the Vite development port `5173`; arbitrary internet, LAN, `null`, file, and HTTPS origins are rejected. Allowed methods are GET, POST, PUT, PATCH, DELETE, and OPTIONS, with `Authorization` and `Content-Type` request headers.
 
 ---
 
@@ -897,6 +958,10 @@ curl -X POST http://localhost:2999/api/v1/processes \
   -H "Content-Type: application/json" \
   -d '{"script":"python","name":"api","args":["-m","http.server","8080"]}'
 
-# Stream logs
-curl -N http://localhost:2999/api/v1/processes/api/logs/stream
+# Stream logs after requesting a one-time ticket with an authenticated bearer request
+ticket=$(curl -fsS -X POST http://localhost:2999/api/v1/stream-ticket \
+  -H "Authorization: Bearer $ALTER_SESSION_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"path":"/processes/api/logs/stream"}' | jq -r .ticket)
+curl -N "http://localhost:2999/api/v1/processes/api/logs/stream?ticket=$ticket"
 ```

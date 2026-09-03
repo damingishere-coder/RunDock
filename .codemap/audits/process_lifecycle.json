@@ -1,0 +1,17 @@
+{
+  "score": 82,
+  "grade": "B",
+  "tags": ["bloat", "god-component"],
+  "findings": [
+    {
+      "sev": "MED",
+      "loc": "src/process/manager.rs:62",
+      "text": "manager.rs 仍约 3,200 行并承载 registry、spawn、restart、cron、health、watcher、metrics 与告警编排；进程身份和进程树已提取，功能竞态已收敛，但结构拆分仍是后续维护任务。"
+    },
+    {
+      "sev": "LOW",
+      "loc": "src/process/identity.rs:103",
+      "text": "macOS/BSD 缺少可移植的稳定进程组句柄，验证身份后到数字 PGID signal 间仍存在极窄复用窗口；Linux pidfd 与 Windows HANDLE/Job 路径不受此限制。"
+    }
+  ]
+}

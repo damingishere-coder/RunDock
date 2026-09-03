@@ -1,0 +1,12 @@
+{
+  "score": 93,
+  "grade": "A",
+  "tags": ["stub"],
+  "findings": [
+    {
+      "sev": "LOW",
+      "loc": "src/config/auth_config.rs:15",
+      "text": "StoredPasskey 仍保留 raw JSON 兼容字段，但 API 与文档已明确 passkey 尚不支持；该占位结构只用于兼容读取，不代表已实现 WebAuthn。"
+    }
+  ]
+}

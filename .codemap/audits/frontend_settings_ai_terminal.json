@@ -1,0 +1,12 @@
+{
+  "score": 78,
+  "grade": "B",
+  "tags": ["bloat", "god-component"],
+  "findings": [
+    {
+      "sev": "MED",
+      "loc": "web-ui/src/components/TerminalPanel.tsx:131",
+      "text": "TerminalPanel 约 1,208 行，同时处理 WebSocket 生命周期、xterm、输入历史、布局、标签页和连接状态；资源清理已补齐，但组件边界仍偏大。"
+    }
+  ]
+}

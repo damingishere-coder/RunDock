@@ -6,7 +6,7 @@ use clap::{Args, Parser, Subcommand};
 #[command(
     name = "alter",
     version,
-    about = "RunDock project manager (compatible alter CLI)",
+    about = "RunDock developer project console",
     long_about = None,
 )]
 pub struct Cli {
@@ -69,6 +69,12 @@ pub enum Commands {
     Unstartup,
     /// Open the web dashboard URL
     Web,
+    /// Internal: verify that uninstall will not interrupt managed projects
+    #[command(hide = true)]
+    InternalUninstallPreflight,
+    /// Internal: preserve managed Windows jobs while an installer replaces the daemon
+    #[command(hide = true)]
+    InternalUpgradeHandoff,
 }
 
 #[derive(Args, Debug)]
@@ -178,6 +184,16 @@ pub enum AuthAction {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use clap::CommandFactory;
+
+    #[test]
+    fn cli_help_uses_rundock_product_name() {
+        let command = Cli::command();
+        let about = command.get_about().expect("CLI about text").to_string();
+
+        assert_eq!(command.get_name(), "alter");
+        assert_eq!(about, "RunDock developer project console");
+    }
 
     #[test]
     fn parses_auth_disable_command() {

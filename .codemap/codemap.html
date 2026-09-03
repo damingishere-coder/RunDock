@@ -1,0 +1,634 @@
+<!DOCTYPE html>
+<!--
+  Functional Architecture Map (interactive). GENERATED from modules.json by the codemap skill.
+  Do not hand-edit — edit modules.json and re-run render.py.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Functional Architecture Map</title>
+<style>
+  :root{
+    --bg:#131517; --bg2:#0e1012; --panel:#1b1e21; --panel2:#202428;
+    --ink:#e8e6e3; --muted:#9aa1a8; --faint:#6b7280;
+    --border:#2a2e33; --border2:#363b41;
+    --accent:#f59e0b; --accent-dim:#b4730e; --accent-soft:rgba(245,158,11,.14);
+    --in:#7c8794; --out:#f59e0b;
+    --c-low:#525a62; --c-med:#7e8893; --c-high:#c9cdd2; --c-core:#f59e0b;
+    --mono:"SF Mono",ui-monospace,"Cascadia Code","JetBrains Mono",Consolas,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{background:var(--bg);
+    color:var(--ink); font-family:var(--sans); -webkit-font-smoothing:antialiased; overflow:hidden;}
+  .app{display:grid; grid-template-columns:1fr 348px; grid-template-rows:auto 1fr; height:100vh}
+  header{grid-column:1/3; display:flex; align-items:center; gap:16px; padding:12px 20px;
+    border-bottom:1px solid var(--border); background:var(--bg);}
+  header .mark{width:22px;height:22px;border-radius:6px;flex:0 0 auto;background:var(--accent);}
+  header h1{font-size:14px;font-weight:600;margin:0;letter-spacing:.1px;white-space:nowrap}
+  header h1 span{color:var(--muted);font-weight:400}
+  header .sub{font-size:11.5px;color:var(--faint);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  header .spacer{flex:1}
+  .search{display:flex;align-items:center;gap:8px;background:var(--panel);
+    border:1px solid var(--border);border-radius:8px;padding:7px 11px;width:230px;}
+  .search:focus-within{border-color:var(--border2)}
+  .search input{background:none;border:none;outline:none;color:var(--ink);font-family:var(--sans);font-size:12.5px;width:100%;}
+  .search svg{flex:0 0 auto;opacity:.6}
+  .btn{font:inherit;font-size:12px;color:var(--muted);background:var(--panel);
+    border:1px solid var(--border);border-radius:8px;padding:7px 12px;cursor:pointer;transition:.12s;}
+  .btn:hover{color:var(--ink);border-color:var(--border2);background:var(--panel2)}
+  .btn.active{color:#0e0f11;background:var(--accent);border-color:var(--accent)}
+  .filt{font:inherit;font-size:12px;color:var(--muted);background:var(--panel);
+    border:1px solid var(--border);border-radius:8px;padding:7px 8px;cursor:pointer;max-width:150px}
+  .filt:hover{color:var(--ink);border-color:var(--border2);background:var(--panel2)}
+  .filt.on{color:#1a1a1a;background:var(--accent);border-color:var(--accent)}
+  .fcount{font-family:var(--mono);font-size:10.5px;color:var(--accent);white-space:nowrap;min-width:52px}
+  .board-wrap{position:relative;overflow:auto;background:var(--bg2)}
+  .board{position:relative;min-width:min-content;padding:26px 30px 60px}
+  svg.edges{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:1;overflow:visible}
+  .band{position:relative;z-index:2;margin-bottom:13px}
+  .band-head{display:flex;align-items:baseline;gap:10px;margin:0 2px 9px;position:sticky;left:0;}
+  .band-head .t{font-size:11px;font-weight:700;letter-spacing:.9px;text-transform:uppercase;color:var(--ink)}
+  .band-head .d{font-size:11px;color:var(--faint)}
+  .band-head .num{font-size:9.5px;color:var(--faint);border:1px solid var(--border);border-radius:20px;padding:1px 7px;font-family:var(--mono)}
+  .band-head .gloc{color:var(--muted);border-color:transparent;padding-left:0}
+  .band-body{display:flex;flex-wrap:wrap;gap:7px}
+  .wire{position:relative;z-index:2;display:flex;align-items:center;gap:14px;margin:6px 2px 16px;color:var(--accent);}
+  .wire .line{flex:1;height:1px;background:linear-gradient(90deg,transparent,var(--accent-dim),transparent)}
+  .wire .lbl{font-family:var(--mono);font-size:10.5px;letter-spacing:1px;color:var(--accent);white-space:nowrap}
+  .node{position:relative;background:var(--panel);border:1px solid var(--border);border-radius:9px;
+    padding:8px 30px 8px 12px;cursor:pointer;min-width:104px;
+    transition:transform .12s, border-color .12s, background .12s, box-shadow .12s, opacity .15s;user-select:none;}
+  .node::before{content:"";position:absolute;left:0;top:8px;bottom:8px;width:3px;border-radius:3px;background:var(--c-low);}
+  .node.c-med::before{background:var(--c-med)} .node.c-high::before{background:var(--c-high)}
+  .node.c-core::before{background:var(--c-core);box-shadow:0 0 8px var(--accent-soft)}
+  .node .lab{font-size:12px;font-weight:560;line-height:1.25;letter-spacing:.1px}
+  .node .meta{font-size:9.5px;color:var(--faint);font-family:var(--mono);margin-top:2px}
+  .node:hover{border-color:var(--border2);background:var(--panel2);transform:translateY(-1px)}
+  .node .chip{position:absolute;top:6px;right:7px;font-family:var(--mono);font-size:9px;font-weight:700;
+    line-height:1;padding:2px 4px;border-radius:4px;color:#0c0d0e;background:var(--h,#6b7280);opacity:0;transition:opacity .15s;}
+  .board.show-health .node::before{background:var(--h)!important;box-shadow:none}
+  .board.show-health .node .chip{opacity:1}
+  .board.show-health.has-sel .node:not(.lit) .chip{opacity:.25}
+  .board.has-sel .node{opacity:.26;filter:saturate(.7)}
+  .board.has-sel .node.lit{opacity:1;filter:none}
+  .node.sel{border-color:var(--accent);background:#241d12;box-shadow:0 0 0 1px var(--accent), 0 6px 22px rgba(245,158,11,.18);transform:translateY(-1px);}
+  .node.dep{border-color:var(--accent-dim)} .node.dependent{border-color:var(--in)}
+  aside{background:var(--panel);border-left:1px solid var(--border);overflow-y:auto;padding:20px 20px 40px;}
+  .empty-hint{color:var(--faint);font-size:12.5px;line-height:1.7} .empty-hint b{color:var(--muted);font-weight:600}
+  .legend{margin-top:22px} .legend h4,aside h4{font-size:10.5px;text-transform:uppercase;letter-spacing:1px;color:var(--faint);margin:0 0 10px}
+  .legend .row{display:flex;align-items:center;gap:9px;margin-bottom:7px;font-size:12px;color:var(--muted)}
+  .swatch{width:16px;height:9px;border-radius:3px;flex:0 0 auto}
+  .ln{width:26px;height:0;border-top-width:2px;border-top-style:solid;flex:0 0 auto}
+  .detail .kicker{font-family:var(--mono);font-size:10px;color:var(--accent);letter-spacing:.5px;text-transform:uppercase}
+  .detail h2{font-size:18px;margin:5px 0 3px;font-weight:650;line-height:1.2}
+  .detail .path{font-family:var(--mono);font-size:11px;color:var(--faint);word-break:break-all;margin-bottom:13px}
+  .pill-row{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:15px}
+  .pill{font-size:10.5px;border:1px solid var(--border2);border-radius:20px;padding:3px 9px;color:var(--muted);font-family:var(--mono)}
+  .pill.cpl{border-color:var(--accent-dim);color:var(--accent)}
+  .detail p.desc{font-size:13px;line-height:1.6;color:var(--ink);margin:0 0 16px}
+  .reltitle{font-size:10.5px;text-transform:uppercase;letter-spacing:1px;color:var(--faint);margin:16px 0 8px;display:flex;align-items:center;gap:7px}
+  .reltitle .dotc{width:7px;height:7px;border-radius:50%}
+  .rel{display:flex;flex-direction:column;gap:4px}
+  .rel button{text-align:left;font:inherit;font-size:12px;color:var(--muted);background:var(--panel);
+    border:1px solid var(--border);border-radius:7px;padding:6px 9px;cursor:pointer;transition:.13s;
+    display:flex;justify-content:space-between;align-items:center;gap:8px;}
+  .rel button:hover{color:var(--ink);border-color:var(--accent-dim);background:var(--panel2)}
+  .rel button .bnd{font-size:9px;font-family:var(--mono);color:var(--faint)}
+  .rel .none{font-size:11.5px;color:var(--faint);font-style:italic;padding:2px}
+  .clearbtn{margin-top:18px;width:100%}
+  .scorebox{display:flex;align-items:center;gap:12px;margin:2px 0 13px}
+  .scorebox .big{font-size:34px;font-weight:740;line-height:1;font-family:var(--mono)}
+  .scorebox .gr{font-size:13px;font-weight:700;border:1.5px solid;border-radius:7px;padding:3px 9px}
+  .scorebox .bar{flex:1;height:7px;border-radius:5px;background:#23272c;overflow:hidden}
+  .scorebox .bar i{display:block;height:100%;border-radius:5px}
+  .findings{display:flex;flex-direction:column;gap:7px;margin-top:4px}
+  .finding{border:1px solid var(--border);border-left-width:3px;border-radius:7px;padding:7px 9px;background:#16191c}
+  .finding .top{display:flex;align-items:center;gap:7px;margin-bottom:3px}
+  .finding .sev{font-family:var(--mono);font-size:8.5px;font-weight:700;padding:1px 5px;border-radius:4px;letter-spacing:.4px}
+  .finding .loc{font-family:var(--mono);font-size:10px;color:var(--muted);word-break:break-all}
+  .finding .txt{font-size:11.5px;line-height:1.5;color:#cfd3d8}
+  .sev-HIGH{background:#3a1714;color:#f0857a} .finding.sev-HIGH{border-left-color:#e0524b}
+  .sev-MED{background:#3a2c12;color:#e7b35e} .finding.sev-MED{border-left-color:#d9a441}
+  .sev-LOW{background:#23282d;color:#9aa1a8} .finding.sev-LOW{border-left-color:#525a62}
+  .tagchips{display:flex;flex-wrap:wrap;gap:5px;margin:0 0 13px}
+  .tg{font-size:9.5px;font-family:var(--mono);border-radius:5px;padding:2px 7px;background:#23282d;color:#aeb4bb;border:1px solid var(--border)}
+  .tg.bad{background:#2c1a17;color:#e88;border-color:#4a2420} .tg.ok{background:#1d2420;color:#8a9;border-color:#2a352e}
+  .report .stat-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin:14px 0 6px}
+  .report .stat{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:9px 6px;text-align:center}
+  .report .stat .n{font-family:var(--mono);font-size:18px;font-weight:740;line-height:1}
+  .report .stat .l{font-size:8.5px;color:var(--faint);text-transform:uppercase;letter-spacing:.5px;margin-top:3px}
+  .report h3{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--faint);margin:20px 0 8px}
+  .report .theme{font-size:12px;line-height:1.6;color:#cfd3d8;margin:0 0 9px;padding-left:11px;border-left:2px solid var(--accent-dim)}
+  .report .theme b{color:#fff;font-weight:600}
+  .grade-A{color:#76b39a;border-color:#3a5249} .grade-B{color:#b9c0c7;border-color:var(--border2)}
+  .grade-C{color:#d9a441;border-color:#5a4720} .grade-D{color:#e08a4a;border-color:#5a3a20} .grade-F{color:#e0524b;border-color:#5a2420}
+  .scrollnote{position:absolute;right:14px;bottom:12px;z-index:5;font-size:10.5px;color:var(--faint);font-family:var(--mono);pointer-events:none;background:#0e1012aa;padding:3px 8px;border-radius:6px;border:1px solid var(--border)}
+  .modal{position:fixed;inset:0;z-index:60;display:none;background:#0a0b0ccc;overflow:auto;padding:46px 20px}
+  .modal.open{display:block}
+  .modal .sheet{position:relative;max-width:740px;margin:0 auto;background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:24px 26px 30px}
+  .modal .sheet h2{font-size:17px;font-weight:650;margin:0 0 3px;letter-spacing:.1px}
+  .modal .sheet .intro{font-size:12.5px;color:var(--faint);margin:0 0 6px;line-height:1.5}
+  .modal .xbtn{position:absolute;top:16px;right:16px}
+  .std-h4{font-size:10.5px;text-transform:uppercase;letter-spacing:1px;color:var(--faint);margin:22px 0 4px}
+  .std-row{display:flex;gap:13px;align-items:baseline;padding:8px 0;border-top:1px solid var(--border)}
+  .std-badge{flex:0 0 56px;font-family:var(--mono);font-weight:700;font-size:12px;text-align:center;border-radius:6px;padding:3px 0;color:#0c0d0e}
+  .std-range{flex:0 0 56px;font-family:var(--mono);font-size:11px;color:var(--muted)}
+  .std-key{flex:0 0 116px}
+  .std-row .sev{font-family:var(--mono);font-size:9px;font-weight:700;padding:2px 6px;border-radius:4px;letter-spacing:.4px}
+  .std-row .tg[contenteditable]{outline:none;min-width:40px}
+  .std-desc[contenteditable]{outline:1px dashed var(--border2);outline-offset:2px;border-radius:3px}
+  .xrm{flex:0 0 auto;background:none;border:none;color:var(--faint);cursor:pointer;font-size:12px;padding:0 2px;line-height:1}
+  .xrm:hover{color:#e0524b}
+  .toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(8px);z-index:80;
+    background:var(--panel2);border:1px solid var(--border2);color:var(--ink);font-size:12.5px;
+    padding:9px 14px;border-radius:8px;opacity:0;pointer-events:none;transition:.18s;box-shadow:0 6px 20px #0007}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  .std-desc{flex:1;font-size:12.5px;color:#cfd3d8;line-height:1.5}
+  ::-webkit-scrollbar{width:11px;height:11px}
+  ::-webkit-scrollbar-thumb{background:#2c3137;border-radius:6px;border:3px solid var(--bg2)}
+  ::-webkit-scrollbar-track{background:transparent}
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="mark"></div>
+    <div>
+      <h1 id="projTitle">Functional Architecture Map</h1>
+      <div class="sub" id="subLine"></div>
+    </div>
+    <div class="spacer"></div>
+    <div class="search">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+      <input id="search" placeholder="Find a module…" autocomplete="off"/>
+    </div>
+    <select class="filt" id="gradeFilter" title="Show only modules at/below this grade">
+      <option value="">All grades</option>
+      <option value="90">≤ B  (score &lt;90)</option>
+      <option value="75">≤ C  (&lt;75)</option>
+      <option value="60">≤ D  (&lt;60)</option>
+      <option value="40">F&nbsp;&nbsp;(&lt;40)</option>
+    </select>
+    <select class="filt" id="tagFilter" title="Show only modules with this issue"><option value="">Any issue</option></select>
+    <span class="fcount" id="fcount"></span>
+    <button class="btn" id="stdBtn">Standard</button>
+    <button class="btn" id="reportBtn">Audit report</button>
+    <button class="btn" id="healthBtn">Color: coupling</button>
+    <button class="btn" id="spineBtn">Data-flow spine</button>
+  </header>
+  <div class="board-wrap" id="boardWrap">
+    <div class="board" id="board">
+      <svg class="edges" id="edges">
+        <defs>
+          <marker id="ah-out" markerWidth="9" markerHeight="9" refX="7" refY="4.2" orient="auto"><path d="M0,0 L8,4.2 L0,8.4 Z" fill="var(--out)"/></marker>
+          <marker id="ah-in" markerWidth="9" markerHeight="9" refX="7" refY="4.2" orient="auto"><path d="M0,0 L8,4.2 L0,8.4 Z" fill="var(--in)"/></marker>
+        </defs>
+      </svg>
+    </div>
+    <div class="scrollnote">click a module · scroll to pan</div>
+  </div>
+  <aside id="aside"><div id="detail"></div></aside>
+</div>
+<div class="modal" id="stdModal"></div>
+
+<script>
+const DATA = {"meta": {"project": "RunDock / Alter", "lang": "zh", "subtitle": "Rust + React 本地开发进程管理器工程地图与质量审计", "generatedAt": "2026-08-30", "htmlPath": ".codemap/codemap.html", "mdPath": ".codemap/codemap.md", "spineDesc": "用户可从 Windows 桌面壳或浏览器进入 React 控制台，经统一 API 客户端和 Axum 鉴权路由进入进程监督核心，再把运行状态与项目元数据持久化为本地 JSON 快照。", "tracked_loc": 85193, "tracked_files": 241, "rev": "3272ae8445d8bdc27ff9237b890cf903ef44aa2e"}, "bands": [{"id": "ui-shell", "tier": "fe", "t": "前端 · 应用壳", "d": "导航、认证入口与全局界面状态"}, {"id": "ui-features", "tier": "fe", "t": "前端 · 功能页面", "d": "进程、项目、观测与设置交互"}, {"id": "ui-infra", "tier": "fe", "t": "前端 · 数据访问", "d": "HTTP、认证令牌、服务器选择与轮询 hooks"}, {"id": "wire", "wire": true, "t": "◀ HTTP · SSE · WebSocket ▶"}, {"id": "api", "tier": "be", "t": "后端 · API 与系统边界", "d": "Axum 路由、认证、文件系统和外部能力"}, {"id": "core", "tier": "be", "t": "后端 · 进程运行核心", "d": "启动、停止、重启、健康检查、计划任务与日志"}, {"id": "state", "tier": "be", "t": "后端 · 状态与集成", "d": "JSON 持久化、数据模型、通知与第三方服务"}, {"id": "delivery", "tier": "ops", "t": "交付 · 构建与文档", "d": "依赖、CI、安装、发布和工程文档"}], "spine": ["desktop_shell", "frontend_shell", "frontend_process_projects", "frontend_transport", "api_process_projects", "process_lifecycle", "state_persistence"], "reportThemes": [["P0 安全边界总体保持，但开发代理存在旁路", "生产 daemon 的回环、鉴权、CORS 与出站策略仍有效；Vite 开发服务绑定 0.0.0.0 并代理本机 API，密码关闭时会把控制面间接暴露给局域网。"], ["进程生命周期仍有未合流的 Cron 分支", "Cron 路径复制了普通 spawn/commit 流程，退出与树所有权失败时可能只处理根进程或遗留 descendants；恢复 watcher 也可能显示假 Watching 状态。"], ["前端整改引入了可复现的交互回归", "条件化 single-flight 轮询可让页面永远不做首次加载，env 保存并重启会重复请求；Linux 端口解析还会丢弃常见 ss 输出。"], ["PATCH 与检查点的一致性边界仍不完整", "进程和项目补丁无法区分字段缺失与显式清空，Telegram checkpoint 的单调性检查与写入没有同一把锁，极端并发下可能回退。"], ["桌面壳已成为正式入口但质量门禁未完全覆盖", "桌面壳有独立测试和 Windows 构建 smoke，但未进入 Sonar、覆盖率与独立 clippy/fmt 门禁；Linux 包和正式 release artifact 的安装生命周期也缺少端到端验证。"], ["停止大范围洁癖重构，优先关闭少量运行语义缺陷", "单体 Rust daemon + React 控制台仍适合产品规模；大文件和重复代码只在已经造成具体缺陷的生命周期与轮询路径上做窄修，不建议全面拆分或引入微服务。"]], "standard": {"rubric": [{"grade": "A", "score": 95, "range": "90–100", "en": "clean, well-scoped, idiomatic", "zh": "干净、职责单一、地道"}, {"grade": "B", "score": 82, "range": "75–89", "en": "minor issues: a documented shim, mild bloat", "zh": "小问题：有文档的兼容、轻微臃肿"}, {"grade": "C", "score": 67, "range": "60–74", "en": "notable hacks / fallbacks / bloat / duplication", "zh": "明显的 hack / 回退 / 臃肿 / 重复"}, {"grade": "D", "score": 50, "range": "40–59", "en": "significant legacy / stubs / duplication, or a protocol violation", "zh": "严重的遗留 / 占位 / 重复，或协议违规"}, {"grade": "F", "score": 25, "range": "0–39", "en": "broken, fake output, or unfinished-but-wired", "zh": "损坏、伪造输出，或未完成却已接线"}], "severities": [{"key": "HIGH", "en": "wrong / dangerous / fake, a protocol or security issue, or a genuine maintenance hazard", "zh": "错误 / 危险 / 伪造、协议或安全问题，或真正的维护地雷"}, {"key": "MED", "en": "a real smell a maintainer should fix", "zh": "维护者该修的真坏味"}, {"key": "LOW", "en": "a documented shim, a cosmetic cast, benign bloat — worth noting, not urgent", "zh": "有文档的兼容、装饰性 cast、良性臃肿 —— 值得记、不紧急"}], "coupling": [{"key": "core", "en": "system spine — central to almost everything", "zh": "系统主线 —— 几乎牵连一切"}, {"key": "high", "en": "many connections", "zh": "连接很多"}, {"key": "med", "en": "moderate", "zh": "中等"}, {"key": "low", "en": "leaf / self-contained", "zh": "叶子 / 自洽"}], "tags": [{"id": "monkeypatch", "label": "monkeypatch", "labelZh": "猴补丁", "bad": true, "en": "runtime mutation of another module / stdlib / vendor; reflection or prototype patching", "zh": "运行时改写别的模块/标准库/依赖；反射或原型补丁"}, {"id": "fallback", "label": "fallback", "labelZh": "回退兜底", "bad": true, "en": "'try the real thing, then fake/degrade'; a||b||c chains that hide which value is real", "zh": "“先试真的再退化/造假”；a||b||c 掩盖哪个是真值"}, {"id": "silent-except", "label": "silent-except", "labelZh": "静默吞错", "bad": true, "en": "swallowed errors: empty catch / except:pass / ignored return codes", "zh": "吞掉错误：空 catch / except:pass / 忽略返回码"}, {"id": "legacy", "label": "legacy", "labelZh": "遗留", "bad": true, "en": "deprecated/back-compat shims, dead-but-shipped code, parallel old+new paths", "zh": "遗留/兼容垫片、已发布的死代码、新旧并存"}, {"id": "dual-format", "label": "dual-format", "labelZh": "双格式", "bad": true, "en": "accepting two shapes for one field (snake||camel), patched through the code", "zh": "同一字段接受两种形态（snake||camel）并散落各处"}, {"id": "stub", "label": "stub", "labelZh": "占位桩", "bad": true, "en": "NotImplemented / TODO / dead buttons / demo scripts presented as real", "zh": "未实现/TODO/死按钮/演示脚本当成品"}, {"id": "fake-output", "label": "fake-output", "labelZh": "伪造输出", "bad": true, "en": "returns random/canned/hardcoded results where real work is implied", "zh": "本应真算的地方返回随机/写死结果"}, {"id": "duplication", "label": "duplication", "labelZh": "重复", "bad": true, "en": "copy-pasted logic, or an existing shared abstraction not reused", "zh": "复制粘贴，或已有共享抽象却不复用"}, {"id": "bloat", "label": "bloat", "labelZh": "臃肿", "bad": true, "en": "oversized file / function; too many responsibilities in one unit", "zh": "超大文件/函数；单元职责过多"}, {"id": "glue", "label": "glue", "labelZh": "胶水", "bad": true, "en": "valueless pass-through: rows of thin forwarders / no-op adapters", "zh": "无价值透传：成片薄包装 / 零转换适配器"}, {"id": "any-escape", "label": "any-escape", "labelZh": "类型逃逸", "bad": true, "en": "bypassing the type system: as any / @ts-ignore / dynamic / void* / reinterpret_cast / unsafe", "zh": "绕过类型系统：as any / @ts-ignore / dynamic / void* / reinterpret_cast / unsafe"}, {"id": "over-fit", "label": "over-fit", "labelZh": "过度特化", "bad": true, "en": "hardcoded to one case where a small generalization was expected", "zh": "硬编码单一情况，本应小幅泛化"}, {"id": "god-component", "label": "god-component", "labelZh": "上帝组件", "bad": true, "en": "one component/class/file doing far too much", "zh": "一个组件/类/文件做太多事"}, {"id": "placeholder", "label": "placeholder", "labelZh": "占位", "bad": true, "en": "unfinished UI / data presented as if complete", "zh": "未完成的 UI/数据当作已完成"}, {"id": "clean", "label": "clean", "labelZh": "干净", "bad": false, "en": "no material issues — well-scoped", "zh": "无实质问题 —— 职责单一"}]}, "modules": [{"id": "frontend_shell", "label": "React 应用壳与导航", "band": "ui-shell", "path": "web-ui/src/App.tsx", "desc": "承载路由、侧栏、服务器切换、认证门禁、全局状态和页面装配。", "coupling": "core", "deps": ["frontend_process_projects", "frontend_operations", "frontend_settings_ai_terminal", "frontend_transport"], "loc": 3690, "score": 76, "grade": "B", "tags": ["bloat", "god-component"], "findings": [{"sev": "MED", "loc": "web-ui/src/App.tsx:81", "text": "Layout 延伸至约 841 行，单组件同时管理设置、进程与项目健康轮询、通知、AI、终端、统计、移动端焦点及完整路由 overlay 装配，跨领域状态耦合较高；当前未发现新的路由或移动导航回归。"}, {"sev": "LOW", "loc": "web-ui/src/components/ServerSwitcher.tsx:84", "text": "ServerSwitcher 约 645 行，同时处理本地、远程与 SSH 配置、存储恢复、活动服务器切换、隧道命令预览及表单 UI；属于可延期的维护性膨胀，不构成当前阻断。"}]}, {"id": "frontend_process_projects", "label": "前端进程与项目工作台", "band": "ui-features", "path": "web-ui/src/pages/ProcessesPage.tsx 等", "desc": "实现进程、逻辑项目、计划任务、日志详情和环境文件的主要用户操作流程。", "coupling": "high", "deps": ["frontend_transport", "api_process_projects"], "loc": 9428, "score": 56, "grade": "D", "tags": ["bloat", "god-component", "duplication", "over-fit"], "findings": [{"sev": "HIGH", "loc": "web-ui/src/pages/ProcessesPage.tsx:64", "text": "ProcessesPage 共 1794 行，同时承载列表状态、筛选、批量操作、卡片视图、表格视图；ProcessCard(766-1097) 与 ProcessRow(1117-1427) 重复维护操作定义和渲染逻辑，已构成真实的 god-file 维护风险。"}, {"sev": "MED", "loc": "web-ui/src/components/CronExpressionInput.tsx:29", "text": "分段步长解析对 1-10/2 仅 parseInt(rangeStr) 得到起点 1，未校验上界 10；因此预览会把 11、13 等超出范围的分钟错误当作匹配。当前未见该组件测试。"}, {"sev": "MED", "loc": "web-ui/src/components/EnvFileModal.tsx:402", "text": "底部取消按钮直接调用 onClose，绕过 requestClose 的 dirty/mutation 保护；未保存内容可被无确认丢弃，保存/重启进行中也可关闭。"}, {"sev": "MED", "loc": "web-ui/src/pages/ProcessesPage.tsx:1020", "text": "终端 action 设置 disabled: !p.cwd，但卡片和表格 inline.map(1080-1089、1410-1419) 未把 disabled 传给 ActionBtn，RowOverflowMenu(1563-1671) 也不支持/处理该字段；无 cwd 时按钮仍可点击并静默 no-op。"}, {"sev": "MED", "loc": "web-ui/src/pages/StartPage.tsx:143", "text": "saveEnvFile 写入完成后无版本/代际校验即 setEnvDirty(false)，而 textarea(461-483) 在保存期间仍可编辑；并且启动按钮(339)只检查 loading，不等待 envSaving，存在并发编辑被误标记为已保存及启动读取旧文件的竞态。"}, {"sev": "MED", "loc": "web-ui/src/components/EnvFilePanel.tsx:19", "text": "EnvFilePanel(432 行) 与 EnvFileModal(468 行) 两套活动组件重复实现环境文件列表、加载、编辑、保存、同步和关闭状态机，并分别使用 onRestart 与 onRestarted 两种回调契约，存在持续漂移和修复遗漏风险。"}, {"sev": "LOW", "loc": "web-ui/src/components/FolderBrowser.tsx:94", "text": "路径已统一替换为斜杠后，面包屑仍固定用反斜杠 join；Unix 路径点击面包屑会生成类似 home\\me 的错误路径。"}]}, {"id": "frontend_operations", "label": "前端观测与运维页面", "band": "ui-features", "path": "web-ui/src/pages/AnalyticsPage.tsx 等", "desc": "展示指标、日志容量、通知、端口和隧道状态并触发相关运维动作。", "coupling": "med", "deps": ["frontend_transport", "integrations_observability"], "loc": 6341, "score": 68, "grade": "C", "tags": ["bloat", "duplication", "god-component"], "findings": [{"sev": "MED", "loc": "web-ui/src/pages/PortFinderPage.tsx:120", "text": "PortFinderPage 约 1,065 行，把端口扫描、进程匹配、筛选、分页和操作 UI 放在单一页面组件内。"}, {"sev": "MED", "loc": "web-ui/src/pages/AnalyticsPage.tsx:1047", "text": "AnalyticsPage 与 LogVolumePage:281 各自维护相近的批量统计拉取和聚合流程；两者已使用 single-flight，但统计数据适配仍重复。"}, {"sev": "MED", "loc": "web-ui/src/components/NotifModal.tsx:12", "text": "NotifModal 与 NotificationsPage:127 分别维护通知事件默认结构，新增事件字段时存在两处同步成本。"}]}, {"id": "frontend_settings_ai_terminal", "label": "前端设置、AI 与终端", "band": "ui-features", "path": "web-ui/src/components/settings 与 TerminalPanel", "desc": "管理安全、AI Provider、通知、隧道和终端设置，并提供浏览器 PTY/AI 交互。", "coupling": "high", "deps": ["frontend_transport", "api_security_os", "integrations_observability"], "loc": 6489, "score": 62, "grade": "C", "tags": ["bloat", "god-component"], "findings": [{"sev": "MED", "loc": "web-ui/src/components/AiPanel.tsx:18", "text": "前端 MAX_CHAT_MESSAGES=100，发送时 history 仍截取 100 条；服务端拒绝超过 50 条。连续约 26 轮后请求持续失败，且失败请求仍留下空 assistant 占位，必须清空聊天才能恢复。"}, {"sev": "MED", "loc": "web-ui/src/components/settings/AiTab.tsx:166", "text": "服务端可返回 status=idle，但前端未处理该分支；authPhase 仍为 in_progress，轮询持续到本地超时，界面长期停留在等待授权。"}, {"sev": "MED", "loc": "web-ui/src/components/settings/AiTab.tsx:306", "text": "取消 Device Flow 只清理前端状态，没有取消请求；后端流程保留至过期且最多允许 8 个活动流程，重复取消可耗尽登录容量最长约 30 分钟。"}, {"sev": "MED", "loc": "web-ui/src/components/settings/AiTab.tsx:423", "text": "设置描述声明关闭后不显示侧栏 AI 按钮，但 App.tsx 始终渲染并允许打开 AiPanel；后端 enabled=false 时发送请求才返回禁用错误，开关未实现声明的界面效果。"}, {"sev": "MED", "loc": "web-ui/src/components/TerminalPanel.tsx:130", "text": "约 1136 行的单一组件同时处理 xterm 生命周期、WebSocket ticket/重试、输入 ANSI 解析、历史持久化、标签页/分屏、布局和快捷键；边界修改会牵动较大的维护与回归面。"}]}, {"id": "frontend_transport", "label": "前端 API、认证与轮询层", "band": "ui-infra", "path": "web-ui/src/lib 与 web-ui/src/hooks", "desc": "集中封装 REST/SSE 请求、Bearer 会话、服务器配置和进程/健康轮询。", "coupling": "core", "deps": ["api_process_projects", "api_security_os", "integrations_observability"], "loc": 3904, "score": 69, "grade": "C", "tags": ["any-escape"], "findings": [{"sev": "MED", "loc": "web-ui/src/hooks/useNotificationTray.ts:30-36", "text": "INACTIVE 未包含 stopping；若轮询捕获 running/watching→stopping→stopped，中间状态会覆盖前态，最终不会生成 stopped 通知。现有测试未覆盖该状态链。"}, {"sev": "MED", "loc": "web-ui/src/lib/api.ts:401-402", "text": "通用 request<T> 将 JSON.parse 结果直接断言为 T，多个 API 端点仍绕过 validatedRequest；服务端返回 2xx 但结构漂移时，错误数据会静默进入业务层。"}, {"sev": "MED", "loc": "web-ui/src/lib/schemas.ts:216-263", "text": "isProcessInfo 未校验可选 notify 字段；畸形非空 notify 仍能通过进程响应校验，ProcessNotifModal 后续读取 config.events 可能触发运行时错误。"}]}, {"id": "bootstrap_daemon", "label": "CLI、守护进程与 Web 入口", "band": "api", "path": "src/main.rs、src/lib.rs、src/daemon、src/cli", "desc": "解析 CLI、派生后台守护进程、恢复状态、组装 Axum/嵌入式前端并处理关闭信号。", "coupling": "core", "deps": ["api_security_os", "api_process_projects", "state_persistence", "process_lifecycle"], "loc": 3184, "score": 78, "grade": "B", "tags": ["fallback", "legacy", "glue"], "findings": [{"sev": "MED", "loc": "src/utils/pid.rs:174", "text": "capture_process_identity(...)=None 会被 is_some_and 直接解释为 daemon 不在运行；write_pid_file 随后可能删除仍存活 daemon 的 PID 文件，旧进程继续监听而新实例因端口冲突启动失败，违背身份未知时 fail-closed 的不变量。"}, {"sev": "MED", "loc": "src/utils/pid.rs:141", "text": "兼容 numeric PID 时将 start_time_secs 置零、executable 置空；daemon_record_matches_identity 会跳过启动时间并退回 current_exe。旧 PID 被复用给同路径普通 CLI 进程时可能误判为 daemon，阻塞启动/重启并削弱 PID reuse 防护。"}, {"sev": "LOW", "loc": "src/lib.rs:204", "text": "Web 入口直接拼接 host；--host ::1 会生成缺少 IPv6 authority 方括号的 URL，浏览器启动失败。"}]}, {"id": "api_process_projects", "label": "进程、项目与 Ecosystem API", "band": "api", "path": "src/api/routes/processes.rs、projects.rs、ecosystem.rs", "desc": "把进程 CRUD、批量命名空间操作、逻辑项目聚合和 Ecosystem 导入映射到运行核心。", "coupling": "core", "deps": ["process_lifecycle", "state_persistence", "integrations_observability"], "loc": 2331, "score": 70, "grade": "C", "tags": ["bloat", "duplication"], "findings": [{"sev": "MED", "loc": "src/api/routes/processes.rs:23", "text": "processes.rs 当前约 1369 行，同时承载进程 CRUD、生命周期、日志 SSE、环境文件、通知、项目关联、克隆和命名空间批量操作，职责边界和回归面仍然过宽；属于真实维护风险但不是本轮阻断项。"}, {"sev": "MED", "loc": "src/api/routes/ecosystem.rs:77", "text": "Ecosystem 导入只在每个应用启动前检查总截止时间，manager.start(app).await 未受剩余时间约束；单个启动或 hook 阻塞时可超过 5 分钟并长期持有 state_mutation_lock。"}, {"sev": "MED", "loc": "src/api/routes/ecosystem.rs:84", "text": "项目关联失败且 manager.delete 清理也失败时，若 save_to_disk 同样失败，没有设置 background_persistence_error，健康检查无法持续暴露孤儿进程诊断。"}, {"sev": "MED", "loc": "src/api/routes/processes.rs:714", "text": "UpdateProcessRequest、项目 PATCH 和 notifications PATCH 已具备 missing/null/value 分支，但测试主要验证解析，缺少 handler 配置合并、落盘和持久化失败回滚集成测试。"}, {"sev": "LOW", "loc": "src/api/routes/processes.rs:56", "text": "process_is_active 与 projects.rs 的 is_active 重复维护 PID 与状态活跃判定，状态枚举扩展时存在轻微漂移风险。"}]}, {"id": "api_security_os", "label": "认证与本机系统能力 API", "band": "api", "path": "src/api/middleware.rs 与 system/update/scripts/terminal 路由", "desc": "执行认证授权、文件系统、脚本、端口、PTY 终端、自更新和守护进程控制等高权限本机操作。", "coupling": "core", "deps": ["state_persistence", "process_lifecycle"], "loc": 5253, "score": 82, "grade": "B", "tags": ["clean"], "findings": [{"sev": "MED", "loc": "src/api/routes/ports.rs:195", "text": "Windows 分支执行 netstat -ano 并包含 ESTABLISHED 等连接，Unix 分支执行带 -l 的 ss 仅返回监听 socket，导致同一 /ports API 的状态集合跨平台不一致；前端 ESTABLISHED 筛选在 Linux 无结果。Ss/Netstat parser 已按命令来源分流，IPv4/IPv6、TCP/UDP、users/PID fixture 无回归。"}]}, {"id": "process_lifecycle", "label": "进程监督与日志核心", "band": "core", "path": "src/process 与 src/logging", "desc": "负责子进程启动、PID 管理、状态机、自动重启、cron、健康检查、文件监听、日志写入和指标采样。", "coupling": "core", "deps": ["state_persistence", "integrations_observability"], "loc": 7397, "score": 78, "grade": "B", "tags": ["fallback"], "findings": [{"sev": "MED", "loc": "src/process/tree.rs:114", "text": "runner/hooks 在附加失败且兜底清理无法确认时返回明确错误；Child 不再进入 ManagedChild/注册表，极端残留树只能依赖外部清理。属于 fail-closed 路径的运维风险，不是旧 HIGH。"}, {"sev": "MED", "loc": "src/process/manager.rs:494", "text": "恢复 adopted process 时已设置 Watching；FileWatcher::start 失败仅记录日志，file_watcher 保持 None，对外仍报告 Watching 但文件变化不会触发重启。"}]}, {"id": "state_persistence", "label": "配置、模型与 JSON 持久化", "band": "state", "path": "src/daemon/state.rs、src/config、src/models", "desc": "定义跨层数据模型并把进程、项目、认证、通知、Telegram、隧道和 AI 配置保存到本地文件。", "coupling": "core", "deps": ["process_lifecycle", "integrations_observability"], "loc": 5224, "score": 88, "grade": "B", "tags": ["clean"], "findings": []}, {"id": "integrations_observability", "label": "AI、通知、隧道与观测集成", "band": "state", "path": "src/api/routes/ai.rs、src/notifications、src/telegram、src/tunnel", "desc": "对接 AI Provider、Webhook/Telegram 通知、Cloudflare/ngrok 隧道以及日志/指标查询。", "coupling": "high", "deps": ["state_persistence", "process_lifecycle"], "loc": 6759, "score": 78, "grade": "B", "tags": ["fallback"], "findings": [{"sev": "MED", "loc": "src/tunnel/mod.rs:241", "text": "TunnelManager::stop 仅调用 kill_orphan_pid；Windows 该函数只终止并等待根 PID，ProcessTreeGuard 仍由后台 watch_output 任务持有。停止请求会先删除 pids 并标记 Stopped，树级 Job 清理要等任务结束；若 descendants 继承输出管道，watch_output 最长可继续等待45秒，期间残留进程已脱离跟踪且可能占用端口。当前无 stop/descendant 清理测试。"}, {"sev": "MED", "loc": "src/api/routes/tunnels.rs:551", "text": "install_provider_stream 的超时和等待失败分支只 kill_spawned_process 后 drop(ProcessTreeGuard)，未调用 terminate_and_wait；Drop 仅发起 Unix 进程组 SIGKILL 或关闭 Windows Job，未确认 descendants 已消失，随后仍发送 done=true/ok=false。非流式 install_provider 在同类分支显式 terminate_and_wait，存在路径语义不一致。"}]}, {"id": "desktop_shell", "label": "Windows 桌面壳与托盘入口", "band": "ui-shell", "path": "desktop-shell", "desc": "提供 Windows 单实例桌面窗口、系统托盘、daemon 启动与恢复，以及内嵌 RunDock 控制台入口。", "coupling": "high", "deps": ["bootstrap_daemon", "frontend_shell"], "loc": 7596, "score": 82, "grade": "B", "tags": ["silent-except"], "findings": [{"sev": "MED", "loc": "desktop-shell/src/windows_app.rs:173", "text": "自启动初始化与托盘切换都静默丢弃错误：initialize_autostart 在 :181 仅判断 is_ok()，失败无提示；托盘 :296 用 unwrap_or(false)，:298-301 对 enable/disable 仅判断结果，失败不更新勾选也不给用户诊断。登录自启动可能未生效而界面无可操作反馈。"}]}, {"id": "delivery_docs", "label": "构建、发布与工程文档", "band": "delivery", "path": "Cargo/package 配置、CI、安装与 docs", "desc": "定义依赖、质量命令、Windows/Linux 构建安装、GitHub Release 和面向维护者/用户的文档。", "coupling": "med", "deps": ["bootstrap_daemon", "frontend_shell"], "loc": 17597, "score": 88, "grade": "B", "tags": ["duplication"], "findings": [{"sev": "LOW", "loc": "README.md:16", "text": "根 README 与 docs/README.md 仍分别维护部分重叠的安装、构建和功能说明；当前内容已同步，但缺少自动一致性检查。Debian smoke 在首次安装和升级后均等待健康响应，卸载后进行有界停止、包移除、状态保留和 unit 清理检查，并在超时/失败时输出 systemd 状态与 journal；未发现新的 HIGH。"}]}]};
+const M = DATA.modules || [];
+const BANDS = DATA.bands || [];
+const SPINE = DATA.spine || [];
+const REPORT_THEMES = DATA.reportThemes || [];
+const META = DATA.meta || {};
+/* HTML-escape every string that comes from modules.json (labels, descriptions,
+   findings, tags, paths, meta, themes, standard) before it enters innerHTML. The only
+   trusted HTML is the template's own i18n strings (tl) and the structural markup. */
+function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g, c=>(
+  {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+let BAD_TAGS = new Set(["monkeypatch","fallback","legacy","dual-format","stub","fake-output","bloat","duplication","glue","silent-except","silent-catch","any-escape","over-fit","god-component","placeholder"]);
+
+/* ---------- i18n: display language via meta.lang (module names never translated) ---------- */
+const LANG = META.lang || "en";
+const I18N = {
+ en:{ mapSuffix:"· Functional Architecture Map", sub:"functional modules · call hierarchy · coupling · quality score · LoC",
+   report:"report", searchPh:"Find a module…", allGrades:"All grades", anyIssue:"Any issue", scrollNote:"click a module · scroll to pan",
+   about:"What it does", audit:"Quality audit", clean:"no material issues — clean / well-scoped",
+   dependsOn:"Depends on / calls →", usedBy:"← Used by (dependents)", none:"— none —", clearSel:"Clear selection",
+   couplingLbl:"coupling", deps:"dependencies", dependents:"dependents", locUnit:"LoC", coreModules:"Core modules (the spine)",
+   lgCoupling:"Coupling", lgCore:"core — system spine", lgHigh:"high — many connections", lgMed:"medium", lgLow:"low — leaf / self-contained",
+   lgEdges:"Edges", lgOut:"depends on / calls →", lgIn:"← used by (dependent)",
+   introHint:"<b>Click any module</b> to see what it does, its quality score &amp; findings, what it calls (solid amber, downstream) and what depends on it (dashed gray, upstream).<br><br>Each card shows a <b>health score</b> (0–100). Toggle the color mode, filter by grade/issue, or open the <b>Audit report</b>.",
+   criticalPath:"Critical path", spineTitle:"Data-flow spine", path:"Path", healthReport:"Health report", qa:"Quality audit",
+   worst:"Worst offenders — click to inspect", commonTags:"Most-common smell tags", themes:"Cross-cutting themes", backToMap:"← Back to map", avg:"avg",
+   filter:"Filter", modulesWord:"modules", allWord:"all", noMatches:"no matches", clearFilters:"Clear filters",
+   btnReport:"Audit report", btnSpine:"Data-flow spine", colorCoupling:"Color: coupling", colorHealth:"Color: health",
+   btnStd:"Standard", stdTitle:"Audit standard", stdIntro:"How modules are scored — the same rubric for every module, language, and run. Click Edit to add your own issue tags.",
+   stdRubric:"Score → grade", stdSeverity:"Finding severity", stdTags:"Issue tags", stdCoupling:"Coupling (structural, not quality)", close:"Close",
+   stdEditBtn:"Edit", stdDone:"Done", stdExport:"Export", stdReset:"Reset", stdAddTag:"+ Tag",
+   stdEditHint:"Editing — changes save in this browser. Export → save as <code>.codemap/standard.json</code> to make them permanent and used by audits.",
+   stdNewTagId:"New tag id (e.g. perf-risk, security):", stdExported:"Saved standard.json — put it in .codemap/",
+   copyFix:"Copy fix prompt", copied:"Copied — paste into Claude Code / Codex",
+   trackedLoc:(l,f)=>`${l} tracked LoC · ${f} files` },
+ zh:{ mapSuffix:"· 功能架构图", sub:"功能模块 · 调用层级 · 耦合 · 质量评分 · 代码行数",
+   report:"报告", searchPh:"查找模块…", allGrades:"全部等级", anyIssue:"全部问题", scrollNote:"点击模块 · 滚动平移",
+   about:"模块简介", audit:"质量审计", clean:"无实质问题 —— 干净、职责单一",
+   dependsOn:"依赖 / 调用 →", usedBy:"← 被谁依赖", none:"— 无 —", clearSel:"清除选择",
+   couplingLbl:"耦合", deps:"个依赖", dependents:"个被依赖", locUnit:"行", coreModules:"核心模块（主线）",
+   lgCoupling:"耦合", lgCore:"core — 系统主线枢纽", lgHigh:"high — 连接很多", lgMed:"medium — 中等", lgLow:"low — 叶子 / 自洽",
+   lgEdges:"连线", lgOut:"依赖 / 调用 →", lgIn:"← 被依赖",
+   introHint:"<b>点击任意模块</b>查看它在做什么、质量评分与问题、它调用了谁（实线琥珀＝下游）以及谁依赖它（虚线灰＝上游）。<br><br>每张卡片都有<b>健康分</b>（0–100）。可切换配色模式、按等级或问题筛选，或打开<b>审计报告</b>。",
+   criticalPath:"关键路径", spineTitle:"数据流主线", path:"路径", healthReport:"健康报告", qa:"质量审计",
+   worst:"最差模块 —— 点击查看", commonTags:"最常见问题标签", themes:"跨模块共性问题", backToMap:"← 返回地图", avg:"平均",
+   filter:"筛选", modulesWord:"个模块", allWord:"全部", noMatches:"无匹配", clearFilters:"清除筛选",
+   btnReport:"审计报告", btnSpine:"数据流主线", colorCoupling:"配色：耦合", colorHealth:"配色：健康度",
+   btnStd:"评判标准", stdTitle:"评判标准", stdIntro:"模块如何打分 —— 所有模块、所有语言、每一次运行都用同一套标准。点「编辑」可加入你自己的问题标签。",
+   stdRubric:"分数 → 等级", stdSeverity:"问题严重度", stdTags:"问题标签", stdCoupling:"耦合（结构维度，非质量）", close:"关闭",
+   stdEditBtn:"编辑", stdDone:"完成", stdExport:"导出", stdReset:"重置", stdAddTag:"+ 标签",
+   stdEditHint:"编辑中 —— 改动保存在本浏览器。导出 → 存为 <code>.codemap/standard.json</code> 即永久生效并被审计采用。",
+   stdNewTagId:"新标签 id（如 perf-risk、security）：", stdExported:"已生成 standard.json —— 放到 .codemap/ 下",
+   copyFix:"复制修复指令", copied:"已复制 —— 粘贴到 Claude Code / Codex",
+   trackedLoc:(l,f)=>`${l} 行（已跟踪）· ${f} 个文件` },
+};
+function tl(k){ const d=I18N[LANG]||I18N.en; return d[k]!=null?d[k]:(I18N.en[k]!=null?I18N.en[k]:k); }
+document.documentElement.lang = LANG;
+function stdText(o){ return o ? (LANG==="zh" ? (o.zh||o.en||"") : (o.en||o.zh||"")) : ""; }
+
+/* ---------- the audit standard — editable, configurable, its own page ----------
+   Effective standard = a saved browser draft (user edits), else the injected file
+   (DATA.standard, from .codemap/standard.json or the skill default), else
+   this built-in fallback. Edit it on the Standard page and Export to standard.json
+   to make it permanent and used by audits. Custom tags flow through the whole map. */
+const BUILTIN_STD = {
+  rubric:[
+    {grade:"A",score:95,range:"90–100",en:"clean, well-scoped, idiomatic",zh:"干净、职责单一、地道"},
+    {grade:"B",score:82,range:"75–89",en:"minor issues: a documented shim, mild bloat",zh:"小问题：有文档的兼容、轻微臃肿"},
+    {grade:"C",score:67,range:"60–74",en:"notable hacks / fallbacks / bloat / duplication",zh:"明显的 hack / 回退 / 臃肿 / 重复"},
+    {grade:"D",score:50,range:"40–59",en:"significant legacy / stubs / duplication, or a protocol violation",zh:"严重的遗留 / 占位 / 重复，或协议违规"},
+    {grade:"F",score:25,range:"0–39",en:"broken, fake output, or unfinished-but-wired",zh:"损坏、伪造输出，或未完成却已接线"},
+  ],
+  severities:[
+    {key:"HIGH",en:"wrong / dangerous / fake, a protocol or security issue, or a genuine maintenance hazard",zh:"错误 / 危险 / 伪造、协议或安全问题，或真正的维护地雷"},
+    {key:"MED",en:"a real smell a maintainer should fix",zh:"维护者该修的真坏味"},
+    {key:"LOW",en:"a documented shim, a cosmetic cast, benign bloat — worth noting, not urgent",zh:"有文档的兼容、装饰性 cast、良性臃肿 —— 值得记、不紧急"},
+  ],
+  coupling:[
+    {key:"core",en:"system spine — central to almost everything",zh:"系统主线 —— 几乎牵连一切"},
+    {key:"high",en:"many connections",zh:"连接很多"},
+    {key:"med",en:"moderate",zh:"中等"},
+    {key:"low",en:"leaf / self-contained",zh:"叶子 / 自洽"},
+  ],
+  tags:[
+    {id:"monkeypatch",label:"monkeypatch",labelZh:"猴补丁",bad:true,en:"runtime mutation of another module / stdlib / vendor; reflection or prototype patching",zh:"运行时改写别的模块/标准库/依赖；反射或原型补丁"},
+    {id:"fallback",label:"fallback",labelZh:"回退兜底",bad:true,en:"'try the real thing, then fake/degrade'; a||b||c chains that hide which value is real",zh:"“先试真的再退化/造假”；a||b||c 掩盖哪个是真值"},
+    {id:"silent-except",label:"silent-except",labelZh:"静默吞错",bad:true,en:"swallowed errors: empty catch / except:pass / ignored return codes",zh:"吞掉错误：空 catch / except:pass / 忽略返回码"},
+    {id:"legacy",label:"legacy",labelZh:"遗留",bad:true,en:"deprecated/back-compat shims, dead-but-shipped code, parallel old+new paths",zh:"遗留/兼容垫片、已发布的死代码、新旧并存"},
+    {id:"dual-format",label:"dual-format",labelZh:"双格式",bad:true,en:"accepting two shapes for one field (snake||camel), patched through the code",zh:"同一字段接受两种形态（snake||camel）并散落各处"},
+    {id:"stub",label:"stub",labelZh:"占位桩",bad:true,en:"NotImplemented / TODO / dead buttons / demo scripts presented as real",zh:"未实现/TODO/死按钮/演示脚本当成品"},
+    {id:"fake-output",label:"fake-output",labelZh:"伪造输出",bad:true,en:"returns random/canned/hardcoded results where real work is implied",zh:"本应真算的地方返回随机/写死结果"},
+    {id:"duplication",label:"duplication",labelZh:"重复",bad:true,en:"copy-pasted logic, or an existing shared abstraction not reused",zh:"复制粘贴，或已有共享抽象却不复用"},
+    {id:"bloat",label:"bloat",labelZh:"臃肿",bad:true,en:"oversized file / function; too many responsibilities in one unit",zh:"超大文件/函数；单元职责过多"},
+    {id:"glue",label:"glue",labelZh:"胶水",bad:true,en:"valueless pass-through: rows of thin forwarders / no-op adapters",zh:"无价值透传：成片薄包装 / 零转换适配器"},
+    {id:"any-escape",label:"any-escape",labelZh:"类型逃逸",bad:true,en:"bypassing the type system: as any / @ts-ignore / dynamic / void* / reinterpret_cast / unsafe",zh:"绕过类型系统：as any / @ts-ignore / dynamic / void* / reinterpret_cast / unsafe"},
+    {id:"over-fit",label:"over-fit",labelZh:"过度特化",bad:true,en:"hardcoded to one case where a small generalization was expected",zh:"硬编码单一情况，本应小幅泛化"},
+    {id:"god-component",label:"god-component",labelZh:"上帝组件",bad:true,en:"one component/class/file doing far too much",zh:"一个组件/类/文件做太多事"},
+    {id:"placeholder",label:"placeholder",labelZh:"占位",bad:true,en:"unfinished UI / data presented as if complete",zh:"未完成的 UI/数据当作已完成"},
+    {id:"clean",label:"clean",labelZh:"干净",bad:false,en:"no material issues — well-scoped",zh:"无实质问题 —— 职责单一"},
+  ],
+};
+const STD_KEY = "codemap.standard."+(META.project||"default");
+function loadStdDraft(){ try{ const s=localStorage.getItem(STD_KEY); return s?JSON.parse(s):null; }catch(e){ return null; } }
+let STDDATA = loadStdDraft() || JSON.parse(JSON.stringify(DATA.standard || BUILTIN_STD));
+const TAGMETA = {};
+function rebuildTagMeta(){
+  for(const k in TAGMETA) delete TAGMETA[k];
+  (STDDATA.tags||[]).forEach(t=>TAGMETA[t.id]=t);
+  BAD_TAGS = new Set((STDDATA.tags||[]).filter(t=>t.bad!==false).map(t=>t.id));
+}
+function tagMeta(id){ return TAGMETA[id] || {id,label:id,bad:true}; }
+function tagLabel(t){ const m=tagMeta(t); return LANG==="zh" ? (m.labelZh||m.label||t) : (m.label||t); }
+rebuildTagMeta();
+
+/* problems POP (saturated red→amber), good RECEDES (pale low-sat green).
+   The cue is saturation/lightness, not hue — colorblind-friendlier. */
+function healthColor(s){
+  if(s==null) return "#6b7280";
+  const stops=[[0,[224,78,74]],[42,[226,128,66]],[60,[222,172,52]],
+               [74,[214,180,72]],[82,[168,180,140]],[100,[150,178,150]]];
+  s=Math.max(0,Math.min(100,s));
+  let a=stops[0], b=stops[stops.length-1];
+  for(let i=0;i<stops.length-1;i++){ if(s>=stops[i][0] && s<=stops[i+1][0]){a=stops[i];b=stops[i+1];break;} }
+  const t=(s-a[0])/((b[0]-a[0])||1);
+  const c=a[1].map((v,k)=>Math.round(v+(b[1][k]-v)*t));
+  return `rgb(${c[0]},${c[1]},${c[2]})`;
+}
+const byId = Object.fromEntries(M.map(m=>[m.id,m]));
+const dependentsOf = id => M.filter(m=>(m.deps||[]).includes(id)).map(m=>m.id);
+
+const board=document.getElementById("board");
+const svg=document.getElementById("edges");
+const detail=document.getElementById("detail");
+const cardEl={};
+
+document.getElementById("projTitle").innerHTML = esc(META.project||"Project")+` <span>${tl('mapSuffix')}</span>`;
+document.getElementById("subLine").innerHTML = esc(META.subtitle||tl('sub'))+
+  (META.mdPath?`  ·  <a href="${esc(META.mdPath.split('/').pop())}" style="color:var(--accent);text-decoration:none">${tl('report')} ↗</a>`:"");
+/* localize static header chrome (module names/labels are never translated) */
+document.querySelector(".scrollnote").textContent = tl("scrollNote");
+document.getElementById("search").placeholder = tl("searchPh");
+document.getElementById("reportBtn").textContent = tl("btnReport");
+document.getElementById("spineBtn").textContent = tl("btnSpine");
+document.getElementById("stdBtn").textContent = tl("btnStd");
+document.getElementById("gradeFilter").options[0].textContent = tl("allGrades");
+document.getElementById("tagFilter").options[0].textContent = tl("anyIssue");
+
+BANDS.forEach(b=>{
+  if(b.wire){
+    const w=document.createElement("div"); w.className="wire";
+    w.innerHTML=`<div class="line"></div><div class="lbl">${esc(b.t||"boundary")}</div><div class="line"></div>`;
+    board.appendChild(w); return;
+  }
+  const band=document.createElement("div"); band.className=`band tier-${b.tier||""}`;
+  const items=M.filter(m=>m.band===b.id);
+  const gloc=items.reduce((a,m)=>a+(m.loc||0),0);
+  const head=document.createElement("div"); head.className="band-head";
+  head.innerHTML=`<span class="t">${esc(b.t||b.id)}</span><span class="d">${esc(b.d||"")}</span>`+
+    `<span class="num">${items.length}</span><span class="num gloc">${gloc.toLocaleString()} ${tl('locUnit')}</span>`;
+  band.appendChild(head);
+  const body=document.createElement("div"); body.className="band-body";
+  items.forEach(m=>{
+    const n=document.createElement("div");
+    n.className=`node c-${m.coupling||"low"}`; n.dataset.id=m.id;
+    if(m.score!=null) n.style.setProperty("--h",healthColor(m.score));
+    const chip=m.score!=null?`<span class="chip">${m.score}</span>`:"";
+    const locStr=m.loc!=null?` · ${Number(m.loc).toLocaleString()} ${tl('locUnit')}`:"";
+    n.innerHTML=`${chip}<div class="lab">${esc(m.label)}</div><div class="meta">${esc(m.grade||"–")} · ${(m.deps||[]).length}→ ${dependentsOf(m.id).length}←${locStr}</div>`;
+    n.addEventListener("click",e=>{e.stopPropagation();select(m.id)});
+    body.appendChild(n); cardEl[m.id]=n;
+  });
+  band.appendChild(body); board.appendChild(band);
+});
+
+function center(el){const r=el.getBoundingClientRect(), br=board.getBoundingClientRect();
+  return {x:r.left-br.left+r.width/2, y:r.top-br.top+r.height/2, w:r.width, h:r.height};}
+function clip(c,from){const dx=from.x-c.x, dy=from.y-c.y, hw=c.w/2+2, hh=c.h/2+2;
+  if(dx===0&&dy===0) return c;
+  const s=Math.min(hw/Math.abs(dx||1e-6), hh/Math.abs(dy||1e-6));
+  return {x:c.x+dx*s, y:c.y+dy*s};}
+function edge(aEl,bEl,kind){
+  const ca=center(aEl), cb=center(bEl), a=clip(ca,cb), b=clip(cb,ca);
+  const dy=b.y-a.y, k=Math.min(Math.abs(dy)*0.4+30,150);
+  const p=document.createElementNS("http://www.w3.org/2000/svg","path");
+  p.setAttribute("d",`M${a.x},${a.y} C${a.x},${a.y+(dy>=0?k:-k)} ${b.x},${b.y-(dy>=0?k:-k)} ${b.x},${b.y}`);
+  p.setAttribute("fill","none");
+  p.setAttribute("stroke",kind==="out"?"var(--out)":"var(--in)");
+  p.setAttribute("stroke-width",kind==="out"?"1.9":"1.5");
+  p.setAttribute("stroke-opacity",kind==="out"?"0.95":"0.6");
+  if(kind==="in")p.setAttribute("stroke-dasharray","4 3");
+  p.setAttribute("marker-end",kind==="out"?"url(#ah-out)":"url(#ah-in)");
+  svg.appendChild(p);
+}
+function clearEdges(){[...svg.querySelectorAll("path")].forEach(p=>p.remove());}
+
+let current=null, spineOn=false;
+function resetClasses(){board.classList.remove("has-sel");
+  Object.values(cardEl).forEach(n=>n.classList.remove("sel","dep","dependent","lit"));}
+function select(id){
+  if(current===id){clearSel();return;}
+  current=id; spineOn=false; document.getElementById("spineBtn").classList.remove("active");
+  clearEdges(); resetClasses();
+  const m=byId[id]; const outs=(m.deps||[]); const ins=dependentsOf(id);
+  board.classList.add("has-sel"); cardEl[id].classList.add("sel","lit");
+  outs.forEach(d=>{cardEl[d]&&(cardEl[d].classList.add("dep","lit"),edge(cardEl[id],cardEl[d],"out"));});
+  ins.forEach(d=>{cardEl[d]&&(cardEl[d].classList.add("dependent","lit"),edge(cardEl[d],cardEl[id],"in"));});
+  renderDetail(m,outs,ins);
+  cardEl[id].scrollIntoView({block:"nearest",inline:"nearest",behavior:"smooth"});
+}
+function clearSel(){current=null; clearEdges(); resetClasses(); renderIntro();}
+function showSpine(){
+  current=null; clearEdges(); resetClasses(); board.classList.add("has-sel");
+  spineOn=true; document.getElementById("spineBtn").classList.add("active");
+  SPINE.forEach(id=>cardEl[id]&&cardEl[id].classList.add("lit"));
+  for(let i=0;i<SPINE.length-1;i++){const a=cardEl[SPINE[i]],b=cardEl[SPINE[i+1]];
+    if(a&&b){a.classList.add("sel");b.classList.add("sel");edge(a,b,"out");}}
+  detail.innerHTML=`<div class="detail"><div class="kicker">${tl('criticalPath')}</div><h2>${tl('spineTitle')}</h2>
+    <p class="desc">${esc(META.spineDesc||"The system's critical request path, end to end.")}</p>
+    <div class="reltitle">${tl('path')}</div>
+    <div class="rel">${SPINE.map(id=>byId[id]?`<button data-go="${esc(id)}"><span>${esc(byId[id].label)}</span><span class="bnd">${esc(byId[id].coupling)}</span></button>`:"").join("")}</div>
+    ${legendHTML()}</div>`;
+  bindGo();
+}
+function auditHTML(m){
+  if(m.score==null) return "";
+  const col=healthColor(m.score);
+  const tags=(m.tags||[]).map(t=>`<span class="tg ${t==='clean'?'ok':(BAD_TAGS.has(t)?'bad':'')}">${esc(tagLabel(t))}</span>`).join("");
+  const sevCls=s=>({HIGH:"HIGH",MED:"MED",LOW:"LOW"}[s]||"LOW");
+  const fnd=(m.findings||[]).length
+    ? m.findings.map(f=>`<div class="finding sev-${sevCls(f.sev)}"><div class="top"><span class="sev sev-${sevCls(f.sev)}">${esc(f.sev)}</span><span class="loc">${esc(f.loc||"")}</span></div><div class="txt">${esc(f.text||"")}</div></div>`).join("")
+    : `<div class="none">${tl('clean')}</div>`;
+  return `<div class="reltitle" style="margin-top:6px">${tl('audit')}</div>`+`
+    <div class="scorebox"><span class="big" style="color:${col}">${m.score}</span>
+      <span class="gr grade-${esc(m.grade)}">${esc(m.grade)}</span>
+      <span class="bar"><i style="width:${m.score}%;background:${col}"></i></span></div>
+    <div class="tagchips">${tags}</div><div class="findings">${fnd}</div>`;
+}
+function renderDetail(m,outs,ins){
+  const li=arr=>arr.length?arr.map(id=>byId[id]?`<button data-go="${esc(id)}"><span>${esc(byId[id].label)}</span><span class="bnd">${esc(byId[id].band)}</span></button>`:"").join(""):`<div class="none">${tl('none')}</div>`;
+  detail.innerHTML=`<div class="detail"><div class="kicker">${esc(bandTitle(m.band))}</div>
+    <h2>${esc(m.label)}</h2><div class="path">${esc(m.path||"")}</div>
+    <div class="pill-row"><span class="pill cpl">${tl('couplingLbl')}: ${esc(m.coupling)}</span>
+      ${m.loc!=null?`<span class="pill">${Number(m.loc).toLocaleString()} ${tl('locUnit')}</span>`:""}
+      <span class="pill">${outs.length} ${tl('deps')}</span><span class="pill">${ins.length} ${tl('dependents')}</span></div>
+    ${m.desc?`<div class="reltitle">${tl('about')}</div><p class="desc">${esc(m.desc)}</p>`:""}
+    ${auditHTML(m)}
+    <div class="reltitle"><span class="dotc" style="background:var(--out)"></span>${tl('dependsOn')}</div>
+    <div class="rel">${li(outs)}</div>
+    <div class="reltitle"><span class="dotc" style="background:var(--in)"></span>${tl('usedBy')}</div>
+    <div class="rel">${li(ins)}</div>
+    ${m.score!=null?`<button class="btn clearbtn" id="copyFixBtn" style="margin-top:14px">${tl('copyFix')} ↗</button>`:""}
+    <button class="btn clearbtn" id="clearBtn" style="margin-top:8px">${tl('clearSel')}</button></div>`;
+  bindGo(); document.getElementById("clearBtn").addEventListener("click",clearSel);
+  const cf=document.getElementById("copyFixBtn");
+  if(cf) cf.onclick=()=>{ copyText("/codemap fix "+m.id); toast(tl('copied')); };
+}
+function bindGo(){detail.querySelectorAll("[data-go]").forEach(b=>b.addEventListener("click",()=>select(b.dataset.go)));}
+function bandTitle(b){return (BANDS.find(x=>x.id===b)||{}).t||b;}
+function legendHTML(){
+  return `<div class="legend"><h4>${tl('lgCoupling')}</h4>
+    <div class="row"><span class="swatch" style="background:var(--c-core)"></span>${tl('lgCore')}</div>
+    <div class="row"><span class="swatch" style="background:var(--c-high)"></span>${tl('lgHigh')}</div>
+    <div class="row"><span class="swatch" style="background:var(--c-med)"></span>${tl('lgMed')}</div>
+    <div class="row"><span class="swatch" style="background:var(--c-low)"></span>${tl('lgLow')}</div>
+    <h4 style="margin-top:18px">${tl('lgEdges')}</h4>
+    <div class="row"><span class="ln" style="border-color:var(--out)"></span>${tl('lgOut')}</div>
+    <div class="row"><span class="ln" style="border-color:var(--in);border-top-style:dashed"></span>${tl('lgIn')}</div></div>`;
+}
+function renderIntro(){
+  const cores=M.filter(m=>m.coupling==="core");
+  detail.innerHTML=`<div class="detail"><div class="empty-hint">${tl('introHint')}</div>
+    ${cores.length?`<div class="reltitle" style="margin-top:22px">${tl('coreModules')}</div>
+    <div class="rel">${cores.map(m=>`<button data-go="${esc(m.id)}"><span>${esc(m.label)}</span><span class="bnd">${esc(m.band)}</span></button>`).join("")}</div>`:""}
+    ${legendHTML()}</div>`;
+  bindGo();
+}
+function renderReport(){
+  current=null; spineOn=false; clearEdges(); resetClasses();
+  document.getElementById("spineBtn").classList.remove("active");
+  const scored=M.filter(m=>m.score!=null);
+  if(!scored.length){renderIntro();return;}
+  const avg=Math.round(scored.reduce((a,m)=>a+m.score,0)/scored.length);
+  const gc={A:0,B:0,C:0,D:0,F:0}; scored.forEach(m=>gc[m.grade]!=null&&gc[m.grade]++);
+  const worst=[...scored].sort((a,b)=>a.score-b.score).slice(0,10);
+  const tagCount={}; scored.forEach(m=>(m.tags||[]).forEach(t=>{if(BAD_TAGS.has(t))tagCount[t]=(tagCount[t]||0)+1;}));
+  const topTags=Object.entries(tagCount).sort((a,b)=>b[1]-a[1]).slice(0,8);
+  const locLine=META.locLine||(META.tracked_loc?tl('trackedLoc')(Number(META.tracked_loc).toLocaleString(),META.tracked_files||"?"):"");
+  detail.innerHTML=`<div class="report">
+    <div class="kicker" style="font-family:var(--mono);font-size:10px;color:var(--accent);letter-spacing:.5px">${tl('qa')} · ${scored.length} ${tl('modulesWord')}</div>
+    <h2 style="font-size:18px;margin:5px 0 2px;font-weight:650">${tl('healthReport')}</h2>
+    <div class="path" style="color:var(--faint);font-size:11px;margin-bottom:4px">${["monkeypatch","fallback","legacy","stub","bloat","duplication","dual-format"].map(tagLabel).join(" · ")}</div>
+    ${locLine?`<div class="path" style="color:var(--muted);font-size:11px;margin-bottom:2px">${esc(locLine)}</div>`:""}
+    <div class="stat-grid">
+      <div class="stat"><div class="n" style="color:${healthColor(avg)}">${avg}</div><div class="l">${tl('avg')}</div></div>
+      <div class="stat"><div class="n grade-A">${gc.A}</div><div class="l">A</div></div>
+      <div class="stat"><div class="n grade-B">${gc.B}</div><div class="l">B</div></div>
+      <div class="stat"><div class="n grade-C">${gc.C}</div><div class="l">C</div></div>
+      <div class="stat"><div class="n grade-D" style="color:#e0524b">${gc.D+gc.F}</div><div class="l">D/F</div></div>
+    </div>
+    <h3>${tl('worst')}</h3>
+    <div class="rel">${worst.map(m=>`<button data-go="${esc(m.id)}"><span>${esc(m.label)}</span><span class="bnd" style="color:${healthColor(m.score)}">${m.score} · ${esc(m.grade)}</span></button>`).join("")}</div>
+    ${topTags.length?`<h3>${tl('commonTags')}</h3><div class="tagchips">${topTags.map(([t,n])=>`<span class="tg bad">${esc(tagLabel(t))} ·${n}</span>`).join("")}</div>`:""}
+    ${REPORT_THEMES.length?`<h3>${tl('themes')}</h3>${REPORT_THEMES.map(([h,b])=>`<p class="theme"><b>${esc(h)}.</b> ${esc(b)}</p>`).join("")}`:""}
+    <button class="btn clearbtn" id="toMapBtn">${tl('backToMap')}</button></div>`;
+  bindGo(); document.getElementById("toMapBtn").addEventListener("click",clearSel);
+}
+function toast(msg){
+  let t=document.getElementById("toast");
+  if(!t){ t=document.createElement("div"); t.id="toast"; t.className="toast"; document.body.appendChild(t); }
+  t.textContent=msg; t.classList.add("show");
+  clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove("show"),2400);
+}
+function copyText(s){
+  if(navigator.clipboard) { navigator.clipboard.writeText(s).catch(()=>{}); return; }
+  const ta=document.createElement("textarea"); ta.value=s; document.body.appendChild(ta); ta.select();
+  try{ document.execCommand("copy"); }catch(e){} ta.remove();
+}
+let STD_EDIT=false;
+function openStandard(){ STD_EDIT=false; renderStd(); document.getElementById("stdModal").classList.add("open"); }
+function closeStandard(){ document.getElementById("stdModal").classList.remove("open"); }
+function saveStdDraft(){ try{ localStorage.setItem(STD_KEY, JSON.stringify(STDDATA)); }catch(e){} rebuildTagMeta(); }
+function langKey(){ return LANG==="zh" ? "zh" : "en"; }
+function renderStd(){
+  const ed=STD_EDIT, ce=ed?' contenteditable="true" spellcheck="false"':'';
+  const rubric=STDDATA.rubric.map((x,i)=>`<div class="std-row"><span class="std-badge" style="background:${healthColor(x.score)}">${esc(x.grade)}</span><span class="std-range">${esc(x.range)}</span><span class="std-desc"${ce} data-k="rubric" data-i="${i}">${esc(stdText(x))}</span></div>`).join("");
+  const sev=STDDATA.severities.map((x,i)=>`<div class="std-row"><span class="std-key"><span class="sev sev-${esc(x.key)}">${esc(x.key)}</span></span><span class="std-desc"${ce} data-k="sev" data-i="${i}">${esc(stdText(x))}</span></div>`).join("");
+  const tags=STDDATA.tags.map((x,i)=>`<div class="std-row"><span class="std-key"><span class="tg ${x.bad===false?'ok':'bad'}"${ce} data-k="taglabel" data-i="${i}">${esc(LANG==="zh"?(x.labelZh||x.label):x.label)}</span></span><span class="std-desc"${ce} data-k="tag" data-i="${i}">${esc(stdText(x))}</span>${ed?`<button class="xrm" data-rm="${i}" title="remove">✕</button>`:''}</div>`).join("");
+  const coup=STDDATA.coupling.map((x,i)=>`<div class="std-row"><span class="std-key" style="font-family:var(--mono);font-size:11.5px;color:var(--ink)">${esc(x.key)}</span><span class="std-desc"${ce} data-k="coup" data-i="${i}">${esc(stdText(x))}</span></div>`).join("");
+  document.getElementById("stdModal").innerHTML=`<div class="sheet">
+    <div class="xbtn" style="display:flex;gap:6px">
+      <button class="btn ${ed?'active':''}" id="stdEdit">${ed?tl('stdDone'):tl('stdEditBtn')}</button>
+      ${ed?`<button class="btn" id="stdExport">${tl('stdExport')}</button><button class="btn" id="stdReset">${tl('stdReset')}</button>`:''}
+      <button class="btn" id="stdClose">${tl('close')}</button>
+    </div>
+    <h2>${tl('stdTitle')}</h2><div class="intro">${ed?tl('stdEditHint'):tl('stdIntro')}</div>
+    <div class="std-h4">${tl('stdRubric')}</div>${rubric}
+    <div class="std-h4">${tl('stdSeverity')}</div>${sev}
+    <div class="std-h4">${tl('stdTags')}${ed?` <button class="btn" id="stdAddTag" style="margin-left:8px;padding:2px 8px">${tl('stdAddTag')}</button>`:''}</div>${tags}
+    <div class="std-h4">${tl('stdCoupling')}</div>${coup}</div>`;
+  document.getElementById("stdClose").onclick=closeStandard;
+  document.getElementById("stdEdit").onclick=()=>{STD_EDIT=!STD_EDIT; renderStd();};
+  if(ed){
+    document.getElementById("stdExport").onclick=()=>{
+      const blob=new Blob([JSON.stringify(STDDATA,null,1)],{type:"application/json"});
+      const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="standard.json"; a.click();
+      toast(tl('stdExported'));
+    };
+    document.getElementById("stdReset").onclick=()=>{
+      try{localStorage.removeItem(STD_KEY);}catch(e){}
+      STDDATA=JSON.parse(JSON.stringify(DATA.standard||BUILTIN_STD)); rebuildTagMeta(); renderStd();
+    };
+    document.getElementById("stdAddTag").onclick=()=>{
+      const id=(prompt(tl('stdNewTagId'))||"").trim().toLowerCase().replace(/\s+/g,"-");
+      if(!id || STDDATA.tags.some(t=>t.id===id)) return;
+      STDDATA.tags.push({id,label:id,labelZh:id,bad:true,en:"",zh:""}); saveStdDraft(); renderStd();
+    };
+    document.querySelectorAll("#stdModal [data-rm]").forEach(b=>b.onclick=()=>{STDDATA.tags.splice(+b.dataset.rm,1); saveStdDraft(); renderStd();});
+    document.querySelectorAll("#stdModal [data-k]").forEach(el=>el.addEventListener("input",()=>{
+      const i=+el.dataset.i, v=el.textContent, lk=langKey();
+      const k=el.dataset.k;
+      if(k==="rubric") STDDATA.rubric[i][lk]=v;
+      else if(k==="sev") STDDATA.severities[i][lk]=v;
+      else if(k==="coup") STDDATA.coupling[i][lk]=v;
+      else if(k==="tag") STDDATA.tags[i][lk]=v;
+      else if(k==="taglabel") STDDATA.tags[i][LANG==="zh"?"labelZh":"label"]=v;
+      saveStdDraft();
+    }));
+  }
+}
+function toggleHealth(){
+  const on=!board.classList.contains("show-health");
+  board.classList.toggle("show-health",on);
+  const b=document.getElementById("healthBtn");
+  b.classList.toggle("active",on); b.textContent=on?tl('colorHealth'):tl('colorCoupling');
+}
+/* ---------- filtering: search + grade threshold + issue tag (combined, AND) ---------- */
+let filterGrade=null, filterTag=null, searchQuery="";
+function filtersActive(){return filterGrade!=null||filterTag!=null||searchQuery!=="";}
+function matchesFilter(m){
+  if(filterGrade!=null && !(m.score!=null && m.score<filterGrade)) return false;
+  if(filterTag && !(m.tags||[]).includes(filterTag)) return false;
+  if(searchQuery){const q=searchQuery;
+    if(!(m.label.toLowerCase().includes(q)||m.id.toLowerCase().includes(q)||(m.desc||"").toLowerCase().includes(q))) return false;}
+  return true;
+}
+function runFilter(){
+  if(!filtersActive()){document.getElementById("fcount").textContent="";clearSel();return;}
+  current=null; spineOn=false; document.getElementById("spineBtn").classList.remove("active");
+  clearEdges(); resetClasses(); board.classList.add("has-sel");
+  document.getElementById("gradeFilter").classList.toggle("on",filterGrade!=null);
+  document.getElementById("tagFilter").classList.toggle("on",!!filterTag);
+  let n=0;
+  M.forEach(m=>{ if(matchesFilter(m)){cardEl[m.id].classList.add("lit");n++;} });
+  document.getElementById("fcount").textContent=n+" / "+M.length;
+  const matches=M.filter(matchesFilter).sort((a,b)=>(a.score??999)-(b.score??999));
+  const gl={90:"≤ B",75:"≤ C",60:"≤ D",40:"F"}[filterGrade];
+  const crit=[gl||"",filterTag?("#"+esc(tagLabel(filterTag))):"",searchQuery?('"'+esc(searchQuery)+'"'):""].filter(Boolean).join("  ·  ");
+  detail.innerHTML=`<div class="detail"><div class="kicker">${tl('filter')}</div>
+    <h2>${n} ${tl('modulesWord')}</h2><div class="path">${crit||tl('allWord')}</div>
+    <div class="rel">${matches.map(m=>`<button data-go="${esc(m.id)}"><span>${esc(m.label)}</span><span class="bnd" style="color:${healthColor(m.score)}">${m.score!=null?m.score+" · "+esc(m.grade):""}</span></button>`).join("")||`<div class="none">${tl('noMatches')}</div>`}</div>
+    <button class="btn clearbtn" id="clearFilterBtn">${tl('clearFilters')}</button></div>`;
+  bindGo(); document.getElementById("clearFilterBtn").addEventListener("click",resetFilters);
+}
+function resetFilters(){
+  filterGrade=null; filterTag=null; searchQuery="";
+  document.getElementById("gradeFilter").value=""; document.getElementById("gradeFilter").classList.remove("on");
+  document.getElementById("tagFilter").value=""; document.getElementById("tagFilter").classList.remove("on");
+  document.getElementById("search").value=""; document.getElementById("fcount").textContent="";
+  clearSel();
+}
+/* populate the issue-tag dropdown from the negative tags present, by frequency */
+(function(){
+  const cnt={}; M.forEach(m=>(m.tags||[]).forEach(t=>{if(BAD_TAGS.has(t))cnt[t]=(cnt[t]||0)+1;}));
+  const sel=document.getElementById("tagFilter");
+  Object.entries(cnt).sort((a,b)=>b[1]-a[1]).forEach(([t,c])=>{
+    const o=document.createElement("option"); o.value=t; o.textContent=`${tagLabel(t)} (${c})`; sel.appendChild(o);});
+})();
+document.getElementById("search").addEventListener("input",e=>{searchQuery=e.target.value.trim().toLowerCase();runFilter();});
+document.getElementById("search").addEventListener("keydown",e=>{
+  if(e.key==="Enter"){const lit=board.querySelector(".node.lit");if(lit)select(lit.dataset.id);}});
+document.getElementById("gradeFilter").addEventListener("change",e=>{filterGrade=e.target.value?Number(e.target.value):null;runFilter();});
+document.getElementById("tagFilter").addEventListener("change",e=>{filterTag=e.target.value||null;runFilter();});
+document.getElementById("healthBtn").addEventListener("click",toggleHealth);
+document.getElementById("reportBtn").addEventListener("click",renderReport);
+document.getElementById("spineBtn").addEventListener("click",()=>{spineOn?clearSel():showSpine();});
+document.getElementById("stdBtn").addEventListener("click",openStandard);
+document.getElementById("stdModal").addEventListener("click",e=>{ if(e.target.id==="stdModal") closeStandard(); });
+window.addEventListener("keydown",e=>{ if(e.key==="Escape") closeStandard(); });
+board.addEventListener("click",()=>{filtersActive()?runFilter():clearSel();});
+let rt; window.addEventListener("resize",()=>{clearTimeout(rt);rt=setTimeout(()=>{const c=current;if(c){current=null;select(c);}else if(spineOn)showSpine();},120);});
+board.classList.add("show-health");
+document.getElementById("healthBtn").classList.add("active");
+document.getElementById("healthBtn").textContent=tl("colorHealth");
+renderIntro();
+</script>
+</body>
+</html>

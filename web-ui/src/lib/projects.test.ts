@@ -39,9 +39,23 @@ describe('project presentation', () => {
 
   it('keeps component failures visible', () => {
     const response: ProjectActionResponse = {
-      project_id: 'p1', action: 'stop', success: false,
+      project_id: 'p1',
+      action: 'stop',
+      success: false,
+      persistence_error: null,
       results: [{ process_id: 'c1', name: 'Backend', success: false, error: 'PID 仍然存在' }],
     }
     expect(projectActionError(response)).toContain('Backend：PID 仍然存在')
+  })
+
+  it('keeps persistence failures visible after runtime changes', () => {
+    const response: ProjectActionResponse = {
+      project_id: 'p1',
+      action: 'restart',
+      success: false,
+      persistence_error: '磁盘已满',
+      results: [{ process_id: 'c1', name: 'Backend', success: true, error: null }],
+    }
+    expect(projectActionError(response)).toContain('运行状态已改变，但保存失败：磁盘已满')
   })
 })

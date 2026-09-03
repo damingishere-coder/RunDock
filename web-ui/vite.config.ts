@@ -2,10 +2,31 @@ import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import path from 'path'
+import { DEV_SERVER_HOST, DEV_SERVER_PROXY_TARGET } from './src/lib/devServerPolicy'
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [
+    react(),
+    tailwindcss(),
+    {
+      name: 'enforce-javascript-chunk-budget',
+      generateBundle(_options, bundle) {
+        const oversized = Object.values(bundle).flatMap(output =>
+          output.type === 'chunk' && output.code.length > 500 * 1024
+            ? [{ fileName: output.fileName, bytes: output.code.length }]
+            : []
+        )
+        if (oversized.length) {
+          this.error(
+            `JavaScript chunk budget exceeded: ${oversized
+              .map(chunk => `${chunk.fileName} (${chunk.bytes} bytes)`)
+              .join(', ')}`
+          )
+        }
+      },
+    },
+  ],
   base: '/',
   resolve: {
     alias: { '@': path.resolve(__dirname, './src') },
@@ -18,17 +39,43 @@ export default defineConfig({
     setupFiles: ['./src/test/setup.ts'],
     css: false,
     alias: { '@': path.resolve(__dirname, './src') },
+    coverage: {
+      reporter: ['text', 'lcov'],
+      thresholds: {
+        statements: 35.01,
+        branches: 34.12,
+        functions: 32.29,
+        lines: 36.52,
+      },
+    },
   },
   build: {
     outDir: 'dist',
     emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          const normalized = id.replace(/\\/g, '/')
+          if (normalized.includes('/node_modules/@xterm/')) return 'terminal-vendor'
+          if (normalized.includes('/node_modules/@tanstack/')) return 'query-vendor'
+          if (normalized.includes('/node_modules/lucide-react/')) return 'icons-vendor'
+          if (
+            normalized.includes('/node_modules/react/') ||
+            normalized.includes('/node_modules/react-dom/') ||
+            normalized.includes('/node_modules/react-router')
+          )
+            return 'react-vendor'
+          return undefined
+        },
+      },
+    },
   },
   server: {
     port: 5173,
-    host: '0.0.0.0',
+    host: DEV_SERVER_HOST,
     proxy: {
       '/api': {
-        target: 'http://127.0.0.1:2999',
+        target: DEV_SERVER_PROXY_TARGET,
         changeOrigin: true,
         ws: true,
       },

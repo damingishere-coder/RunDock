@@ -16,12 +16,14 @@ pub struct TerminalInfo {
 // @group BusinessLogic : Shared handle — registry of all live PTY sessions
 pub struct TerminalManager {
     pub sessions: Arc<DashMap<String, TerminalInfo>>,
+    pub admission: Arc<tokio::sync::Semaphore>,
 }
 
 impl TerminalManager {
     pub fn new() -> Self {
         Self {
             sessions: Arc::new(DashMap::new()),
+            admission: Arc::new(tokio::sync::Semaphore::new(16)),
         }
     }
 

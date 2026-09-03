@@ -47,24 +47,67 @@ struct BotInfoResponse {
     error: Option<String>,
 }
 
+#[derive(Deserialize)]
+struct ValidateBotTokenRequest {
+    bot_token: String,
+}
+
 pub fn router(state: Arc<DaemonState>) -> Router {
     Router::new()
         .route("/", get(get_config).put(update_config))
         .route("/test", post(test_message))
-        .route("/botinfo", get(get_bot_info))
+        .route("/botinfo", get(get_bot_info).post(validate_bot_token))
         .with_state(state)
 }
 
-// @group APIEndpoints > Telegram : GET /telegram — return config with masked token
-async fn get_config(State(state): State<Arc<DaemonState>>) -> Result<Json<TelegramConfigResponse>, ApiError> {
-    let cfg = state.telegram.read().await;
-    let hint = cfg.bot_token.as_deref().map(|t| {
-        if t.len() > 4 {
-            format!("****{}", &t[t.len() - 4..])
-        } else {
-            "****".to_string()
+fn token_hint(token: &str) -> String {
+    let characters: Vec<char> = token.chars().collect();
+    if characters.len() <= 4 {
+        return "****".to_string();
+    }
+    let suffix: String = characters.iter().skip(characters.len() - 4).collect();
+    format!("****{suffix}")
+}
+
+async fn read_telegram_json(mut response: reqwest::Response) -> Result<serde_json::Value, String> {
+    const MAX_RESPONSE_BYTES: usize = 64 * 1024;
+    let status = response.status();
+    if response
+        .content_length()
+        .is_some_and(|length| length > MAX_RESPONSE_BYTES as u64)
+    {
+        return Err("Telegram response exceeded the size limit".to_string());
+    }
+    let mut body = Vec::new();
+    loop {
+        match response.chunk().await {
+            Ok(Some(chunk)) => {
+                if body.len().saturating_add(chunk.len()) > MAX_RESPONSE_BYTES {
+                    return Err("Telegram response exceeded the size limit".to_string());
+                }
+                body.extend_from_slice(&chunk);
+            }
+            Ok(None) => break,
+            Err(error) => return Err(format!("Failed to read Telegram response: {error}")),
         }
-    });
+    }
+    let parsed: serde_json::Value = serde_json::from_slice(&body)
+        .map_err(|error| format!("Telegram returned invalid JSON: {error}"))?;
+    if !status.is_success() {
+        return Err(parsed["description"]
+            .as_str()
+            .map(str::to_string)
+            .unwrap_or_else(|| format!("Telegram returned HTTP {status}")));
+    }
+    Ok(parsed)
+}
+
+// @group APIEndpoints > Telegram : GET /telegram — return config with masked token
+async fn get_config(
+    State(state): State<Arc<DaemonState>>,
+) -> Result<Json<TelegramConfigResponse>, ApiError> {
+    let cfg = state.telegram.read().await;
+    let hint = cfg.bot_token.as_deref().map(token_hint);
     Ok(Json(TelegramConfigResponse {
         enabled: cfg.enabled,
         bot_token_hint: hint,
@@ -82,41 +125,64 @@ async fn update_config(
     State(state): State<Arc<DaemonState>>,
     Json(req): Json<UpdateTelegramConfig>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let mut cfg = state.telegram.write().await;
+    let _config_guard = state.config_mutation_lock.lock().await;
+    let mut candidate = state.telegram.read().await.clone();
 
     if let Some(enabled) = req.enabled {
-        cfg.enabled = enabled;
+        candidate.enabled = enabled;
     }
     if let Some(token) = req.bot_token {
         if token.is_empty() {
-            cfg.bot_token = None;
+            candidate.bot_token = None;
         } else {
-            cfg.bot_token = Some(token);
+            candidate.bot_token = Some(token);
         }
     }
     if let Some(ids) = req.allowed_chat_ids {
-        cfg.allowed_chat_ids = ids;
+        candidate.allowed_chat_ids = ids;
     }
-    if let Some(v) = req.notify_on_crash   { cfg.notify_on_crash   = v; }
-    if let Some(v) = req.notify_on_start   { cfg.notify_on_start   = v; }
-    if let Some(v) = req.notify_on_stop    { cfg.notify_on_stop    = v; }
-    if let Some(v) = req.notify_on_restart { cfg.notify_on_restart = v; }
+    if let Some(v) = req.notify_on_crash {
+        candidate.notify_on_crash = v;
+    }
+    if let Some(v) = req.notify_on_start {
+        candidate.notify_on_start = v;
+    }
+    if let Some(v) = req.notify_on_stop {
+        candidate.notify_on_stop = v;
+    }
+    if let Some(v) = req.notify_on_restart {
+        candidate.notify_on_restart = v;
+    }
 
-    telegram_config::save(&cfg).map_err(ApiError::from)?;
+    candidate.normalize();
+    candidate
+        .validate()
+        .map_err(|error| ApiError::bad_request(error.to_string()))?;
+    let candidate_for_save = candidate.clone();
+    tokio::task::spawn_blocking(move || telegram_config::save(&candidate_for_save))
+        .await
+        .map_err(|error| ApiError::internal(format!("Telegram save task failed: {error}")))?
+        .map_err(ApiError::from)?;
+    *state.telegram.write().await = candidate;
 
     Ok(Json(serde_json::json!({ "success": true })))
 }
 
 // @group APIEndpoints > Telegram : POST /telegram/test — send a test message
-async fn test_message(State(state): State<Arc<DaemonState>>) -> Result<Json<serde_json::Value>, ApiError> {
+async fn test_message(
+    State(state): State<Arc<DaemonState>>,
+) -> Result<Json<serde_json::Value>, ApiError> {
     let cfg = state.telegram.read().await;
 
-    let token = cfg.bot_token.as_deref().ok_or_else(|| {
-        ApiError::bad_request("Bot token is not configured")
-    })?;
+    let token = cfg
+        .bot_token
+        .as_deref()
+        .ok_or_else(|| ApiError::bad_request("Bot token is not configured"))?;
 
     let chat_id = *cfg.allowed_chat_ids.first().ok_or_else(|| {
-        ApiError::bad_request("No allowed chat IDs configured — add at least one chat ID to send test messages")
+        ApiError::bad_request(
+            "No allowed chat IDs configured — add at least one chat ID to send test messages",
+        )
     })?;
 
     let token = token.to_string();
@@ -130,10 +196,12 @@ async fn test_message(State(state): State<Arc<DaemonState>>) -> Result<Json<serd
     .await
     .map_err(|e| ApiError::internal(e.to_string()))?;
 
-    Ok(Json(serde_json::json!({ "success": true, "message": "Test message sent" })))
+    Ok(Json(
+        serde_json::json!({ "success": true, "message": "Test message sent" }),
+    ))
 }
 
-// @group APIEndpoints > Telegram : GET /telegram/botinfo — validate token and return bot username
+// @group APIEndpoints > Telegram : GET /telegram/botinfo — validate saved token and return bot username
 async fn get_bot_info(State(state): State<Arc<DaemonState>>) -> Json<BotInfoResponse> {
     let cfg = state.telegram.read().await;
     let token = match cfg.bot_token.as_deref() {
@@ -149,39 +217,80 @@ async fn get_bot_info(State(state): State<Arc<DaemonState>>) -> Json<BotInfoResp
     };
     drop(cfg);
 
+    fetch_bot_info(token).await
+}
+
+// @group APIEndpoints > Telegram : POST /telegram/botinfo — validate a candidate token without persisting it
+async fn validate_bot_token(Json(req): Json<ValidateBotTokenRequest>) -> Json<BotInfoResponse> {
+    if req.bot_token.is_empty()
+        || req.bot_token.len() > 256
+        || !req.bot_token.bytes().all(|byte| byte.is_ascii_graphic())
+    {
+        return Json(BotInfoResponse {
+            ok: false,
+            username: None,
+            first_name: None,
+            error: Some("Telegram bot token must be 1-256 visible ASCII characters".to_string()),
+        });
+    }
+    fetch_bot_info(req.bot_token).await
+}
+
+async fn fetch_bot_info(token: String) -> Json<BotInfoResponse> {
     let url = format!("https://api.telegram.org/bot{token}/getMe");
-    match reqwest::Client::new()
+    let client = match reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+    {
+        Ok(client) => client,
+        Err(_) => {
+            return Json(BotInfoResponse {
+                ok: false,
+                username: None,
+                first_name: None,
+                error: Some("Telegram client setup failed".to_string()),
+            });
+        }
+    };
+    match client
         .get(&url)
         .timeout(std::time::Duration::from_secs(10))
         .send()
         .await
     {
-        Ok(resp) => {
-            let body: serde_json::Value = resp.json().await.unwrap_or_default();
-            if body["ok"].as_bool().unwrap_or(false) {
-                Json(BotInfoResponse {
-                    ok: true,
-                    username: body["result"]["username"].as_str().map(String::from),
-                    first_name: body["result"]["first_name"].as_str().map(String::from),
-                    error: None,
-                })
-            } else {
-                Json(BotInfoResponse {
-                    ok: false,
-                    username: None,
-                    first_name: None,
-                    error: body["description"]
-                        .as_str()
-                        .map(String::from)
-                        .or_else(|| Some("Invalid token".to_string())),
-                })
+        Ok(resp) => match read_telegram_json(resp).await {
+            Ok(body) => {
+                if body["ok"].as_bool().unwrap_or(false) {
+                    Json(BotInfoResponse {
+                        ok: true,
+                        username: body["result"]["username"].as_str().map(String::from),
+                        first_name: body["result"]["first_name"].as_str().map(String::from),
+                        error: None,
+                    })
+                } else {
+                    Json(BotInfoResponse {
+                        ok: false,
+                        username: None,
+                        first_name: None,
+                        error: body["description"]
+                            .as_str()
+                            .map(String::from)
+                            .or_else(|| Some("Invalid token".to_string())),
+                    })
+                }
             }
-        }
-        Err(e) => Json(BotInfoResponse {
+            Err(error) => Json(BotInfoResponse {
+                ok: false,
+                username: None,
+                first_name: None,
+                error: Some(error),
+            }),
+        },
+        Err(error) => Json(BotInfoResponse {
             ok: false,
             username: None,
             first_name: None,
-            error: Some(format!("Request failed: {e}")),
+            error: Some(format!("Telegram request failed: {}", error.without_url())),
         }),
     }
 }

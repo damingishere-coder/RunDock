@@ -1,26 +1,33 @@
 // @group Configuration : Tunnel settings — stored at %APPDATA%\alter-pm2\tunnel.json
 
-use anyhow::Result;
 use crate::models::tunnel::TunnelSettings;
+use anyhow::Result;
 
 // @group Configuration : Load tunnel settings from disk (returns default if missing or corrupt)
-pub fn load() -> TunnelSettings {
+pub fn load() -> Result<TunnelSettings> {
     let path = crate::config::paths::data_dir().join("tunnel.json");
-    match std::fs::read_to_string(&path) {
-        Ok(content) => serde_json::from_str(&content).unwrap_or_default(),
-        Err(_) => TunnelSettings::default(),
-    }
+    let mut settings: TunnelSettings = crate::config::atomic_file::load_json_with_backup_validated(
+        &path,
+        |candidate: &TunnelSettings| {
+            let mut normalized = candidate.clone();
+            normalized.normalize();
+            normalized.validate()
+        },
+    )?;
+    settings.normalize();
+    settings.validate()?;
+    Ok(settings)
 }
 
 // @group Configuration : Persist tunnel settings to disk (atomic write)
 pub fn save(settings: &TunnelSettings) -> Result<()> {
     let path = crate::config::paths::data_dir().join("tunnel.json");
-    let content = serde_json::to_string_pretty(settings)?;
-    let tmp = path.with_extension("json.tmp");
-    std::fs::write(&tmp, &content)?;
-    if std::fs::rename(&tmp, &path).is_err() {
-        let _ = std::fs::remove_file(&tmp);
-        std::fs::write(&path, &content)?;
-    }
-    Ok(())
+    let mut normalized = settings.clone();
+    normalized.normalize();
+    normalized.validate()?;
+    crate::config::atomic_file::write_json_with_backup_validated(
+        &path,
+        &normalized,
+        TunnelSettings::validate,
+    )
 }
