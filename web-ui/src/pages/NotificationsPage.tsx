@@ -5,6 +5,7 @@ import { Bell, Plus, Trash2, Send, Save, ChevronDown, ChevronRight } from 'lucid
 import { DiscordIcon } from '@/components/DiscordIcon'
 import { api } from '@/lib/api'
 import type { NotificationConfig, NotificationEvents, NotificationsStore } from '@/types'
+import { secretInputPlaceholder, secretInputValue } from '@/lib/secrets'
 
 // @group Utilities > Styles : Shared style tokens
 const cardStyle: React.CSSProperties = {
@@ -26,26 +27,70 @@ const inputStyle: React.CSSProperties = {
   outline: 'none',
 }
 
+function EventCheckbox({
+  events,
+  eventKey,
+  label,
+  onChange,
+}: {
+  events: NotificationEvents
+  eventKey: keyof NotificationEvents
+  label: string
+  onChange: (patch: Partial<NotificationEvents>) => void
+}) {
+  return (
+    <label
+      style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer' }}
+    >
+      <input
+        type="checkbox"
+        checked={!!events[eventKey]}
+        onChange={event => onChange({ [eventKey]: event.target.checked })}
+        style={{ accentColor: 'var(--color-primary)', width: 14, height: 14 }}
+      />
+      {label}
+    </label>
+  )
+}
+
 const btnPrimary: React.CSSProperties = {
-  display: 'inline-flex', alignItems: 'center', gap: 5,
-  padding: '6px 14px', fontSize: 12, fontWeight: 500,
-  background: 'var(--color-primary)', border: 'none',
-  borderRadius: 5, cursor: 'pointer',
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 5,
+  padding: '6px 14px',
+  fontSize: 12,
+  fontWeight: 500,
+  background: 'var(--color-primary)',
+  border: 'none',
+  borderRadius: 5,
+  cursor: 'pointer',
   color: 'var(--color-primary-foreground)',
 }
 
 const btnSecondary: React.CSSProperties = {
-  display: 'inline-flex', alignItems: 'center', gap: 5,
-  padding: '6px 12px', fontSize: 12, fontWeight: 500,
-  background: 'var(--color-secondary)', border: '1px solid var(--color-border)',
-  borderRadius: 5, cursor: 'pointer', color: 'var(--color-foreground)',
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 5,
+  padding: '6px 12px',
+  fontSize: 12,
+  fontWeight: 500,
+  background: 'var(--color-secondary)',
+  border: '1px solid var(--color-border)',
+  borderRadius: 5,
+  cursor: 'pointer',
+  color: 'var(--color-foreground)',
 }
 
 const btnDanger: React.CSSProperties = {
-  display: 'inline-flex', alignItems: 'center',
-  padding: '4px 8px', fontSize: 11,
-  background: 'transparent', border: '1px solid var(--color-border)',
-  borderRadius: 5, cursor: 'pointer', color: 'var(--color-destructive)',
+  display: 'inline-flex',
+  alignItems: 'center',
+  padding: '4px 8px',
+  fontSize: 11,
+  background: 'transparent',
+  border: '1px solid var(--color-border)',
+  borderRadius: 5,
+  cursor: 'pointer',
+  color: 'var(--color-destructive)',
 }
 
 const fieldsetStyle: React.CSSProperties = {
@@ -55,23 +100,41 @@ const fieldsetStyle: React.CSSProperties = {
 }
 
 const legendStyle: React.CSSProperties = {
-  fontSize: 11, color: 'var(--color-muted-foreground)', padding: '0 4px',
+  fontSize: 11,
+  color: 'var(--color-muted-foreground)',
+  padding: '0 4px',
 }
 
 const labelTextStyle: React.CSSProperties = {
-  fontSize: 12, color: 'var(--color-muted-foreground)', marginBottom: 4, display: 'block',
+  fontSize: 12,
+  color: 'var(--color-muted-foreground)',
+  marginBottom: 4,
+  display: 'block',
 }
 
 const sectionTitleStyle: React.CSSProperties = {
-  fontSize: 11, fontWeight: 700, letterSpacing: '0.08em',
-  color: 'var(--color-muted-foreground)', textTransform: 'uppercase',
+  fontSize: 11,
+  fontWeight: 700,
+  letterSpacing: '0.08em',
+  color: 'var(--color-muted-foreground)',
+  textTransform: 'uppercase',
   marginBottom: 12,
 }
 
 // @group Utilities > DefaultConfig : Returns a blank NotificationConfig
 function defaultConfig(): NotificationConfig {
   return {
-    events: { on_crash: true, on_restart: false, on_start: false, on_stop: false, on_cron_run: false, on_cron_fail: true },
+    events_override: true,
+    events: {
+      on_crash: true,
+      on_restart: false,
+      on_start: false,
+      on_stop: false,
+      on_unhealthy: true,
+      on_health_recovered: true,
+      on_cron_run: false,
+      on_cron_fail: true,
+    },
   }
 }
 
@@ -90,13 +153,25 @@ interface NotifCardProps {
 }
 
 function NotifCard({
-  title, config, onChange, onSave, onTest, onDelete,
-  saving, testing, saved, error,
+  title,
+  config,
+  onChange,
+  onSave,
+  onTest,
+  onDelete,
+  saving,
+  testing,
+  saved,
+  error,
 }: NotifCardProps) {
   const [open, setOpen] = useState(true)
 
   const setEvents = (patch: Partial<NotificationEvents>) =>
-    onChange({ ...config, events: { ...config.events, ...patch } })
+    onChange({
+      ...config,
+      events_override: true,
+      events: { ...config.events, ...patch },
+    })
 
   const setWebhook = (patch: Partial<NonNullable<NotificationConfig['webhook']>>) =>
     onChange({ ...config, webhook: { url: '', enabled: false, ...config.webhook, ...patch } })
@@ -108,29 +183,32 @@ function NotifCard({
     onChange({ ...config, teams: { webhook_url: '', enabled: false, ...config.teams, ...patch } })
 
   const setDiscord = (patch: Partial<NonNullable<NotificationConfig['discord']>>) =>
-    onChange({ ...config, discord: { webhook_url: '', enabled: false, ...config.discord, ...patch } })
-
-  // @group Utilities > EventCheckbox : Single event toggle checkbox
-  function EventCheckbox({ eventKey, label }: { eventKey: keyof NotificationEvents; label: string }) {
-    return (
-      <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer' }}>
-        <input
-          type="checkbox"
-          checked={!!config.events[eventKey]}
-          onChange={e => setEvents({ [eventKey]: e.target.checked })}
-          style={{ accentColor: 'var(--color-primary)', width: 14, height: 14 }}
-        />
-        {label}
-      </label>
-    )
-  }
+    onChange({
+      ...config,
+      discord: { webhook_url: '', enabled: false, ...config.discord, ...patch },
+    })
 
   return (
     <div style={cardStyle}>
       {/* Card header */}
       <div
-        style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', userSelect: 'none' }}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          cursor: 'pointer',
+          userSelect: 'none',
+        }}
         onClick={() => setOpen(o => !o)}
+        onKeyDown={event => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault()
+            setOpen(value => !value)
+          }
+        }}
+        role="button"
+        tabIndex={0}
+        aria-expanded={open}
       >
         {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
         <Bell size={14} style={{ opacity: 0.5 }} />
@@ -138,7 +216,11 @@ function NotifCard({
         {onDelete && (
           <button
             style={btnDanger}
-            onClick={e => { e.stopPropagation(); onDelete() }}
+            disabled={saving || testing}
+            onClick={e => {
+              e.stopPropagation()
+              onDelete()
+            }}
             title="移除命名空间覆盖"
           >
             <Trash2 size={12} />
@@ -147,60 +229,139 @@ function NotifCard({
       </div>
 
       {open && (
-        <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 14 }}>
-
+        <fieldset
+          disabled={saving || testing}
+          aria-busy={saving || testing}
+          style={{
+            margin: '16px 0 0',
+            padding: 0,
+            border: 0,
+            minWidth: 0,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 14,
+          }}
+        >
           {/* @group BusinessLogic > EventToggles : Separated process vs cron event panels */}
           <div style={{ display: 'flex', gap: 10 }}>
-
             {/* Process events panel */}
-            <div style={{
-              flex: 1,
-              borderRadius: 7,
-              border: '1px solid rgba(99,102,241,0.35)',
-              background: 'rgba(99,102,241,0.06)',
-              padding: '10px 14px',
-            }}>
-              <div style={{
-                fontSize: 10, fontWeight: 700, letterSpacing: '0.1em',
-                color: '#818cf8', textTransform: 'uppercase', marginBottom: 10,
-                display: 'flex', alignItems: 'center', gap: 5,
-              }}>
+            <div
+              style={{
+                flex: 1,
+                borderRadius: 7,
+                border: '1px solid rgba(99,102,241,0.35)',
+                background: 'rgba(99,102,241,0.06)',
+                padding: '10px 14px',
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 10,
+                  fontWeight: 700,
+                  letterSpacing: '0.1em',
+                  color: '#818cf8',
+                  textTransform: 'uppercase',
+                  marginBottom: 10,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 5,
+                }}
+              >
                 <span style={{ fontSize: 13 }}>⚙</span> 进程事件
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-                <EventCheckbox eventKey="on_crash"   label="崩溃" />
-                <EventCheckbox eventKey="on_restart" label="重启" />
-                <EventCheckbox eventKey="on_start"   label="启动" />
-                <EventCheckbox eventKey="on_stop"    label="停止" />
+                <EventCheckbox
+                  events={config.events}
+                  onChange={setEvents}
+                  eventKey="on_crash"
+                  label="崩溃"
+                />
+                <EventCheckbox
+                  events={config.events}
+                  onChange={setEvents}
+                  eventKey="on_restart"
+                  label="重启"
+                />
+                <EventCheckbox
+                  events={config.events}
+                  onChange={setEvents}
+                  eventKey="on_start"
+                  label="启动"
+                />
+                <EventCheckbox
+                  events={config.events}
+                  onChange={setEvents}
+                  eventKey="on_stop"
+                  label="停止"
+                />
+                <EventCheckbox
+                  events={config.events}
+                  onChange={setEvents}
+                  eventKey="on_unhealthy"
+                  label="健康检查失败"
+                />
+                <EventCheckbox
+                  events={config.events}
+                  onChange={setEvents}
+                  eventKey="on_health_recovered"
+                  label="健康检查恢复"
+                />
               </div>
             </div>
 
             {/* Cron job events panel */}
-            <div style={{
-              flex: 1,
-              borderRadius: 7,
-              border: '1px solid rgba(251,191,36,0.35)',
-              background: 'rgba(251,191,36,0.06)',
-              padding: '10px 14px',
-            }}>
-              <div style={{
-                fontSize: 10, fontWeight: 700, letterSpacing: '0.1em',
-                color: '#fbbf24', textTransform: 'uppercase', marginBottom: 10,
-                display: 'flex', alignItems: 'center', gap: 5,
-              }}>
+            <div
+              style={{
+                flex: 1,
+                borderRadius: 7,
+                border: '1px solid rgba(251,191,36,0.35)',
+                background: 'rgba(251,191,36,0.06)',
+                padding: '10px 14px',
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 10,
+                  fontWeight: 700,
+                  letterSpacing: '0.1em',
+                  color: '#fbbf24',
+                  textTransform: 'uppercase',
+                  marginBottom: 10,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 5,
+                }}
+              >
                 <span style={{ fontSize: 13 }}>⏰</span> 定时任务事件
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-                <EventCheckbox eventKey="on_cron_run"  label="运行" />
-                <EventCheckbox eventKey="on_cron_fail" label="失败" />
+                <EventCheckbox
+                  events={config.events}
+                  onChange={setEvents}
+                  eventKey="on_cron_run"
+                  label="运行"
+                />
+                <EventCheckbox
+                  events={config.events}
+                  onChange={setEvents}
+                  eventKey="on_cron_fail"
+                  label="失败"
+                />
               </div>
             </div>
-
           </div>
 
           {/* Webhook */}
           <div style={fieldsetStyle}>
-            <label style={{ ...legendStyle, display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+            <label
+              style={{
+                ...legendStyle,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                cursor: 'pointer',
+              }}
+            >
               <input
                 type="checkbox"
                 checked={config.webhook?.enabled ?? false}
@@ -212,10 +373,14 @@ function NotifCard({
             <div style={{ marginTop: 10, opacity: config.webhook?.enabled ? 1 : 0.5 }}>
               <span style={labelTextStyle}>URL</span>
               <input
+                aria-label="通用 Webhook URL"
                 style={inputStyle}
                 type="url"
-                placeholder="https://example.com/webhook"
-                value={config.webhook?.url ?? ''}
+                placeholder={secretInputPlaceholder(
+                  config.webhook?.url,
+                  'https://example.com/webhook'
+                )}
+                value={secretInputValue(config.webhook?.url)}
                 onChange={e => setWebhook({ url: e.target.value })}
                 disabled={!config.webhook?.enabled}
               />
@@ -224,7 +389,15 @@ function NotifCard({
 
           {/* Slack */}
           <div style={fieldsetStyle}>
-            <label style={{ ...legendStyle, display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+            <label
+              style={{
+                ...legendStyle,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                cursor: 'pointer',
+              }}
+            >
               <input
                 type="checkbox"
                 checked={config.slack?.enabled ?? false}
@@ -233,14 +406,26 @@ function NotifCard({
               />
               Slack
             </label>
-            <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 8, opacity: config.slack?.enabled ? 1 : 0.5 }}>
+            <div
+              style={{
+                marginTop: 10,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 8,
+                opacity: config.slack?.enabled ? 1 : 0.5,
+              }}
+            >
               <div>
                 <span style={labelTextStyle}>Webhook 地址</span>
                 <input
+                  aria-label="Slack Webhook 地址"
                   style={inputStyle}
                   type="url"
-                  placeholder="https://hooks.slack.com/services/..."
-                  value={config.slack?.webhook_url ?? ''}
+                  placeholder={secretInputPlaceholder(
+                    config.slack?.webhook_url,
+                    'https://hooks.slack.com/services/...'
+                  )}
+                  value={secretInputValue(config.slack?.webhook_url)}
                   onChange={e => setSlack({ webhook_url: e.target.value })}
                   disabled={!config.slack?.enabled}
                 />
@@ -248,6 +433,7 @@ function NotifCard({
               <div>
                 <span style={labelTextStyle}>频道（可选）</span>
                 <input
+                  aria-label="Slack 频道"
                   style={inputStyle}
                   type="text"
                   placeholder="#alerts"
@@ -261,7 +447,15 @@ function NotifCard({
 
           {/* Teams */}
           <div style={fieldsetStyle}>
-            <label style={{ ...legendStyle, display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+            <label
+              style={{
+                ...legendStyle,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                cursor: 'pointer',
+              }}
+            >
               <input
                 type="checkbox"
                 checked={config.teams?.enabled ?? false}
@@ -273,10 +467,14 @@ function NotifCard({
             <div style={{ marginTop: 10, opacity: config.teams?.enabled ? 1 : 0.5 }}>
               <span style={labelTextStyle}>Webhook 地址</span>
               <input
+                aria-label="Microsoft Teams Webhook 地址"
                 style={inputStyle}
                 type="url"
-                placeholder="https://outlook.office.com/webhook/..."
-                value={config.teams?.webhook_url ?? ''}
+                placeholder={secretInputPlaceholder(
+                  config.teams?.webhook_url,
+                  'https://outlook.office.com/webhook/...'
+                )}
+                value={secretInputValue(config.teams?.webhook_url)}
                 onChange={e => setTeams({ webhook_url: e.target.value })}
                 disabled={!config.teams?.enabled}
               />
@@ -285,7 +483,15 @@ function NotifCard({
 
           {/* Discord */}
           <div style={fieldsetStyle}>
-            <label style={{ ...legendStyle, display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+            <label
+              style={{
+                ...legendStyle,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                cursor: 'pointer',
+              }}
+            >
               <input
                 type="checkbox"
                 checked={config.discord?.enabled ?? false}
@@ -299,10 +505,14 @@ function NotifCard({
             <div style={{ marginTop: 10, opacity: config.discord?.enabled ? 1 : 0.5 }}>
               <span style={labelTextStyle}>Webhook 地址</span>
               <input
+                aria-label="Discord Webhook 地址"
                 style={inputStyle}
                 type="url"
-                placeholder="https://discord.com/api/webhooks/…"
-                value={config.discord?.webhook_url ?? ''}
+                placeholder={secretInputPlaceholder(
+                  config.discord?.webhook_url,
+                  'https://discord.com/api/webhooks/…'
+                )}
+                value={secretInputValue(config.discord?.webhook_url)}
                 onChange={e => setDiscord({ webhook_url: e.target.value })}
                 disabled={!config.discord?.enabled}
               />
@@ -311,18 +521,32 @@ function NotifCard({
 
           {/* Actions */}
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-            <button style={{ ...btnPrimary, opacity: saving ? 0.7 : 1 }} onClick={onSave} disabled={saving}>
+            <button
+              style={{ ...btnPrimary, opacity: saving ? 0.7 : 1 }}
+              onClick={onSave}
+              disabled={saving}
+            >
               <Save size={13} />
               {saving ? '保存中…' : '保存'}
             </button>
-            <button style={{ ...btnSecondary, opacity: testing ? 0.7 : 1 }} onClick={onTest} disabled={testing}>
+            <button
+              style={{ ...btnSecondary, opacity: testing ? 0.7 : 1 }}
+              onClick={onTest}
+              disabled={testing}
+            >
               <Send size={13} />
               {testing ? '发送中…' : '测试'}
             </button>
-            {saved && <span style={{ fontSize: 12, color: 'var(--color-status-running)' }}>✓ 已保存</span>}
-            {error && <span style={{ fontSize: 12, color: 'var(--color-destructive)' }}>{error}</span>}
+            {saved && (
+              <span style={{ fontSize: 12, color: 'var(--color-status-running)' }}>✓ 已保存</span>
+            )}
+            {error && (
+              <span role="alert" style={{ fontSize: 12, color: 'var(--color-destructive)' }}>
+                {error}
+              </span>
+            )}
           </div>
-        </div>
+        </fieldset>
       )}
     </div>
   )
@@ -349,27 +573,25 @@ export default function NotificationsPage() {
   const [addingNs, setAddingNs] = useState(false)
 
   useEffect(() => {
-    api.getNotifications()
+    api
+      .getNotifications()
       .then(s => setStore(s))
       .catch(e => setFetchError(String(e)))
       .finally(() => setLoading(false))
   }, [])
 
   if (loading) {
-    return (
-      <div style={{ padding: 24, color: 'var(--color-muted-foreground)' }}>加载中…</div>
-    )
+    return <div style={{ padding: 24, color: 'var(--color-muted-foreground)' }}>加载中…</div>
   }
   if (fetchError || !store) {
     return (
-      <div style={{ padding: 24, color: 'var(--color-destructive)' }}>
+      <div role="alert" style={{ padding: 24, color: 'var(--color-destructive)' }}>
         加载通知失败：{fetchError}
       </div>
     )
   }
 
-  const updateGlobalConfig = (c: NotificationConfig) =>
-    setStore(s => s ? { ...s, global: c } : s)
+  const updateGlobalConfig = (c: NotificationConfig) => setStore(s => (s ? { ...s, global: c } : s))
 
   const saveGlobal = async () => {
     setGlobalSaving(true)
@@ -399,7 +621,7 @@ export default function NotificationsPage() {
   }
 
   const updateNsConfig = (ns: string, c: NotificationConfig) =>
-    setStore(s => s ? { ...s, namespaces: { ...s.namespaces, [ns]: c } } : s)
+    setStore(s => (s ? { ...s, namespaces: { ...s.namespaces, [ns]: c } } : s))
 
   const saveNs = async (ns: string) => {
     setNsSaving(p => ({ ...p, [ns]: true }))
@@ -449,7 +671,7 @@ export default function NotificationsPage() {
     try {
       const cfg = defaultConfig()
       await api.updateNamespaceNotifications(name, cfg)
-      setStore(s => s ? { ...s, namespaces: { ...s.namespaces, [name]: cfg } } : s)
+      setStore(s => (s ? { ...s, namespaces: { ...s.namespaces, [name]: cfg } } : s))
       setNewNsName('')
     } catch (e) {
       alert(`添加命名空间失败：${e}`)
@@ -465,8 +687,8 @@ export default function NotificationsPage() {
         <h1 style={{ fontSize: 18, fontWeight: 600 }}>通知</h1>
       </div>
       <p style={{ color: 'var(--color-muted-foreground)', marginBottom: 28, fontSize: 13 }}>
-        配置进程和定时任务生命周期事件的 Webhook、Slack 和 Teams 通知。
-        设置优先级：<strong>进程覆盖 → 命名空间 → 全局</strong>。
+        配置进程和定时任务生命周期事件的 Webhook、Slack 和 Teams 通知。 设置优先级：
+        <strong>进程覆盖 → 命名空间 → 全局</strong>。
       </p>
 
       {/* Global config */}

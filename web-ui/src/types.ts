@@ -7,6 +7,8 @@ export interface NotificationEvents {
   on_restart: boolean
   on_start: boolean
   on_stop: boolean
+  on_unhealthy?: boolean
+  on_health_recovered?: boolean
   // Cron job events
   on_cron_run?: boolean
   on_cron_fail?: boolean
@@ -39,6 +41,7 @@ export interface NotificationConfig {
   teams?: TeamsTarget
   discord?: DiscordTarget
   events: NotificationEvents
+  events_override?: boolean
 }
 
 export interface NotificationsStore {
@@ -57,7 +60,7 @@ export type ProcessStatus =
   | 'sleeping'
 
 export interface CronRun {
-  run_at: string        // ISO datetime
+  run_at: string // ISO datetime
   exit_code: number | null
   duration_secs: number
 }
@@ -99,16 +102,30 @@ export interface ProcessInfo {
 }
 
 export interface DaemonHealth {
-  status: string
+  status: 'ok' | 'degraded'
   version: string
   uptime_secs: number
   process_count: number
+  persistence_healthy: boolean
+  persistence_error: string | null
 }
 
 export interface LogLine {
   timestamp: string
   stream: 'stdout' | 'stderr'
   content: string
+}
+
+// @group Types > Ports : Bounded network-listener entry returned by GET /ports
+export interface PortEntry {
+  port: number
+  protocol: string
+  local_address: string
+  remote_address: string
+  state: string
+  pid: number | null
+  process_name: string | null
+  ancestor_pids?: number[]
 }
 
 export interface ScriptInfo {
@@ -134,6 +151,26 @@ export interface StartProcessBody {
   watch_paths?: string[]
   cron?: string
   notify?: NotificationConfig
+}
+
+export interface UpdateProcessBody {
+  script?: string
+  name?: string
+  project_id?: string
+  cwd?: string | null
+  args?: string[]
+  env?: Record<string, string> | null
+  namespace?: string
+  autorestart?: boolean
+  watch?: boolean
+  max_restarts?: number
+  restart_delay_ms?: number
+  watch_paths?: string[]
+  watch_ignore?: string[]
+  max_log_size_mb?: number
+  cron?: string | null
+  notify?: NotificationConfig | null
+  log_alert?: LogAlertOverride | null
 }
 
 export type ProjectKind = 'managed' | 'desktop'
@@ -169,8 +206,8 @@ export interface ProjectPatch {
   display_name?: string
   note?: string
   category?: string
-  web_port?: number
-  launch_uri?: string
+  web_port?: number | null
+  launch_uri?: string | null
   enabled?: boolean
 }
 
@@ -185,6 +222,7 @@ export interface ProjectActionResponse {
   project_id: string
   action: 'start' | 'stop' | 'restart'
   success: boolean
+  persistence_error: string | null
   results: ProjectActionMemberResult[]
 }
 
@@ -196,7 +234,7 @@ export interface EnvFileEntry {
 
 // @group Types > Metrics : Single CPU + memory sample returned by the metrics history endpoint
 export interface MetricSample {
-  timestamp: string    // ISO datetime
+  timestamp: string // ISO datetime
   cpu_percent: number
   memory_bytes: number
 }
@@ -228,6 +266,9 @@ export interface UpdateInfo {
   latest: string
   up_to_date: boolean
   download_url: string | null
+  asset_name: string | null
+  sha256: string | null
+  integrity_verified: boolean
   /** True when the download is a platform installer (.exe setup, .deb) rather than a raw binary */
   is_installer: boolean
   release_notes: string | null
@@ -247,6 +288,8 @@ export interface GitInfo {
   dirty: boolean
   ahead: number
   behind: number
+  upstream_available: boolean
+  ahead_behind_error: string | null
   pkg_manager: string
 }
 
@@ -260,9 +303,22 @@ export interface GitPullResult {
 
 // @group Types > LogStats : One 5-minute bucket of stdout + stderr line counts (from disk)
 export interface LogStatsBucket {
-  window_start: string  // RFC3339 UTC start of the 5-minute window
+  window_start: string // RFC3339 UTC start of the 5-minute window
   stdout_count: number
   stderr_count: number
+}
+
+// @group Types > System : Bounded runtime system-statistics response
+export interface SystemStats {
+  cpu_percent: number
+  ram_used_bytes: number
+  ram_total_bytes: number
+  gpu: {
+    name: string
+    utilization_percent: number
+    vram_used_bytes: number
+    vram_total_bytes: number
+  } | null
 }
 
 // @group Types > Tunnels : Cloudflare / ngrok / custom tunnel management

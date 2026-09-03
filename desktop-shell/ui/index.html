@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>RunDock 正在启动</title>
+    <style>
+      :root { color-scheme: light; font-family: "Segoe UI", "Microsoft YaHei", sans-serif; background: #f5f8fd; color: #17243b; }
+      * { box-sizing: border-box; }
+      body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: radial-gradient(circle at top, #e5f0ff, #f7f9fc 54%); }
+      main { width: min(620px, calc(100vw - 48px)); padding: 38px; border: 1px solid #dce5f2; border-radius: 24px; background: rgba(255,255,255,.94); box-shadow: 0 24px 70px rgba(34,73,125,.15); }
+      .brand { display: flex; align-items: center; gap: 14px; margin-bottom: 28px; }
+      .mark { width: 48px; height: 48px; border-radius: 15px; display: grid; place-items: center; color: white; font-weight: 800; background: linear-gradient(145deg,#147bff,#0055c8); }
+      h1 { margin: 0; font-size: 24px; }
+      p { line-height: 1.7; color: #52647d; }
+      .spinner { width: 30px; height: 30px; margin: 26px 0; border: 3px solid #dbe8fb; border-top-color: #147bff; border-radius: 50%; animation: spin .8s linear infinite; }
+      @keyframes spin { to { transform: rotate(360deg); } }
+      #error { display: none; }
+      pre { white-space: pre-wrap; overflow-wrap: anywhere; padding: 16px; border-radius: 12px; background: #f4f7fb; color: #32435a; font: 13px/1.55 Consolas, monospace; }
+      .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 22px; }
+      a, button { border: 0; border-radius: 10px; padding: 10px 15px; font: inherit; cursor: pointer; text-decoration: none; }
+      a.primary { background: #147bff; color: white; }
+      a.secondary, button { background: #eaf1fb; color: #234266; }
+      small { display: block; margin-top: 22px; color: #7b8ba1; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="brand"><div class="mark">R</div><div><h1>RunDock</h1><p style="margin:4px 0 0">本地开发项目控制台</p></div></div>
+      <section id="loading"><div class="spinner"></div><p>正在检查并启动 RunDock 后台，请稍候…</p></section>
+      <section id="error">
+        <h2>RunDock 暂时无法打开</h2>
+        <p>没有结束任何未知进程，也没有修改你的项目状态。你可以重试或查看诊断信息。</p>
+        <pre id="diagnostic"></pre>
+        <div class="actions">
+          <a class="primary" href="rundock-shell://retry">重试</a>
+          <a class="secondary" href="rundock-shell://open-logs">打开日志目录</a>
+          <a class="secondary" href="rundock-shell://open-browser">在浏览器中打开</a>
+          <button id="copy" type="button">复制诊断信息</button>
+        </div>
+      </section>
+      <small>正式入口固定为 http://127.0.0.1:2999/；5173 仅用于源码开发。</small>
+    </main>
+    <script>
+      const loading = document.getElementById('loading');
+      const error = document.getElementById('error');
+      const diagnostic = document.getElementById('diagnostic');
+      window.__setLaunching = () => { loading.style.display = 'block'; error.style.display = 'none'; };
+      window.__setLaunchError = (message) => { diagnostic.textContent = message; loading.style.display = 'none'; error.style.display = 'block'; };
+      document.getElementById('copy').addEventListener('click', async () => {
+        try { await navigator.clipboard.writeText(diagnostic.textContent); } catch (_) { window.getSelection()?.selectAllChildren(diagnostic); }
+      });
+    </script>
+  </body>
+</html>

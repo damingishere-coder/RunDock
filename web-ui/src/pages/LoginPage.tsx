@@ -1,8 +1,8 @@
-// @group Authentication : Login page — password + Windows Hello / passkey sign-in
+// @group Authentication : Login page — password and PIN sign-in
 
-import { useEffect, useState } from 'react'
-import { Fingerprint, KeyRound, Eye, EyeOff } from 'lucide-react'
-import { loginWithPasskey, registerPasskey, setSessionToken } from '@/lib/auth'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { KeyRound, Eye, EyeOff } from 'lucide-react'
+import { setSessionToken } from '@/lib/auth'
 import { api } from '@/lib/api'
 
 interface LoginPageProps {
@@ -15,7 +15,6 @@ type Mode = 'loading' | 'setup' | 'login'
 
 export default function LoginPage({ onAuthenticated, subtitle }: LoginPageProps) {
   const [mode, setMode] = useState<Mode>('loading')
-  const [passkeysAvailable, setPasskeysAvailable] = useState(false)
   const [pinConfigured, setPinConfigured] = useState(false)
   const [usePin, setUsePin] = useState(false)
   const [pin, setPin] = useState('')
@@ -24,19 +23,56 @@ export default function LoginPage({ onAuthenticated, subtitle }: LoginPageProps)
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const pinRequestRef = useRef(false)
 
   // @group Authentication > LoginPage : Determine whether password / PIN has been configured
   useEffect(() => {
     api
       .authStatus()
-      .then(({ password_configured, passkeys_count, pin_configured }) => {
+      .then(({ password_configured, pin_configured }) => {
         setMode(password_configured ? 'login' : 'setup')
-        setPasskeysAvailable(passkeys_count > 0 && !!window.PublicKeyCredential)
         setPinConfigured(!!pin_configured)
         setUsePin(!!pin_configured)
       })
-      .catch(() => setMode('login'))
+      .catch(error => {
+        setError(error instanceof Error ? error.message : '无法读取登录配置')
+        setMode('login')
+      })
   }, [])
+
+  const handlePinDigit = useCallback(
+    async (digits: string) => {
+      if (digits.length !== 4 && digits.length !== 6) return
+      if (pinRequestRef.current) return
+      pinRequestRef.current = true
+      setLoading(true)
+      setError(null)
+      try {
+        const { session_token, target } = await api.authPinLogin(digits)
+        setSessionToken(session_token, target)
+        onAuthenticated()
+      } catch (pinError: unknown) {
+        setError(pinError instanceof Error ? `PIN 登录失败：${pinError.message}` : 'PIN 登录失败')
+        setPin('')
+      } finally {
+        pinRequestRef.current = false
+        setLoading(false)
+      }
+    },
+    [onAuthenticated]
+  )
+
+  const pressDigit = useCallback(
+    (d: string) => {
+      if (loading || pin.length >= 6) return
+      const next = pin + d
+      setPin(next)
+      if (next.length === 6) {
+        setTimeout(() => handlePinDigit(next), 80)
+      }
+    },
+    [handlePinDigit, loading, pin]
+  )
 
   // @group Authentication > LoginPage : Keyboard input for PIN numpad
   useEffect(() => {
@@ -45,35 +81,13 @@ export default function LoginPage({ onAuthenticated, subtitle }: LoginPageProps)
       if (loading) return
       if (e.key >= '0' && e.key <= '9') pressDigit(e.key)
       else if (e.key === 'Backspace') setPin(p => p.slice(0, -1))
+      else if (e.key === 'Enter' && (pin.length === 4 || pin.length === 6)) {
+        void handlePinDigit(pin)
+      }
     }
     window.addEventListener('keydown', handleKey)
     return () => window.removeEventListener('keydown', handleKey)
-  }, [usePin, mode, loading, pin])
-
-  async function handlePinDigit(digits: string) {
-    if (digits.length !== 4 && digits.length !== 6) return
-    setLoading(true)
-    setError(null)
-    try {
-      const { session_token } = await api.authPinLogin(digits)
-      setSessionToken(session_token)
-      onAuthenticated()
-    } catch {
-      setError('PIN 不正确')
-      setPin('')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  function pressDigit(d: string) {
-    if (loading || pin.length >= 6) return
-    const next = pin + d
-    setPin(next)
-    if (next.length === 4 || next.length === 6) {
-      setTimeout(() => handlePinDigit(next), 80)
-    }
-  }
+  }, [usePin, mode, loading, pin, pressDigit, handlePinDigit])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -90,33 +104,16 @@ export default function LoginPage({ onAuthenticated, subtitle }: LoginPageProps)
           setError('密码至少需要 8 个字符')
           return
         }
-        const { session_token } = await api.authSetup(password)
-        setSessionToken(session_token)
+        const { session_token, target } = await api.authSetup(password)
+        setSessionToken(session_token, target)
         onAuthenticated()
       } else {
-        const { session_token } = await api.authLogin(password)
-        setSessionToken(session_token)
+        const { session_token, target } = await api.authLogin(password)
+        setSessionToken(session_token, target)
         onAuthenticated()
       }
     } catch (e: unknown) {
       setError((e as Error)?.message ?? '认证失败')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  async function handlePasskeyLogin() {
-    setError(null)
-    setLoading(true)
-    try {
-      const token = await loginWithPasskey(
-        () => api.passkeyLoginStart(),
-        cred => api.passkeyLoginFinish(cred)
-      )
-      setSessionToken(token)
-      onAuthenticated()
-    } catch (e: unknown) {
-      setError((e as Error)?.message ?? '通行密钥认证失败')
     } finally {
       setLoading(false)
     }
@@ -166,6 +163,8 @@ export default function LoginPage({ onAuthenticated, subtitle }: LoginPageProps)
 
   const errorBanner = error && (
     <div
+      role="alert"
+      aria-live="assertive"
       style={{
         background: 'color-mix(in srgb, var(--color-destructive) 15%, transparent)',
         border: '1px solid var(--color-destructive)',
@@ -242,17 +241,14 @@ export default function LoginPage({ onAuthenticated, subtitle }: LoginPageProps)
             )}
           </div>
 
-          {/* Passkey option */}
-          {passkeysAvailable && (
-            <button
-              onClick={handlePasskeyLogin}
-              disabled={loading}
-              style={{ ...passkeyBtnStyle, marginBottom: 12 }}
-            >
-              <Fingerprint size={16} />
-              使用 Windows Hello / 通行密钥登录
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={() => void handlePinDigit(pin)}
+            disabled={loading || (pin.length !== 4 && pin.length !== 6)}
+            style={{ ...submitBtnStyle, width: 220, margin: '0 auto 16px' }}
+          >
+            {loading ? '验证中…' : '确认 PIN'}
+          </button>
 
           {/* Switch to password */}
           <button
@@ -282,31 +278,15 @@ export default function LoginPage({ onAuthenticated, subtitle }: LoginPageProps)
         {logo}
         {errorBanner}
 
-        {/* Passkey button — shown on login if passkeys are registered */}
-        {mode === 'login' && passkeysAvailable && (
-          <>
-            <button onClick={handlePasskeyLogin} disabled={loading} style={passkeyBtnStyle}>
-              <Fingerprint size={16} />
-              使用 Windows Hello / 通行密钥登录
-            </button>
-            <div style={dividerStyle}>
-              <span style={dividerLineStyle} />
-              <span
-                style={{ padding: '0 8px', fontSize: 11, color: 'var(--color-muted-foreground)' }}
-              >
-                或
-              </span>
-              <span style={dividerLineStyle} />
-            </div>
-          </>
-        )}
-
         {/* Password form */}
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <div>
-            <label style={labelStyle}>密码</label>
+            <label htmlFor="login-password" style={labelStyle}>
+              密码
+            </label>
             <div style={{ position: 'relative' }}>
               <input
+                id="login-password"
                 type={showPassword ? 'text' : 'password'}
                 value={password}
                 onChange={e => setPassword(e.target.value)}
@@ -317,6 +297,7 @@ export default function LoginPage({ onAuthenticated, subtitle }: LoginPageProps)
               />
               <button
                 type="button"
+                aria-label={showPassword ? '隐藏密码' : '显示密码'}
                 onClick={() => setShowPassword(v => !v)}
                 style={eyeBtnStyle}
                 tabIndex={-1}
@@ -328,9 +309,12 @@ export default function LoginPage({ onAuthenticated, subtitle }: LoginPageProps)
 
           {mode === 'setup' && (
             <div>
-              <label style={labelStyle}>确认密码</label>
+              <label htmlFor="login-confirm-password" style={labelStyle}>
+                确认密码
+              </label>
               <div style={{ position: 'relative' }}>
                 <input
+                  id="login-confirm-password"
                   type={showPassword ? 'text' : 'password'}
                   value={confirmPassword}
                   onChange={e => setConfirmPassword(e.target.value)}
@@ -388,15 +372,6 @@ export default function LoginPage({ onAuthenticated, subtitle }: LoginPageProps)
         )}
       </div>
     </div>
-  )
-}
-
-// @group Authentication > LoginPage : Register passkey after login (exported for SettingsPage use)
-export async function doRegisterPasskey(passkeyName: string): Promise<void> {
-  await registerPasskey(
-    () => api.passkeyRegisterStart(),
-    (cred, name) => api.passkeyRegisterFinish(cred, name),
-    passkeyName
   )
 }
 
@@ -467,33 +442,4 @@ const submitBtnStyle: React.CSSProperties = {
   borderRadius: 6,
   cursor: 'pointer',
   opacity: 1,
-}
-
-const passkeyBtnStyle: React.CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  gap: 8,
-  width: '100%',
-  padding: '9px 16px',
-  fontSize: 13,
-  fontWeight: 500,
-  background: 'var(--color-secondary)',
-  color: 'var(--color-foreground)',
-  border: '1px solid var(--color-border)',
-  borderRadius: 6,
-  cursor: 'pointer',
-  marginBottom: 8,
-}
-
-const dividerStyle: React.CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  marginBottom: 12,
-}
-
-const dividerLineStyle: React.CSSProperties = {
-  flex: 1,
-  height: 1,
-  background: 'var(--color-border)',
 }

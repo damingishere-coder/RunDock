@@ -1,0 +1,767 @@
+{
+ "meta": {
+  "project": "RunDock / Alter",
+  "lang": "zh",
+  "subtitle": "Rust + React 本地开发进程管理器工程地图与质量审计",
+  "generatedAt": "2026-08-30",
+  "htmlPath": ".codemap/codemap.html",
+  "mdPath": ".codemap/codemap.md",
+  "spineDesc": "用户可从 Windows 桌面壳或浏览器进入 React 控制台，经统一 API 客户端和 Axum 鉴权路由进入进程监督核心，再把运行状态与项目元数据持久化为本地 JSON 快照。",
+  "tracked_loc": 85193,
+  "tracked_files": 241,
+  "rev": "aab038c8de67dbe95fb87a1b835734ad569aa72b"
+ },
+ "bands": [
+  {
+   "id": "ui-shell",
+   "tier": "fe",
+   "t": "前端 · 应用壳",
+   "d": "导航、认证入口与全局界面状态"
+  },
+  {
+   "id": "ui-features",
+   "tier": "fe",
+   "t": "前端 · 功能页面",
+   "d": "进程、项目、观测与设置交互"
+  },
+  {
+   "id": "ui-infra",
+   "tier": "fe",
+   "t": "前端 · 数据访问",
+   "d": "HTTP、认证令牌、服务器选择与轮询 hooks"
+  },
+  {
+   "id": "wire",
+   "wire": true,
+   "t": "◀ HTTP · SSE · WebSocket ▶"
+  },
+  {
+   "id": "api",
+   "tier": "be",
+   "t": "后端 · API 与系统边界",
+   "d": "Axum 路由、认证、文件系统和外部能力"
+  },
+  {
+   "id": "core",
+   "tier": "be",
+   "t": "后端 · 进程运行核心",
+   "d": "启动、停止、重启、健康检查、计划任务与日志"
+  },
+  {
+   "id": "state",
+   "tier": "be",
+   "t": "后端 · 状态与集成",
+   "d": "JSON 持久化、数据模型、通知与第三方服务"
+  },
+  {
+   "id": "delivery",
+   "tier": "ops",
+   "t": "交付 · 构建与文档",
+   "d": "依赖、CI、安装、发布和工程文档"
+  }
+ ],
+ "spine": [
+  "desktop_shell",
+  "frontend_shell",
+  "frontend_process_projects",
+  "frontend_transport",
+  "api_process_projects",
+  "process_lifecycle",
+  "state_persistence"
+ ],
+ "reportThemes": [
+  [
+   "P0 安全边界总体保持，但开发代理存在旁路",
+   "生产 daemon 的回环、鉴权、CORS 与出站策略仍有效；Vite 开发服务绑定 0.0.0.0 并代理本机 API，密码关闭时会把控制面间接暴露给局域网。"
+  ],
+  [
+   "进程生命周期仍有未合流的 Cron 分支",
+   "Cron 路径复制了普通 spawn/commit 流程，退出与树所有权失败时可能只处理根进程或遗留 descendants；恢复 watcher 也可能显示假 Watching 状态。"
+  ],
+  [
+   "前端整改引入了可复现的交互回归",
+   "条件化 single-flight 轮询可让页面永远不做首次加载，env 保存并重启会重复请求；Linux 端口解析还会丢弃常见 ss 输出。"
+  ],
+  [
+   "PATCH 与检查点的一致性边界仍不完整",
+   "进程和项目补丁无法区分字段缺失与显式清空，Telegram checkpoint 的单调性检查与写入没有同一把锁，极端并发下可能回退。"
+  ],
+  [
+   "桌面壳已成为正式入口但质量门禁未完全覆盖",
+   "桌面壳有独立测试和 Windows 构建 smoke，但未进入 Sonar、覆盖率与独立 clippy/fmt 门禁；Linux 包和正式 release artifact 的安装生命周期也缺少端到端验证。"
+  ],
+  [
+   "停止大范围洁癖重构，优先关闭少量运行语义缺陷",
+   "单体 Rust daemon + React 控制台仍适合产品规模；大文件和重复代码只在已经造成具体缺陷的生命周期与轮询路径上做窄修，不建议全面拆分或引入微服务。"
+  ]
+ ],
+ "modules": [
+  {
+   "id": "frontend_shell",
+   "label": "React 应用壳与导航",
+   "band": "ui-shell",
+   "path": "web-ui/src/App.tsx",
+   "paths": [
+    "web-ui/src/App.tsx",
+    "web-ui/src/App.test.tsx",
+    "web-ui/src/main.tsx",
+    "web-ui/src/index.css",
+    "web-ui/src/components/GitHubStarBanner.tsx",
+    "web-ui/src/components/AppErrorBoundary.tsx",
+    "web-ui/src/components/AppSidebar.tsx",
+    "web-ui/src/components/AppSidebar.test.tsx",
+    "web-ui/src/components/AuthGuard.tsx",
+    "web-ui/src/components/ServerSwitcher.tsx",
+    "web-ui/src/components/ServerSwitcher.test.tsx",
+    "web-ui/src/components/StatusBar.tsx",
+    "web-ui/src/components/SystemStatsWidget.tsx"
+   ],
+   "coupling": "core",
+   "deps": [
+    "frontend_process_projects",
+    "frontend_operations",
+    "frontend_settings_ai_terminal",
+    "frontend_transport"
+   ],
+   "desc": "承载路由、侧栏、服务器切换、认证门禁、全局状态和页面装配。",
+   "loc": 3690,
+   "contentHash": "05e5d7ee9e0d44e27213aa39900a9d5d4efa3120dfc5da5526604a68a732db02",
+   "score": 76,
+   "grade": "B",
+   "tags": [
+    "bloat",
+    "god-component"
+   ],
+   "findings": [
+    {
+     "sev": "MED",
+     "loc": "web-ui/src/App.tsx:81",
+     "text": "Layout 延伸至约 841 行，单组件同时管理设置、进程与项目健康轮询、通知、AI、终端、统计、移动端焦点及完整路由 overlay 装配，跨领域状态耦合较高；当前未发现新的路由或移动导航回归。"
+    },
+    {
+     "sev": "LOW",
+     "loc": "web-ui/src/components/ServerSwitcher.tsx:84",
+     "text": "ServerSwitcher 约 645 行，同时处理本地、远程与 SSH 配置、存储恢复、活动服务器切换、隧道命令预览及表单 UI；属于可延期的维护性膨胀，不构成当前阻断。"
+    }
+   ],
+   "auditedHash": "05e5d7ee9e0d44e27213aa39900a9d5d4efa3120dfc5da5526604a68a732db02",
+   "auditedAt": "2026-08-30",
+   "auditedRev": "664d9777b1be5347629d365348716c5e607d01d7"
+  },
+  {
+   "id": "frontend_process_projects",
+   "label": "前端进程与项目工作台",
+   "band": "ui-features",
+   "path": "web-ui/src/pages/ProcessesPage.tsx 等",
+   "paths": [
+    "web-ui/src/pages/ProcessesPage.tsx",
+    "web-ui/src/pages/ProcessDetailPage.tsx",
+    "web-ui/src/pages/ProjectsPage.tsx",
+    "web-ui/src/pages/StartPage.tsx",
+    "web-ui/src/pages/EditPage.tsx",
+    "web-ui/src/pages/CronJobsPage.tsx",
+    "web-ui/src/pages/CreateCronJobPage.tsx",
+    "web-ui/src/components/CronExpressionInput.tsx",
+    "web-ui/src/components/DesktopLaunchButton.tsx",
+    "web-ui/src/components/WebPortButton.tsx",
+    "web-ui/src/components/NamespaceInput.tsx",
+    "web-ui/src/components/RunOutput.tsx",
+    "web-ui/src/components/FolderBrowser.tsx",
+    "web-ui/src/components/EnvEditor.tsx",
+    "web-ui/src/components/EnvFileModal.tsx",
+    "web-ui/src/components/EnvFilePanel.tsx",
+    "web-ui/src/components/CodeEditor.tsx",
+    "web-ui/src/components/FormLayout.tsx",
+    "web-ui/src/pages/formStyles.ts"
+   ],
+   "coupling": "high",
+   "deps": [
+    "frontend_transport",
+    "api_process_projects"
+   ],
+   "desc": "实现进程、逻辑项目、计划任务、日志详情和环境文件的主要用户操作流程。",
+   "tests": [
+    "web-ui/src/pages/ProjectsPage.test.tsx",
+    "web-ui/src/components/WebPortButton.test.tsx",
+    "web-ui/src/components/DesktopLaunchButton.test.tsx"
+   ],
+   "loc": 9428,
+   "contentHash": "7527cceadf208d55c1703e40b2e4a99a6e5946527049223eb05f8a14e6527c84",
+   "score": 56,
+   "grade": "D",
+   "tags": [
+    "bloat",
+    "god-component",
+    "duplication",
+    "over-fit"
+   ],
+   "findings": [
+    {
+     "sev": "HIGH",
+     "loc": "web-ui/src/pages/ProcessesPage.tsx:64",
+     "text": "ProcessesPage 共 1794 行，同时承载列表状态、筛选、批量操作、卡片视图、表格视图；ProcessCard(766-1097) 与 ProcessRow(1117-1427) 重复维护操作定义和渲染逻辑，已构成真实的 god-file 维护风险。"
+    },
+    {
+     "sev": "MED",
+     "loc": "web-ui/src/components/CronExpressionInput.tsx:29",
+     "text": "分段步长解析对 1-10/2 仅 parseInt(rangeStr) 得到起点 1，未校验上界 10；因此预览会把 11、13 等超出范围的分钟错误当作匹配。当前未见该组件测试。"
+    },
+    {
+     "sev": "MED",
+     "loc": "web-ui/src/components/EnvFileModal.tsx:402",
+     "text": "底部取消按钮直接调用 onClose，绕过 requestClose 的 dirty/mutation 保护；未保存内容可被无确认丢弃，保存/重启进行中也可关闭。"
+    },
+    {
+     "sev": "MED",
+     "loc": "web-ui/src/pages/ProcessesPage.tsx:1020",
+     "text": "终端 action 设置 disabled: !p.cwd，但卡片和表格 inline.map(1080-1089、1410-1419) 未把 disabled 传给 ActionBtn，RowOverflowMenu(1563-1671) 也不支持/处理该字段；无 cwd 时按钮仍可点击并静默 no-op。"
+    },
+    {
+     "sev": "MED",
+     "loc": "web-ui/src/pages/StartPage.tsx:143",
+     "text": "saveEnvFile 写入完成后无版本/代际校验即 setEnvDirty(false)，而 textarea(461-483) 在保存期间仍可编辑；并且启动按钮(339)只检查 loading，不等待 envSaving，存在并发编辑被误标记为已保存及启动读取旧文件的竞态。"
+    },
+    {
+     "sev": "MED",
+     "loc": "web-ui/src/components/EnvFilePanel.tsx:19",
+     "text": "EnvFilePanel(432 行) 与 EnvFileModal(468 行) 两套活动组件重复实现环境文件列表、加载、编辑、保存、同步和关闭状态机，并分别使用 onRestart 与 onRestarted 两种回调契约，存在持续漂移和修复遗漏风险。"
+    },
+    {
+     "sev": "LOW",
+     "loc": "web-ui/src/components/FolderBrowser.tsx:94",
+     "text": "路径已统一替换为斜杠后，面包屑仍固定用反斜杠 join；Unix 路径点击面包屑会生成类似 home\\me 的错误路径。"
+    }
+   ],
+   "auditedHash": "7527cceadf208d55c1703e40b2e4a99a6e5946527049223eb05f8a14e6527c84",
+   "auditedAt": "2026-08-30",
+   "auditedRev": "fcb66802cf73ddc9d99429250b11ce2070627ea6"
+  },
+  {
+   "id": "frontend_operations",
+   "label": "前端观测与运维页面",
+   "band": "ui-features",
+   "path": "web-ui/src/pages/AnalyticsPage.tsx 等",
+   "paths": [
+    "web-ui/src/pages/AnalyticsPage.tsx",
+    "web-ui/src/pages/LogLibraryPage.tsx",
+    "web-ui/src/pages/LogVolumePage.tsx",
+    "web-ui/src/pages/NotificationsPage.tsx",
+    "web-ui/src/pages/PortFinderPage.tsx",
+    "web-ui/src/pages/TunnelsPage.tsx",
+    "web-ui/src/components/NotificationTray.tsx",
+    "web-ui/src/components/NotifModal.tsx",
+    "web-ui/src/components/DiscordIcon.tsx"
+   ],
+   "coupling": "med",
+   "deps": [
+    "frontend_transport",
+    "integrations_observability"
+   ],
+   "desc": "展示指标、日志容量、通知、端口和隧道状态并触发相关运维动作。",
+   "loc": 6341,
+   "contentHash": "6813dace68927a4ebd072fcfe0be41af53fe64e1736d19877a5a298dbf4c8d7f",
+   "score": 68,
+   "grade": "C",
+   "tags": [
+    "bloat",
+    "duplication",
+    "god-component"
+   ],
+   "findings": [
+    {
+     "sev": "MED",
+     "loc": "web-ui/src/pages/PortFinderPage.tsx:120",
+     "text": "PortFinderPage 约 1,065 行，把端口扫描、进程匹配、筛选、分页和操作 UI 放在单一页面组件内。"
+    },
+    {
+     "sev": "MED",
+     "loc": "web-ui/src/pages/AnalyticsPage.tsx:1047",
+     "text": "AnalyticsPage 与 LogVolumePage:281 各自维护相近的批量统计拉取和聚合流程；两者已使用 single-flight，但统计数据适配仍重复。"
+    },
+    {
+     "sev": "MED",
+     "loc": "web-ui/src/components/NotifModal.tsx:12",
+     "text": "NotifModal 与 NotificationsPage:127 分别维护通知事件默认结构，新增事件字段时存在两处同步成本。"
+    }
+   ],
+   "auditedHash": "6813dace68927a4ebd072fcfe0be41af53fe64e1736d19877a5a298dbf4c8d7f",
+   "auditedAt": "2026-08-30",
+   "auditedRev": "5045cee9d96020fe2fffd80957a771aa145fa13b"
+  },
+  {
+   "id": "frontend_settings_ai_terminal",
+   "label": "前端设置、AI 与终端",
+   "band": "ui-features",
+   "path": "web-ui/src/components/settings 与 TerminalPanel",
+   "paths": [
+    "web-ui/src/pages/SettingsPage.tsx",
+    "web-ui/src/pages/LoginPage.tsx",
+    "web-ui/src/components/settings/**/*.tsx",
+    "web-ui/src/components/AiPanel.tsx",
+    "web-ui/src/components/TerminalPanel.tsx",
+    "web-ui/src/components/Dialog.tsx"
+   ],
+   "coupling": "high",
+   "deps": [
+    "frontend_transport",
+    "api_security_os",
+    "integrations_observability"
+   ],
+   "desc": "管理安全、AI Provider、通知、隧道和终端设置，并提供浏览器 PTY/AI 交互。",
+   "loc": 6489,
+   "contentHash": "0c3aed8c9f037b85876427aa73382042256ac4aaa70a67d309d1632aa62f7a0e",
+   "score": 62,
+   "grade": "C",
+   "tags": [
+    "bloat",
+    "god-component"
+   ],
+   "findings": [
+    {
+     "sev": "MED",
+     "loc": "web-ui/src/components/AiPanel.tsx:18",
+     "text": "前端 MAX_CHAT_MESSAGES=100，发送时 history 仍截取 100 条；服务端拒绝超过 50 条。连续约 26 轮后请求持续失败，且失败请求仍留下空 assistant 占位，必须清空聊天才能恢复。"
+    },
+    {
+     "sev": "MED",
+     "loc": "web-ui/src/components/settings/AiTab.tsx:166",
+     "text": "服务端可返回 status=idle，但前端未处理该分支；authPhase 仍为 in_progress，轮询持续到本地超时，界面长期停留在等待授权。"
+    },
+    {
+     "sev": "MED",
+     "loc": "web-ui/src/components/settings/AiTab.tsx:306",
+     "text": "取消 Device Flow 只清理前端状态，没有取消请求；后端流程保留至过期且最多允许 8 个活动流程，重复取消可耗尽登录容量最长约 30 分钟。"
+    },
+    {
+     "sev": "MED",
+     "loc": "web-ui/src/components/settings/AiTab.tsx:423",
+     "text": "设置描述声明关闭后不显示侧栏 AI 按钮，但 App.tsx 始终渲染并允许打开 AiPanel；后端 enabled=false 时发送请求才返回禁用错误，开关未实现声明的界面效果。"
+    },
+    {
+     "sev": "MED",
+     "loc": "web-ui/src/components/TerminalPanel.tsx:130",
+     "text": "约 1136 行的单一组件同时处理 xterm 生命周期、WebSocket ticket/重试、输入 ANSI 解析、历史持久化、标签页/分屏、布局和快捷键；边界修改会牵动较大的维护与回归面。"
+    }
+   ],
+   "auditedHash": "0c3aed8c9f037b85876427aa73382042256ac4aaa70a67d309d1632aa62f7a0e",
+   "auditedAt": "2026-08-30",
+   "auditedRev": "0483a47"
+  },
+  {
+   "id": "frontend_transport",
+   "label": "前端 API、认证与轮询层",
+   "band": "ui-infra",
+   "path": "web-ui/src/lib 与 web-ui/src/hooks",
+   "paths": [
+    "web-ui/src/lib/**/*.ts",
+    "web-ui/src/hooks/**/*.ts",
+    "web-ui/src/types.ts"
+   ],
+   "coupling": "core",
+   "deps": [
+    "api_process_projects",
+    "api_security_os",
+    "integrations_observability"
+   ],
+   "desc": "集中封装 REST/SSE 请求、Bearer 会话、服务器配置和进程/健康轮询。",
+   "tests": [
+    "web-ui/src/lib/projects.test.ts",
+    "web-ui/src/lib/processWeb.test.ts"
+   ],
+   "loc": 3904,
+   "contentHash": "ca41d70a143252f31a1a77cf939c0db2f608f8e60423de5dd817734ceced0d00",
+   "score": 69,
+   "grade": "C",
+   "tags": [
+    "any-escape"
+   ],
+   "findings": [
+    {
+     "sev": "MED",
+     "loc": "web-ui/src/hooks/useNotificationTray.ts:30-36",
+     "text": "INACTIVE 未包含 stopping；若轮询捕获 running/watching→stopping→stopped，中间状态会覆盖前态，最终不会生成 stopped 通知。现有测试未覆盖该状态链。"
+    },
+    {
+     "sev": "MED",
+     "loc": "web-ui/src/lib/api.ts:401-402",
+     "text": "通用 request<T> 将 JSON.parse 结果直接断言为 T，多个 API 端点仍绕过 validatedRequest；服务端返回 2xx 但结构漂移时，错误数据会静默进入业务层。"
+    },
+    {
+     "sev": "MED",
+     "loc": "web-ui/src/lib/schemas.ts:216-263",
+     "text": "isProcessInfo 未校验可选 notify 字段；畸形非空 notify 仍能通过进程响应校验，ProcessNotifModal 后续读取 config.events 可能触发运行时错误。"
+    }
+   ],
+   "auditedHash": "ca41d70a143252f31a1a77cf939c0db2f608f8e60423de5dd817734ceced0d00",
+   "auditedAt": "2026-08-30",
+   "auditedRev": "5045cee9d96020fe2fffd80957a771aa145fa13b"
+  },
+  {
+   "id": "bootstrap_daemon",
+   "label": "CLI、守护进程与 Web 入口",
+   "band": "api",
+   "path": "src/main.rs、src/lib.rs、src/daemon、src/cli",
+   "paths": [
+    "src/main.rs",
+    "src/lib.rs",
+    "src/cli/**/*.rs",
+    "src/client/**/*.rs",
+    "src/daemon/mod.rs",
+    "src/daemon/server.rs",
+    "src/daemon/signals.rs",
+    "src/web/**/*.rs",
+    "src/utils/**/*.rs"
+   ],
+   "coupling": "core",
+   "deps": [
+    "api_security_os",
+    "api_process_projects",
+    "state_persistence",
+    "process_lifecycle"
+   ],
+   "desc": "解析 CLI、派生后台守护进程、恢复状态、组装 Axum/嵌入式前端并处理关闭信号。",
+   "tests": [
+    "tests/integration/daemon_lifecycle_test.rs"
+   ],
+   "loc": 3184,
+   "contentHash": "da5ee5a92cdb7598fea2bbe37bd0ca21eb855962c0f2fffc3613453e86108e77",
+   "score": 78,
+   "grade": "B",
+   "tags": [
+    "fallback",
+    "legacy",
+    "glue"
+   ],
+   "findings": [
+    {
+     "sev": "MED",
+     "loc": "src/utils/pid.rs:174",
+     "text": "capture_process_identity(...)=None 会被 is_some_and 直接解释为 daemon 不在运行；write_pid_file 随后可能删除仍存活 daemon 的 PID 文件，旧进程继续监听而新实例因端口冲突启动失败，违背身份未知时 fail-closed 的不变量。"
+    },
+    {
+     "sev": "MED",
+     "loc": "src/utils/pid.rs:141",
+     "text": "兼容 numeric PID 时将 start_time_secs 置零、executable 置空；daemon_record_matches_identity 会跳过启动时间并退回 current_exe。旧 PID 被复用给同路径普通 CLI 进程时可能误判为 daemon，阻塞启动/重启并削弱 PID reuse 防护。"
+    },
+    {
+     "sev": "LOW",
+     "loc": "src/lib.rs:204",
+     "text": "Web 入口直接拼接 host；--host ::1 会生成缺少 IPv6 authority 方括号的 URL，浏览器启动失败。"
+    }
+   ],
+   "auditedHash": "da5ee5a92cdb7598fea2bbe37bd0ca21eb855962c0f2fffc3613453e86108e77",
+   "auditedAt": "2026-08-30",
+   "auditedRev": "f920c50289134fc8d6d6febba1e6e8895ee859a6"
+  },
+  {
+   "id": "api_process_projects",
+   "label": "进程、项目与 Ecosystem API",
+   "band": "api",
+   "path": "src/api/routes/processes.rs、projects.rs、ecosystem.rs",
+   "paths": [
+    "src/api/routes/processes.rs",
+    "src/api/routes/projects.rs",
+    "src/api/routes/ecosystem.rs"
+   ],
+   "coupling": "core",
+   "deps": [
+    "process_lifecycle",
+    "state_persistence",
+    "integrations_observability"
+   ],
+   "desc": "把进程 CRUD、批量命名空间操作、逻辑项目聚合和 Ecosystem 导入映射到运行核心。",
+   "loc": 2331,
+   "contentHash": "7d1ea9de6aaf9210d426e86aeb70f5744d2b4b3b55cb1c4478293d25e37a30cc",
+   "score": 70,
+   "grade": "C",
+   "tags": [
+    "bloat",
+    "duplication"
+   ],
+   "findings": [
+    {
+     "sev": "MED",
+     "loc": "src/api/routes/processes.rs:23",
+     "text": "processes.rs 当前约 1369 行，同时承载进程 CRUD、生命周期、日志 SSE、环境文件、通知、项目关联、克隆和命名空间批量操作，职责边界和回归面仍然过宽；属于真实维护风险但不是本轮阻断项。"
+    },
+    {
+     "sev": "MED",
+     "loc": "src/api/routes/ecosystem.rs:77",
+     "text": "Ecosystem 导入只在每个应用启动前检查总截止时间，manager.start(app).await 未受剩余时间约束；单个启动或 hook 阻塞时可超过 5 分钟并长期持有 state_mutation_lock。"
+    },
+    {
+     "sev": "MED",
+     "loc": "src/api/routes/ecosystem.rs:84",
+     "text": "项目关联失败且 manager.delete 清理也失败时，若 save_to_disk 同样失败，没有设置 background_persistence_error，健康检查无法持续暴露孤儿进程诊断。"
+    },
+    {
+     "sev": "MED",
+     "loc": "src/api/routes/processes.rs:714",
+     "text": "UpdateProcessRequest、项目 PATCH 和 notifications PATCH 已具备 missing/null/value 分支，但测试主要验证解析，缺少 handler 配置合并、落盘和持久化失败回滚集成测试。"
+    },
+    {
+     "sev": "LOW",
+     "loc": "src/api/routes/processes.rs:56",
+     "text": "process_is_active 与 projects.rs 的 is_active 重复维护 PID 与状态活跃判定，状态枚举扩展时存在轻微漂移风险。"
+    }
+   ],
+   "auditedHash": "7d1ea9de6aaf9210d426e86aeb70f5744d2b4b3b55cb1c4478293d25e37a30cc",
+   "auditedAt": "2026-08-30",
+   "auditedRev": "664d9777b1be5347629d365348716c5e607d01d7"
+  },
+  {
+   "id": "api_security_os",
+   "label": "认证与本机系统能力 API",
+   "band": "api",
+   "path": "src/api/middleware.rs 与 system/update/scripts/terminal 路由",
+   "paths": [
+    "src/api/mod.rs",
+    "src/api/error.rs",
+    "src/api/middleware.rs",
+    "src/api/routes/mod.rs",
+    "src/api/routes/auth.rs",
+    "src/api/routes/system.rs",
+    "src/api/routes/update.rs",
+    "src/api/routes/scripts.rs",
+    "src/api/routes/ports.rs",
+    "src/api/routes/git.rs",
+    "src/api/routes/terminal.rs",
+    "src/api/routes/terminal_history.rs",
+    "src/api/routes/ui_settings.rs",
+    "src/terminal/**/*.rs"
+   ],
+   "coupling": "core",
+   "deps": [
+    "state_persistence",
+    "process_lifecycle"
+   ],
+   "desc": "执行认证授权、文件系统、脚本、端口、PTY 终端、自更新和守护进程控制等高权限本机操作。",
+   "loc": 5253,
+   "contentHash": "5dbbb7716be3c1a354c4cb2fdca02c95f8b7fbf3548afa280200012e73408e24",
+   "score": 82,
+   "grade": "B",
+   "tags": [
+    "clean"
+   ],
+   "findings": [
+    {
+     "sev": "MED",
+     "loc": "src/api/routes/ports.rs:195",
+     "text": "Windows 分支执行 netstat -ano 并包含 ESTABLISHED 等连接，Unix 分支执行带 -l 的 ss 仅返回监听 socket，导致同一 /ports API 的状态集合跨平台不一致；前端 ESTABLISHED 筛选在 Linux 无结果。Ss/Netstat parser 已按命令来源分流，IPv4/IPv6、TCP/UDP、users/PID fixture 无回归。"
+    }
+   ],
+   "auditedHash": "5dbbb7716be3c1a354c4cb2fdca02c95f8b7fbf3548afa280200012e73408e24",
+   "auditedAt": "2026-08-30",
+   "auditedRev": "cf8c53392bc2953c5d9ef881e0382adbab459d50"
+  },
+  {
+   "id": "process_lifecycle",
+   "label": "进程监督与日志核心",
+   "band": "core",
+   "path": "src/process 与 src/logging",
+   "paths": [
+    "src/process/**/*.rs",
+    "src/logging/**/*.rs"
+   ],
+   "coupling": "core",
+   "deps": [
+    "state_persistence",
+    "integrations_observability"
+   ],
+   "desc": "负责子进程启动、PID 管理、状态机、自动重启、cron、健康检查、文件监听、日志写入和指标采样。",
+   "tests": [
+    "tests/unit/restarter_test.rs"
+   ],
+   "loc": 7397,
+   "contentHash": "3f05f5c8edad473694b18e5640dd77833de4f1cd2d024e453e71d22a52b110b5",
+   "score": 78,
+   "grade": "B",
+   "tags": [
+    "fallback"
+   ],
+   "findings": [
+    {
+     "sev": "MED",
+     "loc": "src/process/tree.rs:114",
+     "text": "runner/hooks 在附加失败且兜底清理无法确认时返回明确错误；Child 不再进入 ManagedChild/注册表，极端残留树只能依赖外部清理。属于 fail-closed 路径的运维风险，不是旧 HIGH。"
+    },
+    {
+     "sev": "MED",
+     "loc": "src/process/manager.rs:494",
+     "text": "恢复 adopted process 时已设置 Watching；FileWatcher::start 失败仅记录日志，file_watcher 保持 None，对外仍报告 Watching 但文件变化不会触发重启。"
+    }
+   ],
+   "auditedHash": "3f05f5c8edad473694b18e5640dd77833de4f1cd2d024e453e71d22a52b110b5",
+   "auditedAt": "2026-08-30",
+   "auditedRev": "664d9777b1be5347629d365348716c5e607d01d7"
+  },
+  {
+   "id": "state_persistence",
+   "label": "配置、模型与 JSON 持久化",
+   "band": "state",
+   "path": "src/daemon/state.rs、src/config、src/models",
+   "paths": [
+    "src/daemon/state.rs",
+    "src/config/**/*.rs",
+    "src/models/**/*.rs"
+   ],
+   "coupling": "core",
+   "deps": [
+    "process_lifecycle",
+    "integrations_observability"
+   ],
+   "desc": "定义跨层数据模型并把进程、项目、认证、通知、Telegram、隧道和 AI 配置保存到本地文件。",
+   "tests": [
+    "tests/unit/config_parse_test.rs"
+   ],
+   "loc": 5224,
+   "contentHash": "9136ebf2294a3a7ac8a0a235f5d330e454893c78ee8703de0ee88d8496149b8a",
+   "score": 88,
+   "grade": "B",
+   "tags": [
+    "clean"
+   ],
+   "findings": [],
+   "auditedHash": "9136ebf2294a3a7ac8a0a235f5d330e454893c78ee8703de0ee88d8496149b8a",
+   "auditedAt": "2026-08-30",
+   "auditedRev": "664d9777b1be5347629d365348716c5e607d01d7"
+  },
+  {
+   "id": "integrations_observability",
+   "label": "AI、通知、隧道与观测集成",
+   "band": "state",
+   "path": "src/api/routes/ai.rs、src/notifications、src/telegram、src/tunnel",
+   "paths": [
+    "src/api/routes/ai.rs",
+    "src/api/routes/ai_context.rs",
+    "src/api/routes/notifications.rs",
+    "src/api/routes/telegram.rs",
+    "src/api/routes/tunnels.rs",
+    "src/api/routes/log_alerts.rs",
+    "src/api/routes/logs.rs",
+    "src/api/routes/metrics.rs",
+    "src/notifications/**/*.rs",
+    "src/telegram/**/*.rs",
+    "src/tunnel/**/*.rs"
+   ],
+   "coupling": "high",
+   "deps": [
+    "state_persistence",
+    "process_lifecycle"
+   ],
+   "desc": "对接 AI Provider、Webhook/Telegram 通知、Cloudflare/ngrok 隧道以及日志/指标查询。",
+   "loc": 6759,
+   "contentHash": "16ac3d9785dd6f16ca6c404e240d0e90ee9de157089dae21a6a3c513c749b65f",
+   "score": 78,
+   "grade": "B",
+   "tags": [
+    "fallback"
+   ],
+   "findings": [
+    {
+     "sev": "MED",
+     "loc": "src/tunnel/mod.rs:241",
+     "text": "TunnelManager::stop 仅调用 kill_orphan_pid；Windows 该函数只终止并等待根 PID，ProcessTreeGuard 仍由后台 watch_output 任务持有。停止请求会先删除 pids 并标记 Stopped，树级 Job 清理要等任务结束；若 descendants 继承输出管道，watch_output 最长可继续等待45秒，期间残留进程已脱离跟踪且可能占用端口。当前无 stop/descendant 清理测试。"
+    },
+    {
+     "sev": "MED",
+     "loc": "src/api/routes/tunnels.rs:551",
+     "text": "install_provider_stream 的超时和等待失败分支只 kill_spawned_process 后 drop(ProcessTreeGuard)，未调用 terminate_and_wait；Drop 仅发起 Unix 进程组 SIGKILL 或关闭 Windows Job，未确认 descendants 已消失，随后仍发送 done=true/ok=false。非流式 install_provider 在同类分支显式 terminate_and_wait，存在路径语义不一致。"
+    }
+   ],
+   "auditedHash": "16ac3d9785dd6f16ca6c404e240d0e90ee9de157089dae21a6a3c513c749b65f",
+   "auditedAt": "2026-08-30",
+   "auditedRev": "664d9777b1be5347629d365348716c5e607d01d7"
+  },
+  {
+   "id": "desktop_shell",
+   "label": "Windows 桌面壳与托盘入口",
+   "band": "ui-shell",
+   "path": "desktop-shell",
+   "paths": [
+    "desktop-shell/Cargo.toml",
+    "desktop-shell/Cargo.lock",
+    "desktop-shell/build.rs",
+    "desktop-shell/tauri.conf.json",
+    "desktop-shell/capabilities/**/*.json",
+    "desktop-shell/src/**/*.rs",
+    "desktop-shell/ui/**/*"
+   ],
+   "coupling": "high",
+   "deps": [
+    "bootstrap_daemon",
+    "frontend_shell"
+   ],
+   "desc": "提供 Windows 单实例桌面窗口、系统托盘、daemon 启动与恢复，以及内嵌 RunDock 控制台入口。",
+   "loc": 7596,
+   "contentHash": "8d5a7440b8474d0725105759e4b62bcd3d2c1e05089814adf5d18c18ddca0248",
+   "score": 82,
+   "grade": "B",
+   "tags": [
+    "silent-except"
+   ],
+   "findings": [
+    {
+     "sev": "MED",
+     "loc": "desktop-shell/src/windows_app.rs:173",
+     "text": "自启动初始化与托盘切换都静默丢弃错误：initialize_autostart 在 :181 仅判断 is_ok()，失败无提示；托盘 :296 用 unwrap_or(false)，:298-301 对 enable/disable 仅判断结果，失败不更新勾选也不给用户诊断。登录自启动可能未生效而界面无可操作反馈。"
+    }
+   ],
+   "auditedHash": "8d5a7440b8474d0725105759e4b62bcd3d2c1e05089814adf5d18c18ddca0248",
+   "auditedAt": "2026-08-30",
+   "auditedRev": "f920c50289134fc8d6d6febba1e6e8895ee859a6"
+  },
+  {
+   "id": "delivery_docs",
+   "label": "构建、发布与工程文档",
+   "band": "delivery",
+   "path": "Cargo/package 配置、CI、安装与 docs",
+   "paths": [
+    "Cargo.toml",
+    "Cargo.lock",
+    "build.rs",
+    "Justfile",
+    "lefthook.yml",
+    "README.md",
+    ".gitignore",
+    "sonar-project.properties",
+    "web-ui/package.json",
+    "web-ui/package-lock.json",
+    "rust-toolchain.toml",
+    "web-ui/tsconfig*.json",
+    "web-ui/vite.config.ts",
+    "web-ui/eslint.config.js",
+    ".github/**/*.yml",
+    ".github/**/*.yaml",
+    "scripts/**/*",
+    "installer/**/*",
+    "packaging/**/*",
+    "release/**/*",
+    "docs/**/*"
+   ],
+   "coupling": "med",
+   "deps": [
+    "bootstrap_daemon",
+    "frontend_shell"
+   ],
+   "desc": "定义依赖、质量命令、Windows/Linux 构建安装、GitHub Release 和面向维护者/用户的文档。",
+   "loc": 17597,
+   "contentHash": "d4c66936faed1ea693206f573c0f95530039a8ddd3833ef6a58849dfa6aecb3a",
+   "score": 88,
+   "grade": "B",
+   "tags": [
+    "duplication"
+   ],
+   "findings": [
+    {
+     "sev": "LOW",
+     "loc": "README.md:16",
+     "text": "根 README 与 docs/README.md 仍分别维护部分重叠的安装、构建和功能说明；当前内容已同步，但缺少自动一致性检查。Debian smoke 在首次安装和升级后均等待健康响应，卸载后进行有界停止、包移除、状态保留和 unit 清理检查，并在超时/失败时输出 systemd 状态与 journal；未发现新的 HIGH。"
+    }
+   ],
+   "auditedHash": "d4c66936faed1ea693206f573c0f95530039a8ddd3833ef6a58849dfa6aecb3a",
+   "auditedAt": "2026-08-30",
+   "auditedRev": "aab038c8de67dbe95fb87a1b835734ad569aa72b"
+  }
+ ]
+}

@@ -1,6 +1,6 @@
 // @group BusinessLogic : Folder browser modal — navigable server-side filesystem tree
 
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { api } from '@/lib/api'
 
 // @group Types
@@ -15,6 +15,7 @@ interface BrowseResult {
   parent: string | null
   entries: Entry[]
   error?: string
+  truncated?: boolean
 }
 
 interface Props {
@@ -25,30 +26,64 @@ interface Props {
 
 // @group BusinessLogic > FolderBrowser : Main component
 export function FolderBrowser({ initialPath = '', onSelect, onClose }: Props) {
-  const [result, setResult]   = useState<BrowseResult | null>(null)
+  const [result, setResult] = useState<BrowseResult | null>(null)
   const [loading, setLoading] = useState(false)
   const [hovered, setHovered] = useState<string | null>(null)
-  const listRef               = useRef<HTMLDivElement>(null)
+  const listRef = useRef<HTMLDivElement>(null)
+  const browseRequestRef = useRef(0)
+  const browseAbortRef = useRef<AbortController | null>(null)
+
+  // @group BusinessLogic > Navigation : Fetch directory listing from backend
+  const navigate = useCallback((path: string) => {
+    const requestId = ++browseRequestRef.current
+    browseAbortRef.current?.abort()
+    const controller = new AbortController()
+    browseAbortRef.current = controller
+    setLoading(true)
+    setHovered(null)
+    api
+      .browsePath(path, { signal: controller.signal })
+      .then(r => {
+        if (requestId !== browseRequestRef.current || controller.signal.aborted) return
+        setResult(r)
+        if (listRef.current) listRef.current.scrollTop = 0
+      })
+      .catch((error: unknown) => {
+        if (requestId !== browseRequestRef.current || controller.signal.aborted) return
+        setResult({
+          path,
+          parent: null,
+          entries: [],
+          error: error instanceof Error ? error.message : String(error),
+        })
+      })
+      .finally(() => {
+        if (requestId === browseRequestRef.current && !controller.signal.aborted) setLoading(false)
+      })
+  }, [])
 
   // Navigate to a path on mount
-  useEffect(() => { navigate(initialPath) }, [])
+  useEffect(() => {
+    let active = true
+    queueMicrotask(() => {
+      if (active) navigate(initialPath)
+    })
+    return () => {
+      active = false
+      browseRequestRef.current += 1
+      browseAbortRef.current?.abort()
+      browseAbortRef.current = null
+    }
+  }, [initialPath, navigate])
 
   // Escape closes
   useEffect(() => {
-    function onKey(e: KeyboardEvent) { if (e.key === 'Escape') onClose() }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') onClose()
+    }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose])
-
-  // @group BusinessLogic > Navigation : Fetch directory listing from backend
-  function navigate(path: string) {
-    setLoading(true)
-    setHovered(null)
-    api.browsePath(path)
-      .then(r => { setResult(r); if (listRef.current) listRef.current.scrollTop = 0 })
-      .catch(e => setResult({ path, parent: null, entries: [], error: String(e.message ?? e) }))
-      .finally(() => setLoading(false))
-  }
 
   // @group Utilities > Breadcrumbs : Build clickable path segments from current path
   function buildCrumbs(): { label: string; path: string }[] {
@@ -58,7 +93,7 @@ export function FolderBrowser({ initialPath = '', onSelect, onClose }: Props) {
     return parts.map((part, i) => {
       const joined = parts.slice(0, i + 1).join('\\')
       // Windows drive root: "C:" → "C:\"
-      const fullPath = (i === 0 && part.endsWith(':')) ? joined + '\\' : joined
+      const fullPath = i === 0 && part.endsWith(':') ? joined + '\\' : joined
       return { label: part, path: fullPath }
     })
   }
@@ -70,48 +105,109 @@ export function FolderBrowser({ initialPath = '', onSelect, onClose }: Props) {
   return (
     // @group BusinessLogic > Overlay : Fixed backdrop
     <div
-      style={{ position: 'fixed', inset: 0, zIndex: 1100, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 1100,
+        background: 'rgba(0,0,0,0.55)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
       onClick={onClose}
     >
       {/* Dialog */}
       <div
-        style={{ width: 580, maxHeight: '72vh', background: 'var(--color-card)', border: '1px solid var(--color-border)', borderRadius: 8, display: 'flex', flexDirection: 'column', boxShadow: '0 24px 64px rgba(0,0,0,0.45)', overflow: 'hidden' }}
+        style={{
+          width: 580,
+          maxHeight: '72vh',
+          background: 'var(--color-card)',
+          border: '1px solid var(--color-border)',
+          borderRadius: 8,
+          display: 'flex',
+          flexDirection: 'column',
+          boxShadow: '0 24px 64px rgba(0,0,0,0.45)',
+          overflow: 'hidden',
+        }}
         onClick={e => e.stopPropagation()}
       >
-
         {/* Header */}
-        <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--color-border)', display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+        <div
+          style={{
+            padding: '12px 16px',
+            borderBottom: '1px solid var(--color-border)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+            flexShrink: 0,
+          }}
+        >
           <span style={{ fontSize: 18 }}>📁</span>
           <span style={{ fontWeight: 600, fontSize: 14, flex: 1 }}>浏览文件夹</span>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 20, lineHeight: 1, color: 'var(--color-muted-foreground)', padding: '0 2px' }}>×</button>
+          <button
+            onClick={onClose}
+            style={{
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              fontSize: 20,
+              lineHeight: 1,
+              color: 'var(--color-muted-foreground)',
+              padding: '0 2px',
+            }}
+          >
+            ×
+          </button>
         </div>
 
         {/* Breadcrumb / path bar */}
-        <div style={{ padding: '7px 12px', borderBottom: '1px solid var(--color-border)', background: 'var(--color-muted)', display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap', flexShrink: 0 }}>
+        <div
+          style={{
+            padding: '7px 12px',
+            borderBottom: '1px solid var(--color-border)',
+            background: 'var(--color-muted)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 2,
+            flexWrap: 'wrap',
+            flexShrink: 0,
+          }}
+        >
           {/* Drives button (Windows root) */}
-          <button
-            onClick={() => navigate('')}
-            title="显示驱动器"
-            style={crumbBtnStyle}
-          >
+          <button onClick={() => navigate('')} title="显示驱动器" style={crumbBtnStyle}>
             ⊞ 驱动器
           </button>
           {crumbs.map((c, i) => (
             <span key={i} style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-              <span style={{ color: 'var(--color-muted-foreground)', fontSize: 11, padding: '0 1px' }}>›</span>
-              <button onClick={() => navigate(c.path)} style={crumbBtnStyle}>{c.label}</button>
+              <span
+                style={{ color: 'var(--color-muted-foreground)', fontSize: 11, padding: '0 1px' }}
+              >
+                ›
+              </span>
+              <button onClick={() => navigate(c.path)} style={crumbBtnStyle}>
+                {c.label}
+              </button>
             </span>
           ))}
-          {loading && <span style={{ marginLeft: 6, fontSize: 11, color: 'var(--color-muted-foreground)' }}>…</span>}
+          {loading && (
+            <span style={{ marginLeft: 6, fontSize: 11, color: 'var(--color-muted-foreground)' }}>
+              …
+            </span>
+          )}
         </div>
 
         {/* Entry list */}
         <div ref={listRef} style={{ flex: 1, overflowY: 'auto', padding: '4px 0' }}>
-
           {/* Error state */}
           {result?.error && !loading && (
             <div style={{ padding: '10px 16px', color: 'var(--color-destructive)', fontSize: 12 }}>
               ⚠ {result.error}
+            </div>
+          )}
+
+          {result?.truncated && !loading && (
+            <div style={{ padding: '8px 16px', color: 'var(--color-warning)', fontSize: 12 }}>
+              当前目录条目过多，仅显示前 2000 项。
             </div>
           )}
 
@@ -128,12 +224,37 @@ export function FolderBrowser({ initialPath = '', onSelect, onClose }: Props) {
           )}
 
           {/* Empty folder */}
-          {!loading && result && !result.error && result.entries.length === 0 && result.parent === null && (
-            <div style={{ padding: '20px 16px', color: 'var(--color-muted-foreground)', fontSize: 12, textAlign: 'center' }}>未找到项目</div>
-          )}
-          {!loading && result && !result.error && result.entries.length === 0 && result.parent !== null && (
-            <div style={{ padding: '12px 16px', color: 'var(--color-muted-foreground)', fontSize: 12 }}>文件夹为空</div>
-          )}
+          {!loading &&
+            result &&
+            !result.error &&
+            result.entries.length === 0 &&
+            result.parent === null && (
+              <div
+                style={{
+                  padding: '20px 16px',
+                  color: 'var(--color-muted-foreground)',
+                  fontSize: 12,
+                  textAlign: 'center',
+                }}
+              >
+                未找到项目
+              </div>
+            )}
+          {!loading &&
+            result &&
+            !result.error &&
+            result.entries.length === 0 &&
+            result.parent !== null && (
+              <div
+                style={{
+                  padding: '12px 16px',
+                  color: 'var(--color-muted-foreground)',
+                  fontSize: 12,
+                }}
+              >
+                文件夹为空
+              </div>
+            )}
 
           {/* Entries */}
           {result?.entries.map(e => (
@@ -150,29 +271,64 @@ export function FolderBrowser({ initialPath = '', onSelect, onClose }: Props) {
         </div>
 
         {/* Footer: current path + actions */}
-        <div style={{ padding: '10px 16px', borderTop: '1px solid var(--color-border)', background: 'var(--color-muted)', display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
-          <code style={{ flex: 1, fontSize: 11, color: 'var(--color-muted-foreground)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
+        <div
+          style={{
+            padding: '10px 16px',
+            borderTop: '1px solid var(--color-border)',
+            background: 'var(--color-muted)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+            flexShrink: 0,
+          }}
+        >
+          <code
+            style={{
+              flex: 1,
+              fontSize: 11,
+              color: 'var(--color-muted-foreground)',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              minWidth: 0,
+            }}
+          >
             {currentPath || '— 请选择文件夹 —'}
           </code>
           <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-            <button onClick={onClose} style={cancelBtnStyle}>取消</button>
+            <button onClick={onClose} style={cancelBtnStyle}>
+              取消
+            </button>
             <button
               disabled={!canSelect}
-              onClick={() => { onSelect(currentPath); onClose() }}
-              style={{ ...selectBtnStyle, opacity: canSelect ? 1 : 0.45, cursor: canSelect ? 'pointer' : 'default' }}
+              onClick={() => {
+                onSelect(currentPath)
+                onClose()
+              }}
+              style={{
+                ...selectBtnStyle,
+                opacity: canSelect ? 1 : 0.45,
+                cursor: canSelect ? 'pointer' : 'default',
+              }}
             >
               选择文件夹
             </button>
           </div>
         </div>
-
       </div>
     </div>
   )
 }
 
 // @group Utilities > EntryRow : Single directory/file row with hover highlight
-function EntryRow({ icon, label, dim, hovered, onHover, onClick }: {
+function EntryRow({
+  icon,
+  label,
+  dim,
+  hovered,
+  onHover,
+  onClick,
+}: {
   icon: string
   label: string
   dim: boolean
@@ -187,7 +343,9 @@ function EntryRow({ icon, label, dim, hovered, onHover, onClick }: {
       onMouseLeave={() => onHover(false)}
       style={{
         padding: '5px 16px',
-        display: 'flex', alignItems: 'center', gap: 8,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
         cursor: onClick ? 'pointer' : 'default',
         background: hovered && onClick ? 'var(--color-accent)' : 'transparent',
         fontSize: 13,
@@ -195,7 +353,14 @@ function EntryRow({ icon, label, dim, hovered, onHover, onClick }: {
       }}
     >
       <span style={{ flexShrink: 0, fontSize: 14 }}>{icon}</span>
-      <span style={{ color: dim ? 'var(--color-muted-foreground)' : 'var(--color-foreground)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+      <span
+        style={{
+          color: dim ? 'var(--color-muted-foreground)' : 'var(--color-foreground)',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+        }}
+      >
         {label}
       </span>
     </div>
@@ -204,19 +369,31 @@ function EntryRow({ icon, label, dim, hovered, onHover, onClick }: {
 
 // @group Utilities > Styles
 const crumbBtnStyle: React.CSSProperties = {
-  background: 'none', border: 'none', cursor: 'pointer',
-  padding: '2px 5px', fontSize: 12, borderRadius: 3,
+  background: 'none',
+  border: 'none',
+  cursor: 'pointer',
+  padding: '2px 5px',
+  fontSize: 12,
+  borderRadius: 3,
   color: 'var(--color-foreground)',
 }
 
 const cancelBtnStyle: React.CSSProperties = {
-  padding: '5px 14px', fontSize: 12, cursor: 'pointer',
-  background: 'var(--color-secondary)', border: '1px solid var(--color-border)',
-  borderRadius: 5, color: 'var(--color-foreground)',
+  padding: '5px 14px',
+  fontSize: 12,
+  cursor: 'pointer',
+  background: 'var(--color-secondary)',
+  border: '1px solid var(--color-border)',
+  borderRadius: 5,
+  color: 'var(--color-foreground)',
 }
 
 const selectBtnStyle: React.CSSProperties = {
-  padding: '5px 14px', fontSize: 12, fontWeight: 600,
-  background: 'var(--color-primary)', border: '1px solid var(--color-primary)',
-  borderRadius: 5, color: 'var(--color-primary-foreground)',
+  padding: '5px 14px',
+  fontSize: 12,
+  fontWeight: 600,
+  background: 'var(--color-primary)',
+  border: '1px solid var(--color-primary)',
+  borderRadius: 5,
+  color: 'var(--color-primary-foreground)',
 }

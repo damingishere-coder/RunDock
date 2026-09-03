@@ -1,0 +1,12 @@
+{
+  "score": 82,
+  "grade": "B",
+  "tags": ["bloat"],
+  "findings": [
+    {
+      "sev": "LOW",
+      "loc": "web-ui/src/lib/api.ts:493",
+      "text": "统一 api 对象仍在单文件中聚合进程、项目、日志、认证、AI、Telegram、隧道和系统能力；错误校验与 transport 已统一，但后续可按领域拆文件以降低导航成本。"
+    }
+  ]
+}

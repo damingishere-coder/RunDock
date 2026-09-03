@@ -12,32 +12,38 @@ export interface AppNotification {
   processName: string
   namespace: string
   event: NotifEvent
-  detail: string   // e.g. "Exit code: 1", "PID: 12345", "Auto-restarted ×3"
+  detail: string // e.g. "Exit code: 1", "PID: 12345", "Auto-restarted ×3"
   timestamp: Date
   read: boolean
 }
 
 // @group Utilities > eventConfig : Visual config per event type
 export const eventConfig: Record<NotifEvent, { color: string; label: string }> = {
-  crash:   { color: 'var(--color-status-crashed)',  label: '已崩溃'   },
+  crash: { color: 'var(--color-status-crashed)', label: '已崩溃' },
   restart: { color: 'var(--color-status-starting)', label: '已重启' },
-  started: { color: 'var(--color-status-running)',  label: '已启动'   },
-  stopped: { color: 'var(--color-status-stopped)',  label: '已停止'   },
+  started: { color: 'var(--color-status-running)', label: '已启动' },
+  stopped: { color: 'var(--color-status-stopped)', label: '已停止' },
 }
 
 // @group Utilities > isActive : True for statuses that mean "process is doing something"
 const ACTIVE: ReadonlySet<ProcessStatus> = new Set(['running', 'watching'])
-const INACTIVE: ReadonlySet<ProcessStatus> = new Set(['stopped', 'errored', 'sleeping', 'starting'])
+const INACTIVE: ReadonlySet<ProcessStatus> = new Set([
+  'stopped',
+  'crashed',
+  'errored',
+  'sleeping',
+  'starting',
+])
 
 // @group Utilities > relativeTime : Human-readable relative timestamp
-export function relativeTime(date: Date): string {
-  const secs = Math.floor((Date.now() - date.getTime()) / 1000)
-  if (secs < 5)  return '刚刚'
+export function relativeTime(date: Date, now = Date.now()): string {
+  const secs = Math.floor((now - date.getTime()) / 1000)
+  if (secs < 5) return '刚刚'
   if (secs < 60) return `${secs}秒前`
   const mins = Math.floor(secs / 60)
   if (mins < 60) return `${mins}分钟前`
   const hrs = Math.floor(mins / 60)
-  if (hrs < 24)  return `${hrs}小时前`
+  if (hrs < 24) return `${hrs}小时前`
   return `${Math.floor(hrs / 24)}天前`
 }
 
@@ -73,16 +79,14 @@ export function useNotificationTray(processes: ProcessInfo[]) {
       let event: NotifEvent | null = null
       let detail = ''
 
-      if (curStatus === 'errored') {
+      if (curStatus === 'errored' || curStatus === 'crashed') {
         // Crashed / hit max restarts
         event = 'crash'
         detail = p.last_exit_code != null ? `退出码：${p.last_exit_code}` : '进程出错'
-
       } else if (ACTIVE.has(prevStatus) && curStatus === 'stopped') {
         // Manually or naturally stopped
         event = 'stopped'
         detail = p.last_exit_code != null ? `退出码：${p.last_exit_code}` : '进程已停止'
-
       } else if (INACTIVE.has(prevStatus) && ACTIVE.has(curStatus)) {
         if (curCount > prevCount) {
           // Auto-restarted
@@ -124,10 +128,12 @@ export function useNotificationTray(processes: ProcessInfo[]) {
     }
 
     if (newNotifs.length > 0) {
-      setNotifications(prev => {
-        // Newest first, cap at 50
-        const combined = [...newNotifs, ...prev]
-        return combined.slice(0, 50)
+      queueMicrotask(() => {
+        setNotifications(prev => {
+          // Newest first, cap at 50
+          const combined = [...newNotifs, ...prev]
+          return combined.slice(0, 50)
+        })
       })
     }
   }, [processes])

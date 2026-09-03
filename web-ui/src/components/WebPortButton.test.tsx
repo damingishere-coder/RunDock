@@ -32,12 +32,25 @@ describe('WebPortButton', () => {
 
     await user.click(screen.getByRole('button', { name: '选择网页端口' }))
 
-    expect(screen.getByRole('menuitem', { name: ':5173打开' })).toHaveAttribute('href', 'http://127.0.0.1:5173/')
-    expect(screen.getByRole('menuitem', { name: ':8766打开' })).toHaveAttribute('href', 'http://127.0.0.1:8766/')
+    expect(screen.getByRole('menuitem', { name: ':5173打开' })).toHaveAttribute(
+      'href',
+      'http://127.0.0.1:5173/'
+    )
+    expect(screen.getByRole('menuitem', { name: ':8766打开' })).toHaveAttribute(
+      'href',
+      'http://127.0.0.1:8766/'
+    )
   })
 
   it('opens only the configured project web port without a chooser', () => {
-    render(<WebPortButton ports={[6866, 8888, 35729, 61135, 63119]} preferredPort={6866} server={localServer} showLabel />)
+    render(
+      <WebPortButton
+        ports={[6866, 8888, 35729, 61135, 63119]}
+        preferredPort={6866}
+        server={localServer}
+        showLabel
+      />
+    )
 
     const link = screen.getByRole('link', { name: '打开网页 http://127.0.0.1:6866/' })
     expect(link).toHaveAttribute('href', 'http://127.0.0.1:6866/')
@@ -46,12 +59,20 @@ describe('WebPortButton', () => {
   })
 
   it('hides a configured project web port until that port is listening', () => {
-    const { container } = render(<WebPortButton ports={[8888]} preferredPort={6866} server={localServer} showLabel />)
+    const { container } = render(
+      <WebPortButton ports={[8888]} preferredPort={6866} server={localServer} showLabel />
+    )
     expect(container).toBeEmptyDOMElement()
   })
 
   it('disables direct opening for an SSH connection', () => {
-    render(<WebPortButton ports={[5173]} server={{ ...localServer, id: 'ssh', connectionType: 'ssh', sshHost: 'example.invalid' }} showLabel />)
+    render(
+      <WebPortButton
+        ports={[5173]}
+        server={{ ...localServer, id: 'ssh', connectionType: 'ssh', sshHost: 'example.invalid' }}
+        showLabel
+      />
+    )
     expect(screen.getByRole('button', { name: '网页（SSH 连接不可直接打开）' })).toBeDisabled()
   })
 })

@@ -1,0 +1,12 @@
+{
+  "score": 90,
+  "grade": "A",
+  "tags": ["bloat"],
+  "findings": [
+    {
+      "sev": "LOW",
+      "loc": "src/daemon/mod.rs:1",
+      "text": "daemon/mod.rs 仍集中启动、持久化后台任务、PID 文件和重启 handoff 编排；状态提交竞态已线性化，但端到端 handoff 故障注入仍主要依赖 CI/隔离 smoke。"
+    }
+  ]
+}

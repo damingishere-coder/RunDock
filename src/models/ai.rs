@@ -41,22 +41,30 @@ pub struct AiSettings {
     pub ollama_base_url: String,
 }
 
-fn default_provider()    -> String { "ollama".to_string() }
-fn default_model()       -> String { "llama3.2".to_string() }
-fn default_openai_base() -> String { "https://api.openai.com/v1".to_string() }
-fn default_ollama_base() -> String { "http://localhost:11434".to_string() }
+fn default_provider() -> String {
+    "ollama".to_string()
+}
+fn default_model() -> String {
+    "llama3.2".to_string()
+}
+fn default_openai_base() -> String {
+    "https://api.openai.com/v1".to_string()
+}
+fn default_ollama_base() -> String {
+    "http://localhost:11434".to_string()
+}
 
 impl Default for AiSettings {
     fn default() -> Self {
         Self {
-            provider:        default_provider(),
-            enabled:         false,
-            model:           default_model(),
-            github_token:    String::new(),
-            client_id:       String::new(),
+            provider: default_provider(),
+            enabled: false,
+            model: default_model(),
+            github_token: String::new(),
+            client_id: String::new(),
             github_username: String::new(),
-            anthropic_key:   String::new(),
-            openai_key:      String::new(),
+            anthropic_key: String::new(),
+            openai_key: String::new(),
             openai_base_url: default_openai_base(),
             ollama_base_url: default_ollama_base(),
         }
@@ -64,33 +72,37 @@ impl Default for AiSettings {
 }
 
 // @group Types > DeviceAuthState : Ephemeral in-memory state during GitHub Device Flow
+#[derive(Clone)]
 pub struct DeviceAuthState {
-    pub device_code:      String,
-    pub user_code:        String,
+    pub device_code: String,
+    pub user_code: String,
     pub verification_uri: String,
-    pub expires_at:       DateTime<Utc>,
-    pub interval_secs:    u64,
+    pub expires_at: DateTime<Utc>,
+    pub interval_secs: u64,
+    pub last_poll_at: Option<DateTime<Utc>>,
+    pub poll_attempts: u16,
+    pub poll_token_fingerprint: [u8; 32],
 }
 
 // @group Types > ChatMessage : A single turn in a conversation
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatMessage {
-    pub role:    String,
+    pub role: String,
     pub content: String,
 }
 
 // @group Types > ChatRequest : Incoming request body for POST /ai/chat
 #[derive(Debug, Deserialize)]
 pub struct ChatRequest {
-    pub message:    String,
+    pub message: String,
     #[serde(default)]
     pub process_id: Option<String>,
     #[serde(default)]
-    pub history:    Vec<ChatMessage>,
+    pub history: Vec<ChatMessage>,
     /// Override the saved model — uses persisted value if omitted
     #[serde(default)]
-    pub model:      Option<String>,
+    pub model: Option<String>,
     /// Override the saved provider — uses persisted value if omitted
     #[serde(default)]
-    pub provider:   Option<String>,
+    pub provider: Option<String>,
 }

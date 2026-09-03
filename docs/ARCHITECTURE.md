@@ -1,14 +1,14 @@
 # Architecture
 
-> How alter works under the hood — daemon design, process lifecycle, logging pipeline, and data flow.
+> How RunDock works under the hood — daemon design, process lifecycle, logging pipeline, and data flow.
 
 ---
 
 ## Overview
 
-alter is a **single binary** that plays two roles depending on how it is invoked:
+The RunDock backend is a **single binary** that plays two roles depending on how it is invoked:
 
-1. **CLI** — the user-facing interface (`alter start`, `alter list`, etc.)
+1. **CLI** — RunDock's command-line interface (`alter start`, `alter list`, etc.)
 2. **Daemon** — a long-running background HTTP server that manages processes
 
 ```
@@ -53,10 +53,10 @@ src/
 │   └── mod.rs
 ├── api/
 │   ├── routes/
-│   │   ├── processes.rs  # /processes/* endpoints
-│   │   ├── system.rs     # /system/* endpoints (health, save, shutdown)
-│   │   ├── ecosystem.rs  # /ecosystem endpoint
-│   │   └── logs.rs       # (reserved)
+│   │   ├── processes.rs, projects.rs, git.rs
+│   │   ├── auth.rs, system.rs, update.rs, ports.rs
+│   │   ├── ai.rs, telegram.rs, notifications.rs, log_alerts.rs
+│   │   └── tunnels.rs, terminal.rs, scripts.rs, metrics.rs
 │   ├── error.rs          # ApiError → HTTP response conversion
 │   ├── middleware.rs
 │   └── mod.rs
@@ -69,6 +69,9 @@ src/
 │   ├── manager.rs        # ProcessManager — high-level lifecycle API
 │   ├── instance.rs       # ManagedProcess — per-process state
 │   ├── runner.rs         # Spawn child + pipe stdout/stderr
+│   ├── identity.rs       # Immutable PID identity + verified termination
+│   ├── tree.rs           # Windows Job / Unix process-group ownership
+│   ├── health.rs         # Bounded loopback health probes
 │   ├── restarter.rs      # Auto-restart loop with exponential backoff
 │   ├── watcher.rs        # File system watcher (watch mode)
 │   └── mod.rs
@@ -80,6 +83,8 @@ src/
 ├── config/
 │   ├── ecosystem.rs      # AppConfig + EcosystemConfig structs
 │   ├── paths.rs          # Platform-aware data/log paths
+│   ├── atomic_file.rs     # Bounded atomic JSON + validated LKG recovery
+│   ├── state_transaction.rs # Crash-recoverable state/projects pair
 │   ├── daemon_config.rs  # DaemonConfig (port, host)
 │   └── mod.rs
 ├── models/
@@ -90,9 +95,12 @@ src/
 ├── client/
 │   ├── daemon_client.rs  # reqwest HTTP client (CLI → daemon)
 │   └── mod.rs
-├── web/
-│   ├── assets/           # index.html, app.js, style.css
-│   └── mod.rs            # rust-embed serving
+├── web/                   # rust-embed serving for web-ui/dist
+├── telegram/, tunnel/, notifications/
+├── web-ui/                # React/Vite dashboard source
+├── desktop-shell/          # Windows-only Tauri 2/WebView2 desktop shell
+│   ├── src/                # Tray, single-instance, startup and navigation policy
+│   └── ui/                 # Local startup/error page (no daemon IPC capability)
 └── utils/
     ├── pid.rs, format.rs, table.rs
     └── mod.rs
@@ -106,11 +114,11 @@ src/
 alter daemon start
         │
         ▼
-DaemonClient::is_alive() → TCP connect to :2999
+DaemonClient::probe_readiness() → TCP connect + strict health contract on :2999
         │
-        ├── alive? → print "daemon already running", exit
-        │
-        └── not alive?
+        ├── verified RunDock? → reuse it
+        ├── port unused? → start the sibling backend executable
+        └── occupied/incompatible? → fail with diagnostics; never end the listener
                 │
                 ▼
         Spawn hidden child: alter --internal-daemon --port 2999
@@ -118,10 +126,10 @@ DaemonClient::is_alive() → TCP connect to :2999
         (Unix: stdio → /dev/null)
                 │
                 ▼
-        Poll :2999 every 100ms (up to 5s)
+        Poll :2999 every 100ms (up to 10s)
                 │
                 ▼
-        GET /api/v1/system/health → "ok"
+        GET /api/v1/system/health → status/version/PID/persistence contract
                 │
                 ▼
         Print "daemon started at http://127.0.0.1:2999/"
@@ -133,14 +141,15 @@ DaemonClient::is_alive() → TCP connect to :2999
 DaemonState::new()
         │
         ├── ProcessManager::new()  (empty DashMap)
-        ├── load state.json if exists
-        │       └── restore() → restart previously-running processes
+        ├── recover and validate state.json + projects.json
+        │       └── restore() → re-adopt only a live process whose PID identity still matches;
+        │                       otherwise retain it as stopped/error state
         │
         ▼
 Server::start()
         ├── socket2: bind TCP with SO_REUSEADDR
         ├── Build Axum router (REST API + static assets)
-        ├── Add CORS layer (all origins/methods/headers)
+        ├── Add CORS allowlist (same origin + explicit loopback dashboard/dev origins)
         ├── Add tracing layer
         └── tokio::serve() → async loop
 ```
@@ -250,31 +259,34 @@ AsyncBufReadExt::lines()  (tokio)
 
 **File:** `%APPDATA%\alter-pm2\state.json` (Windows) or `~/.alter-pm2/state.json`
 
-**Format:**
+**Format (simplified):**
 ```json
 {
+  "schema_version": 1,
   "saved_at": "2026-02-22T10:00:00Z",
   "apps": [
     {
       "id": "uuid",
       "config": { /* full AppConfig */ },
       "restart_count": 2,
-      "autorestart_on_restore": true
+      "last_pid": 1234,
+      "process_identity": { "start_time_secs": 1771735200 },
+      "cron_was_active": false
     }
   ]
 }
 ```
 
-**Auto-save:** After every process state change (start, stop, restart, delete, edit), a background `tokio::spawn` calls `save_to_disk()`. This uses an atomic write: writes to `state.json.tmp` first, then renames — preventing corruption from partial writes.
+**Auto-save:** Lifecycle mutations are serialized with persistence and rollback. Individual JSON files use bounded temporary files, durable atomic replacement, semantic validation, and a validated last-known-good copy. Runtime state and logical projects additionally use a transaction marker so startup can deterministically roll forward or roll back an interrupted pair update.
 
 **Restore on startup:**
 ```rust
 for app in saved.apps {
-    if app.autorestart_on_restore {
-        manager.start(app.config).await   // restart it
-    } else {
-        manager.register_stopped(app.config).await  // show in list, don't start
-    }
+    // Re-adopt only when the saved PID is alive and its immutable start
+    // identity still matches. Never guess-restart an ordinary process.
+    if live_pid_identity_matches(&app) { adopt(app) }
+    else if app.cron_was_active { restore_sleeping_cron(app) }
+    else { register_stopped(app) }
 }
 ```
 
@@ -334,13 +346,31 @@ status → Watching (same as Running but watcher is active)
 
 ## Web Dashboard Architecture
 
-The web dashboard is **compiled into the binary** using [rust-embed](https://github.com/pyros2097/rust-embed). At compile time, `index.html`, `app.js`, and `style.css` are embedded as byte arrays. At runtime, they are served directly from memory — no disk reads, no external files needed.
+The React dashboard is built by Vite into `web-ui/dist` and then **compiled into
+`alter.exe`** using [rust-embed](https://github.com/pyros2097/rust-embed).
+At runtime the daemon serves those assets from memory on the same loopback
+origin as `/api/v1`.
 
 **Technology:**
-- **Frontend:** Vanilla JavaScript — no framework, no build step
-- **Styling:** Hand-written CSS with CSS custom properties (dark theme)
+- **Frontend:** React 19 + TypeScript + Vite
+- **Styling:** CSS with shared theme variables
 - **Real-time updates:** Auto-refresh every 3 seconds + SSE for log streaming
 - **Transport:** Fetch API + EventSource
+
+### Windows desktop shell
+
+`rundock.exe` is a separate Tauri 2 package. Its WebView2 window initially loads
+only a bundled startup/error page, calls the shared daemon lifecycle state
+machine with the sibling `alter.exe`, and navigates to
+`http://127.0.0.1:2999/` only after health ownership is verified. The remote
+dashboard receives no Tauri IPC, filesystem, or shell capability. Navigation
+away from the canonical 2999 loopback origin is denied in the WebView and safe
+external HTTP(S) or registered custom-protocol links are handed to Windows.
+
+Only one desktop shell instance is allowed. A second launch restores the
+existing window. The close button hides it to the tray; tray exit stops only
+`rundock.exe`. Current-user login startup passes `--background`, so the daemon
+can be recovered without showing a window.
 
 **Dashboard views:**
 
@@ -382,7 +412,7 @@ This design means:
 | Data directory | `%APPDATA%\alter-pm2\` |
 | `.cmd` scripts (npm, yarn) | Wrapped in `cmd /C` automatically |
 | Terminal button | Tries `wt.exe` (Windows Terminal), falls back to `cmd.exe` |
-| Startup integration | PowerShell Scheduled Task |
+| Startup integration | Desktop installer: tray autostart; CLI-only: optional Scheduled Task |
 | Port reuse | `SO_REUSEADDR` via socket2 crate |
 
 ### Linux / macOS
@@ -452,3 +482,7 @@ CLI prints result table
 | `socket2` | 0.5 | Low-level socket control (SO_REUSEADDR) |
 | `anyhow` + `thiserror` | — | Error handling |
 | `windows` | 0.58 | Win32 API (Windows only, process flags) |
+
+The independent `desktop-shell/Cargo.toml` adds Tauri 2, its single-instance and
+autostart plugins, and Windows WebView2 integration without adding those
+dependencies to Linux CLI/package builds.

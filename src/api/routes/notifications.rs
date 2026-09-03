@@ -7,7 +7,7 @@ use crate::models::notification::NotificationConfig;
 use axum::{
     extract::{Path, State},
     http::StatusCode,
-    routing::{delete, get, post, put},
+    routing::{get, post, put},
     Json, Router,
 };
 use serde_json::{json, Value};
@@ -17,46 +17,83 @@ pub fn router(state: Arc<DaemonState>) -> Router {
     Router::new()
         .route("/", get(get_notifications))
         .route("/global", put(update_global))
-        .route("/namespace/{ns}", put(update_namespace).delete(delete_namespace))
+        .route(
+            "/namespace/{ns}",
+            put(update_namespace).delete(delete_namespace),
+        )
         .route("/test", post(test_notification))
         .with_state(state)
 }
 
 // @group APIEndpoints > Notifications : GET /notifications — return full NotificationsStore
-async fn get_notifications(
-    State(state): State<Arc<DaemonState>>,
-) -> Json<Value> {
+async fn get_notifications(State(state): State<Arc<DaemonState>>) -> Json<Value> {
     let store = state.notifications.read().await;
-    Json(json!(*store))
+    let mut redacted = store.clone();
+    redacted.global = redacted.global.redacted();
+    for config in redacted.namespaces.values_mut() {
+        *config = config.redacted();
+    }
+    Json(json!(redacted))
 }
 
 // @group APIEndpoints > Notifications : PUT /notifications/global — update global config and persist
 async fn update_global(
     State(state): State<Arc<DaemonState>>,
-    Json(config): Json<NotificationConfig>,
+    Json(mut config): Json<NotificationConfig>,
 ) -> Result<Json<Value>, ApiError> {
-    {
-        let mut store = state.notifications.write().await;
-        store.global = config;
-        notification_store::save(&store)
-            .map_err(|e| ApiError::internal(format!("failed to save notifications: {e}")))?;
-    }
-    Ok(Json(json!({ "success": true, "message": "global notifications updated" })))
+    let _config_guard = state.config_mutation_lock.lock().await;
+    let current = state.notifications.read().await.clone();
+    config.preserve_masked_secrets(&current.global);
+    config
+        .validate()
+        .map_err(|error| ApiError::bad_request(error.to_string()))?;
+    let mut candidate = current;
+    candidate.global = config;
+    let candidate_for_save = candidate.clone();
+    tokio::task::spawn_blocking(move || notification_store::save(&candidate_for_save))
+        .await
+        .map_err(|error| ApiError::internal(format!("notification save task failed: {error}")))?
+        .map_err(|e| ApiError::internal(format!("failed to save notifications: {e}")))?;
+    *state.notifications.write().await = candidate;
+    Ok(Json(
+        json!({ "success": true, "message": "global notifications updated" }),
+    ))
 }
 
 // @group APIEndpoints > Notifications : PUT /notifications/namespace/:ns — update namespace config and persist
 async fn update_namespace(
     State(state): State<Arc<DaemonState>>,
     Path(ns): Path<String>,
-    Json(config): Json<NotificationConfig>,
+    Json(mut config): Json<NotificationConfig>,
 ) -> Result<Json<Value>, ApiError> {
-    {
-        let mut store = state.notifications.write().await;
-        store.namespaces.insert(ns.clone(), config);
-        notification_store::save(&store)
-            .map_err(|e| ApiError::internal(format!("failed to save notifications: {e}")))?;
+    let _config_guard = state.config_mutation_lock.lock().await;
+    notification_store::validate_namespace(&ns)
+        .map_err(|error| ApiError::bad_request(error.to_string()))?;
+    let current = state.notifications.read().await.clone();
+    if let Some(current) = current.namespaces.get(&ns) {
+        config.preserve_masked_secrets(current);
     }
-    Ok(Json(json!({ "success": true, "message": format!("namespace '{ns}' notifications updated") })))
+    config
+        .validate()
+        .map_err(|error| ApiError::bad_request(error.to_string()))?;
+    if !current.namespaces.contains_key(&ns)
+        && current.namespaces.len() >= notification_store::MAX_NOTIFICATION_NAMESPACES
+    {
+        return Err(ApiError::bad_request(
+            "too many notification namespace overrides",
+        ));
+    }
+    let mut candidate = current;
+    candidate.namespaces.insert(ns.clone(), config);
+    let candidate_for_save = candidate.clone();
+    tokio::task::spawn_blocking(move || notification_store::save(&candidate_for_save))
+        .await
+        .map_err(|error| ApiError::internal(format!("notification save task failed: {error}")))?
+        .map_err(|e| ApiError::internal(format!("failed to save notifications: {e}")))?;
+    *state.notifications.write().await = candidate;
+    Ok(Json(
+        json!({ "success": true, "message": format!("namespace '{ns}' notifications updated") }),
+    ))
 }
 
 // @group APIEndpoints > Notifications : DELETE /notifications/namespace/:ns — remove namespace override
@@ -64,30 +101,46 @@ async fn delete_namespace(
     State(state): State<Arc<DaemonState>>,
     Path(ns): Path<String>,
 ) -> Result<(StatusCode, Json<Value>), ApiError> {
-    {
-        let mut store = state.notifications.write().await;
-        if store.namespaces.remove(&ns).is_none() {
-            return Err(ApiError::not_found(format!("namespace '{ns}' not found")));
-        }
-        notification_store::save(&store)
-            .map_err(|e| ApiError::internal(format!("failed to save notifications: {e}")))?;
+    let _config_guard = state.config_mutation_lock.lock().await;
+    notification_store::validate_namespace(&ns)
+        .map_err(|error| ApiError::bad_request(error.to_string()))?;
+    let current = state.notifications.read().await.clone();
+    if !current.namespaces.contains_key(&ns) {
+        return Err(ApiError::not_found(format!("namespace '{ns}' not found")));
     }
-    Ok((StatusCode::OK, Json(json!({ "success": true, "message": format!("namespace '{ns}' removed") }))))
+    let mut candidate = current;
+    candidate.namespaces.remove(&ns);
+    let candidate_for_save = candidate.clone();
+    tokio::task::spawn_blocking(move || notification_store::save(&candidate_for_save))
+        .await
+        .map_err(|error| ApiError::internal(format!("notification save task failed: {error}")))?
+        .map_err(|e| ApiError::internal(format!("failed to save notifications: {e}")))?;
+    *state.notifications.write().await = candidate;
+    Ok((
+        StatusCode::OK,
+        Json(json!({ "success": true, "message": format!("namespace '{ns}' removed") })),
+    ))
 }
 
 // @group APIEndpoints > Notifications : POST /notifications/test — fire a test notification using the supplied config
 async fn test_notification(
     State(state): State<Arc<DaemonState>>,
-    Json(config): Json<NotificationConfig>,
+    Json(mut config): Json<NotificationConfig>,
 ) -> Result<Json<Value>, ApiError> {
     use crate::config::notification_store::NotificationsStore;
     use crate::models::notification::NotificationConfig as NC;
     use crate::models::process_info::ProcessInfo;
     use crate::models::process_status::ProcessStatus;
-    use crate::notifications::sender::{fire_event, ProcessEvent};
+    use crate::notifications::sender::{fire_event_report, ProcessEvent};
     use chrono::Utc;
     use std::collections::HashMap;
     use uuid::Uuid;
+
+    let current = state.notifications.read().await.global.clone();
+    config.preserve_masked_secrets(&current);
+    config
+        .validate()
+        .map_err(|error| ApiError::bad_request(error.to_string()))?;
 
     // Build a minimal fake NotificationsStore where the provided config is the global config
     // so fire_event picks it up unconditionally
@@ -97,6 +150,7 @@ async fn test_notification(
 
     let effective_config = NC {
         events: test_events,
+        events_override: true,
         ..config
     };
 
@@ -121,7 +175,13 @@ async fn test_notification(
         autorestart: false,
         max_restarts: 0,
         watch: false,
-        namespace: state.notifications.read().await.namespaces.keys().next()
+        namespace: state
+            .notifications
+            .read()
+            .await
+            .namespaces
+            .keys()
+            .next()
             .cloned()
             .unwrap_or_else(|| "default".to_string()),
         created_at: Utc::now(),
@@ -140,7 +200,26 @@ async fn test_notification(
         enabled: true,
     };
 
-    fire_event(&store, &proc, ProcessEvent::Started).await;
+    let report = fire_event_report(&store, &proc, ProcessEvent::Started).await;
+    if report.attempted == 0 {
+        return Err(ApiError::bad_request(
+            "no enabled notification target was provided",
+        ));
+    }
+    if !report.errors.is_empty() {
+        return Err(ApiError {
+            status: StatusCode::BAD_GATEWAY,
+            message: format!(
+                "test notification failed for {} of {} target(s): {}",
+                report.errors.len(),
+                report.attempted,
+                report.errors.join("; ")
+            ),
+        });
+    }
 
-    Ok(Json(json!({ "success": true, "message": "test notification dispatched" })))
+    Ok(Json(json!({
+        "success": true,
+        "message": format!("test notification delivered to {} target(s)", report.delivered)
+    })))
 }

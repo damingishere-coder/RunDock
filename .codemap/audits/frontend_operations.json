@@ -1,0 +1,22 @@
+{
+  "score": 68,
+  "grade": "C",
+  "tags": ["bloat", "duplication", "god-component"],
+  "findings": [
+    {
+      "sev": "MED",
+      "loc": "web-ui/src/pages/PortFinderPage.tsx:120",
+      "text": "PortFinderPage 约 1,065 行，把端口扫描、进程匹配、筛选、分页和操作 UI 放在单一页面组件内。"
+    },
+    {
+      "sev": "MED",
+      "loc": "web-ui/src/pages/AnalyticsPage.tsx:1047",
+      "text": "AnalyticsPage 与 LogVolumePage:281 各自维护相近的批量统计拉取和聚合流程；两者已使用 single-flight，但统计数据适配仍重复。"
+    },
+    {
+      "sev": "MED",
+      "loc": "web-ui/src/components/NotifModal.tsx:12",
+      "text": "NotifModal 与 NotificationsPage:127 分别维护通知事件默认结构，新增事件字段时存在两处同步成本。"
+    }
+  ]
+}

@@ -11,6 +11,7 @@ import TelegramTab from '@/components/settings/TelegramTab'
 import LogAlertsTab from '@/components/settings/LogAlertsTab'
 import TunnelsTab from '@/components/settings/TunnelsTab'
 import TerminalTab from '@/components/settings/TerminalTab'
+import ServersTab from '@/components/settings/ServersTab'
 
 interface Props {
   settings: AppSettings
@@ -18,17 +19,27 @@ interface Props {
   onReset: () => void
 }
 
-type TabId = 'general' | 'ui' | 'security' | 'ai' | 'telegram' | 'log-alerts' | 'tunnels' | 'terminal'
+type TabId =
+  | 'general'
+  | 'ui'
+  | 'security'
+  | 'ai'
+  | 'telegram'
+  | 'log-alerts'
+  | 'tunnels'
+  | 'terminal'
+  | 'servers'
 
 const TABS: { id: TabId; label: string }[] = [
-  { id: 'general',    label: '常规'    },
-  { id: 'ui',         label: '界面'         },
-  { id: 'security',   label: '安全'   },
-  { id: 'ai',         label: 'AI'         },
-  { id: 'telegram',   label: 'Telegram'   },
+  { id: 'general', label: '常规' },
+  { id: 'ui', label: '界面' },
+  { id: 'security', label: '安全' },
+  { id: 'ai', label: 'AI' },
+  { id: 'telegram', label: 'Telegram' },
   { id: 'log-alerts', label: '日志告警' },
-  { id: 'tunnels',    label: '隧道'    },
-  { id: 'terminal',   label: '终端'   },
+  { id: 'servers', label: '服务器' },
+  { id: 'tunnels', label: '隧道' },
+  { id: 'terminal', label: '终端' },
 ]
 
 // @group BusinessLogic > SettingsPage : Main settings page — tab bar + active tab routing
@@ -55,45 +66,77 @@ export default function SettingsPage({ settings, onUpdate, onReset }: Props) {
 
   return (
     <div style={{ padding: '20px 28px' }}>
-
       {/* Header */}
-      <div style={{ marginBottom: 20, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+      <div
+        style={{
+          marginBottom: 20,
+          display: 'flex',
+          alignItems: 'flex-start',
+          justifyContent: 'space-between',
+        }}
+      >
         <h2 style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>设置</h2>
         {activeTab === 'general' && !isDefault && (
           <button
             type="button"
             onClick={onReset}
             style={{
-              padding: '6px 14px', fontSize: 12,
+              padding: '6px 14px',
+              fontSize: 12,
               background: 'transparent',
               border: '1px solid var(--color-destructive)',
-              borderRadius: 5, cursor: 'pointer',
+              borderRadius: 5,
+              cursor: 'pointer',
               color: 'var(--color-destructive)',
             }}
           >
-           恢复默认设置
+            恢复默认设置
           </button>
         )}
       </div>
 
       {/* Tab bar */}
-      <div style={{ display: 'flex', gap: 2, borderBottom: '1px solid var(--color-border)', marginBottom: 24 }}>
+      <div
+        role="tablist"
+        aria-label="设置分类"
+        style={{
+          display: 'flex',
+          gap: 2,
+          borderBottom: '1px solid var(--color-border)',
+          marginBottom: 24,
+        }}
+      >
         {TABS.map(t => (
-          <button key={t.id} style={tabStyle(activeTab === t.id)} onClick={() => navigate(`/settings/${t.id}`)}>
+          <button
+            key={t.id}
+            id={`settings-tab-${t.id}`}
+            role="tab"
+            aria-selected={activeTab === t.id}
+            aria-controls={`settings-panel-${t.id}`}
+            style={tabStyle(activeTab === t.id)}
+            onClick={() => navigate(`/settings/${t.id}`)}
+          >
             {t.label}
           </button>
         ))}
       </div>
 
       {/* Active tab */}
-      {activeTab === 'general'    && <GeneralTab    settings={settings} onUpdate={onUpdate} />}
-      {activeTab === 'ui'         && <UiTab         settings={settings} onUpdate={onUpdate} />}
-      {activeTab === 'security'   && <SecurityTab   />}
-      {activeTab === 'ai'         && <AiTab         />}
-      {activeTab === 'telegram'   && <TelegramTab   />}
-      {activeTab === 'log-alerts' && <LogAlertsTab  />}
-      {activeTab === 'tunnels'    && <TunnelsTab    />}
-      {activeTab === 'terminal'   && <TerminalTab   settings={settings} onUpdate={onUpdate} />}
+      <div
+        id={`settings-panel-${activeTab}`}
+        role="tabpanel"
+        aria-labelledby={`settings-tab-${activeTab}`}
+      >
+        {activeTab === 'general' && <GeneralTab settings={settings} onUpdate={onUpdate} />}
+        {activeTab === 'ui' && <UiTab settings={settings} onUpdate={onUpdate} />}
+        {activeTab === 'security' && <SecurityTab />}
+        {activeTab === 'ai' && <AiTab />}
+        {activeTab === 'telegram' && <TelegramTab />}
+        {activeTab === 'log-alerts' && <LogAlertsTab />}
+        {activeTab === 'servers' && <ServersTab />}
+        {activeTab === 'tunnels' && <TunnelsTab />}
+        {activeTab === 'terminal' && <TerminalTab settings={settings} onUpdate={onUpdate} />}
+      </div>
 
       <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
     </div>

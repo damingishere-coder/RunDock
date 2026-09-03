@@ -1,13 +1,30 @@
 // @group BusinessLogic > GeneralTab : General settings — polling, behaviour, storage, daemon, updates
 
 import { useEffect, useState } from 'react'
-import { ArrowDownToLine, Check, ChevronDown, ChevronUp, Loader, RefreshCw, RotateCcw } from 'lucide-react'
+import {
+  ArrowDownToLine,
+  Check,
+  ChevronDown,
+  ChevronUp,
+  Loader,
+  RefreshCw,
+  RotateCcw,
+} from 'lucide-react'
 import type { UpdateInfo } from '@/types'
 import type { AppSettings } from '@/lib/settings'
 import { LOG_TAIL_OPTIONS, REFRESH_INTERVAL_OPTIONS } from '@/lib/settings'
 import { api } from '@/lib/api'
 import { NamespaceInput } from '@/components/NamespaceInput'
-import { card, CopyPath, descStyle, inputStyle, labelStyle, rowStyle, sectionTitle, selectStyle, SettingRow, Toggle } from './shared'
+import { CopyPath, SettingRow, Toggle } from './shared'
+import {
+  card,
+  descStyle,
+  inputStyle,
+  labelStyle,
+  rowStyle,
+  sectionTitle,
+  selectStyle,
+} from './sharedStyles'
 
 interface Props {
   settings: AppSettings
@@ -16,8 +33,11 @@ interface Props {
 
 export default function GeneralTab({ settings, onUpdate }: Props) {
   const [sysPaths, setSysPaths] = useState<{ data_dir: string; log_dir: string } | null>(null)
+  const [sysPathsError, setSysPathsError] = useState<string | null>(null)
   const [restarting, setRestarting] = useState(false)
-  const [restartStatus, setRestartStatus] = useState<'idle' | 'restarting' | 'done' | 'error'>('idle')
+  const [restartStatus, setRestartStatus] = useState<'idle' | 'restarting' | 'done' | 'error'>(
+    'idle'
+  )
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null)
   const [updateChecking, setUpdateChecking] = useState(false)
   const [updateStatus, setUpdateStatus] = useState<'idle' | 'updating' | 'done' | 'error'>('idle')
@@ -25,7 +45,15 @@ export default function GeneralTab({ settings, onUpdate }: Props) {
   const [releaseNotesOpen, setReleaseNotesOpen] = useState(false)
 
   useEffect(() => {
-    api.getSystemPaths().then(setSysPaths).catch(() => {})
+    api
+      .getSystemPaths()
+      .then(paths => {
+        setSysPaths(paths)
+        setSysPathsError(null)
+      })
+      .catch(error => {
+        setSysPathsError(error instanceof Error ? error.message : '读取系统路径失败')
+      })
   }, [])
 
   // @group BusinessLogic > Daemon : Restart daemon and poll until it comes back
@@ -33,11 +61,17 @@ export default function GeneralTab({ settings, onUpdate }: Props) {
     setRestarting(true)
     setRestartStatus('restarting')
     try {
-      await api.restartDaemon().catch(() => {})
+      await api.restartDaemon()
       let ok = false
       for (let i = 0; i < 25; i++) {
         await new Promise(r => setTimeout(r, 600))
-        try { await api.getHealth(); ok = true; break } catch { /* not up yet */ }
+        try {
+          await api.getHealth()
+          ok = true
+          break
+        } catch {
+          /* not up yet */
+        }
       }
       setRestartStatus(ok ? 'done' : 'error')
     } catch {
@@ -65,20 +99,15 @@ export default function GeneralTab({ settings, onUpdate }: Props) {
 
   // @group BusinessLogic > Update : Download and apply the update, then reconnect
   async function handleApplyUpdate() {
-    if (!updateInfo?.download_url) return
+    if (!updateInfo?.download_url || !updateInfo.integrity_verified) return
     setUpdateStatus('updating')
     setUpdateError(null)
     try {
-      await api.applyUpdate(updateInfo.download_url).catch(() => {})
-      let ok = false
-      for (let i = 0; i < 40; i++) {
-        await new Promise(r => setTimeout(r, 750))
-        try { await api.getHealth(); ok = true; break } catch { /* not up yet */ }
-      }
-      setUpdateStatus(ok ? 'done' : 'error')
-      if (ok) setTimeout(() => window.location.reload(), 1500)
-    } catch {
+      await api.applyUpdate()
+      setUpdateStatus('done')
+    } catch (error: unknown) {
       setUpdateStatus('error')
+      setUpdateError(error instanceof Error ? error.message : '更新失败')
     }
   }
 
@@ -98,13 +127,16 @@ export default function GeneralTab({ settings, onUpdate }: Props) {
           description="进程列表的刷新频率。"
           control={
             <select
+              aria-label="进程刷新间隔"
               value={settings.processRefreshInterval}
               onChange={e => onUpdate({ processRefreshInterval: Number(e.target.value) })}
               disabled={!settings.autoRefresh}
               style={{ ...selectStyle, opacity: settings.autoRefresh ? 1 : 0.4 }}
             >
               {REFRESH_INTERVAL_OPTIONS.map(o => (
-                <option key={o.value} value={o.value}>{o.label}</option>
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
               ))}
             </select>
           }
@@ -115,12 +147,15 @@ export default function GeneralTab({ settings, onUpdate }: Props) {
           isLast
           control={
             <select
+              aria-label="健康检查间隔"
               value={settings.healthRefreshInterval}
               onChange={e => onUpdate({ healthRefreshInterval: Number(e.target.value) })}
               style={selectStyle}
             >
               {REFRESH_INTERVAL_OPTIONS.map(o => (
-                <option key={o.value} value={o.value}>{o.label}</option>
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
               ))}
             </select>
           }
@@ -133,7 +168,10 @@ export default function GeneralTab({ settings, onUpdate }: Props) {
           label="删除前确认"
           description="删除进程时显示确认对话框。"
           control={
-            <Toggle checked={settings.confirmBeforeDelete} onChange={v => onUpdate({ confirmBeforeDelete: v })} />
+            <Toggle
+              checked={settings.confirmBeforeDelete}
+              onChange={v => onUpdate({ confirmBeforeDelete: v })}
+            />
           }
         />
         <SettingRow
@@ -141,7 +179,10 @@ export default function GeneralTab({ settings, onUpdate }: Props) {
           description="关闭守护进程时显示确认对话框。"
           isLast
           control={
-            <Toggle checked={settings.confirmBeforeShutdown} onChange={v => onUpdate({ confirmBeforeShutdown: v })} />
+            <Toggle
+              checked={settings.confirmBeforeShutdown}
+              onChange={v => onUpdate({ confirmBeforeShutdown: v })}
+            />
           }
         />
       </div>
@@ -154,12 +195,15 @@ export default function GeneralTab({ settings, onUpdate }: Props) {
           isLast
           control={
             <select
+              aria-label="默认日志行数"
               value={settings.logTailLines}
               onChange={e => onUpdate({ logTailLines: Number(e.target.value) })}
               style={selectStyle}
             >
               {LOG_TAIL_OPTIONS.map(o => (
-                <option key={o.value} value={o.value}>{o.label}</option>
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
               ))}
             </select>
           }
@@ -188,30 +232,38 @@ export default function GeneralTab({ settings, onUpdate }: Props) {
         <SettingRow
           label="数据目录"
           description="RunDock 存储状态、PID 和守护进程日志的根目录。"
-          control={sysPaths ? <CopyPath value={sysPaths.data_dir} /> : <span style={{ fontSize: 11, color: 'var(--color-muted-foreground)' }}>加载中…</span>}
+          control={
+            sysPaths ? (
+              <CopyPath value={sysPaths.data_dir} />
+            ) : sysPathsError ? (
+              <span style={{ fontSize: 11, color: 'var(--color-destructive)' }}>
+                {sysPathsError}
+              </span>
+            ) : (
+              <span style={{ fontSize: 11, color: 'var(--color-muted-foreground)' }}>加载中…</span>
+            )
+          }
         />
         <SettingRow
           label="日志目录"
-          description={<>进程标准输出/错误输出日志的写入目录。可通过 <code style={{ fontSize: 10, fontFamily: 'monospace' }}>ALTER_LOG_DIR</code> 环境变量覆盖。</>}
-          isLast
-          control={sysPaths ? <CopyPath value={sysPaths.log_dir} /> : <span style={{ fontSize: 11, color: 'var(--color-muted-foreground)' }}>加载中…</span>}
-        />
-      </div>
-
-      <p style={sectionTitle}>连接</p>
-      <div style={card}>
-        <SettingRow
-          label="守护进程 URL"
-          description="RunDock 守护进程的基础 URL。远程运行时可修改。"
+          description={
+            <>
+              进程标准输出/错误输出日志的写入目录。可通过{' '}
+              <code style={{ fontSize: 10, fontFamily: 'monospace' }}>ALTER_LOG_DIR</code>{' '}
+              环境变量覆盖。
+            </>
+          }
           isLast
           control={
-            <input
-              style={{ ...inputStyle, width: 200, fontSize: 12, padding: '5px 10px', fontFamily: 'monospace' }}
-              value={settings.daemonUrl}
-              onChange={e => onUpdate({ daemonUrl: e.target.value })}
-              placeholder="http://127.0.0.1:2999"
-              spellCheck={false}
-            />
+            sysPaths ? (
+              <CopyPath value={sysPaths.log_dir} />
+            ) : sysPathsError ? (
+              <span style={{ fontSize: 11, color: 'var(--color-destructive)' }}>
+                {sysPathsError}
+              </span>
+            ) : (
+              <span style={{ fontSize: 11, color: 'var(--color-muted-foreground)' }}>加载中…</span>
+            )
           }
         />
       </div>
@@ -227,22 +279,41 @@ export default function GeneralTab({ settings, onUpdate }: Props) {
               onClick={handleRestartDaemon}
               disabled={restarting}
               style={{
-                display: 'flex', alignItems: 'center', gap: 7,
-                padding: '6px 14px', fontSize: 12, fontWeight: 500,
-                background: restartStatus === 'done' ? 'var(--color-status-running)'
-                  : restartStatus === 'error' ? 'var(--color-destructive)'
-                  : 'var(--color-secondary)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 7,
+                padding: '6px 14px',
+                fontSize: 12,
+                fontWeight: 500,
+                background:
+                  restartStatus === 'done'
+                    ? 'var(--color-status-running)'
+                    : restartStatus === 'error'
+                      ? 'var(--color-destructive)'
+                      : 'var(--color-secondary)',
                 color: restartStatus === 'idle' ? 'var(--color-foreground)' : '#fff',
                 border: '1px solid var(--color-border)',
-                borderRadius: 6, cursor: restarting ? 'default' : 'pointer',
-                opacity: restarting ? 0.7 : 1, transition: 'background 0.2s',
+                borderRadius: 6,
+                cursor: restarting ? 'default' : 'pointer',
+                opacity: restarting ? 0.7 : 1,
+                transition: 'background 0.2s',
               }}
             >
-              {restarting
-                ? <><Loader size={12} style={{ animation: 'spin 1s linear infinite' }} /> 重启中…</>
-                : restartStatus === 'done' ? <><Check size={12} /> 已恢复连接</>
-                : restartStatus === 'error' ? '连接失败'
-                : <><RotateCcw size={12} /> 重启守护进程</>}
+              {restarting ? (
+                <>
+                  <Loader size={12} style={{ animation: 'spin 1s linear infinite' }} /> 重启中…
+                </>
+              ) : restartStatus === 'done' ? (
+                <>
+                  <Check size={12} /> 已恢复连接
+                </>
+              ) : restartStatus === 'error' ? (
+                '连接失败'
+              ) : (
+                <>
+                  <RotateCcw size={12} /> 重启守护进程
+                </>
+              )}
             </button>
           }
         />
@@ -250,44 +321,80 @@ export default function GeneralTab({ settings, onUpdate }: Props) {
 
       <p style={sectionTitle}>更新</p>
       <div style={card}>
-        <div style={{ ...rowStyle, borderBottom: updateInfo && !updateInfo.up_to_date ? '1px solid var(--color-border)' : 'none', paddingBottom: updateInfo && !updateInfo.up_to_date ? 10 : 0 }}>
+        <div
+          style={{
+            ...rowStyle,
+            borderBottom:
+              updateInfo && !updateInfo.up_to_date ? '1px solid var(--color-border)' : 'none',
+            paddingBottom: updateInfo && !updateInfo.up_to_date ? 10 : 0,
+          }}
+        >
           <div style={{ flex: 1, paddingRight: 24 }}>
             <div style={labelStyle}>应用版本</div>
             <div style={descStyle}>
-              当前版本：<code style={{ fontFamily: 'monospace', fontSize: 11 }}>{updateInfo?.current ?? '…'}</code>
+              当前版本：
+              <code style={{ fontFamily: 'monospace', fontSize: 11 }}>
+                {updateInfo?.current ?? '…'}
+              </code>
               {updateInfo && !updateInfo.up_to_date && (
                 <span style={{ marginLeft: 8, color: '#f97316', fontWeight: 600 }}>
                   → v{updateInfo.latest} 可用
                 </span>
               )}
               {updateInfo?.up_to_date && (
-                <span style={{ marginLeft: 8, color: 'var(--color-status-running)' }}>✓ 已是最新版本</span>
+                <span style={{ marginLeft: 8, color: 'var(--color-status-running)' }}>
+                  ✓ 已是最新版本
+                </span>
               )}
             </div>
-            {updateError && <div style={{ ...descStyle, color: 'var(--color-destructive)', marginTop: 4 }}>{updateError}</div>}
+            {updateError && (
+              <div style={{ ...descStyle, color: 'var(--color-destructive)', marginTop: 4 }}>
+                {updateError}
+              </div>
+            )}
           </div>
           <button
             onClick={handleCheckUpdate}
             disabled={updateChecking || updateStatus === 'updating'}
             style={{
-              display: 'flex', alignItems: 'center', gap: 6,
-              padding: '6px 14px', fontSize: 12, fontWeight: 500,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              padding: '6px 14px',
+              fontSize: 12,
+              fontWeight: 500,
               background: 'var(--color-secondary)',
               color: 'var(--color-foreground)',
               border: '1px solid var(--color-border)',
-              borderRadius: 6, cursor: updateChecking ? 'default' : 'pointer',
-              opacity: updateChecking ? 0.6 : 1, flexShrink: 0,
+              borderRadius: 6,
+              cursor: updateChecking ? 'default' : 'pointer',
+              opacity: updateChecking ? 0.6 : 1,
+              flexShrink: 0,
             }}
           >
-            {updateChecking
-              ? <><Loader size={12} style={{ animation: 'spin 1s linear infinite' }} /> 检查中…</>
-              : <><RefreshCw size={12} /> 检查更新</>}
+            {updateChecking ? (
+              <>
+                <Loader size={12} style={{ animation: 'spin 1s linear infinite' }} /> 检查中…
+              </>
+            ) : (
+              <>
+                <RefreshCw size={12} /> 检查更新
+              </>
+            )}
           </button>
         </div>
 
         {updateInfo && !updateInfo.up_to_date && (
           <div style={{ paddingTop: 12 }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 10 }}>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 12,
+                marginBottom: 10,
+              }}
+            >
               <div>
                 <div style={{ fontSize: 13, fontWeight: 600, color: '#f97316' }}>
                   v{updateInfo.latest} 可用
@@ -297,36 +404,60 @@ export default function GeneralTab({ settings, onUpdate }: Props) {
                     发布于 {new Date(updateInfo.published_at).toLocaleDateString('zh-CN')}
                   </div>
                 )}
-                {!updateInfo.download_url && (
+                {(!updateInfo.download_url || !updateInfo.integrity_verified) && (
                   <div style={{ ...descStyle, color: 'var(--color-destructive)', marginTop: 2 }}>
-                    找不到适用于此平台的文件 — 请从 GitHub 手动更新。
+                    自动更新缺少受信校验信息 — 请从 GitHub 手动更新。
                   </div>
                 )}
               </div>
-              {updateInfo.download_url && (
+              {updateInfo.download_url && updateInfo.integrity_verified && (
                 <button
                   onClick={handleApplyUpdate}
                   disabled={updateStatus === 'updating' || updateStatus === 'done'}
                   style={{
-                    display: 'flex', alignItems: 'center', gap: 7,
-                    padding: '7px 16px', fontSize: 12, fontWeight: 600,
-                    background: updateStatus === 'done' ? 'var(--color-status-running)'
-                      : updateStatus === 'error' ? 'var(--color-destructive)'
-                      : 'var(--color-primary)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 7,
+                    padding: '7px 16px',
+                    fontSize: 12,
+                    fontWeight: 600,
+                    background:
+                      updateStatus === 'done'
+                        ? 'var(--color-status-running)'
+                        : updateStatus === 'error'
+                          ? 'var(--color-destructive)'
+                          : 'var(--color-primary)',
                     color: '#fff',
-                    border: 'none', borderRadius: 6,
-                    cursor: updateStatus === 'updating' || updateStatus === 'done' ? 'default' : 'pointer',
+                    border: 'none',
+                    borderRadius: 6,
+                    cursor:
+                      updateStatus === 'updating' || updateStatus === 'done'
+                        ? 'default'
+                        : 'pointer',
                     opacity: updateStatus === 'updating' ? 0.75 : 1,
                     flexShrink: 0,
                   }}
                 >
-                  {updateStatus === 'updating'
-                    ? <><Loader size={12} style={{ animation: 'spin 1s linear infinite' }} /> 下载中…</>
-                    : updateStatus === 'done' ? <><Check size={12} /> {updateInfo.is_installer ? '安装程序已启动' : '重新加载中…'}</>
-                    : updateStatus === 'error' ? '失败 — 重试？'
-                    : updateInfo.is_installer
-                      ? <><ArrowDownToLine size={12} /> 下载并安装</>
-                      : <><ArrowDownToLine size={12} /> 立即更新</>}
+                  {updateStatus === 'updating' ? (
+                    <>
+                      <Loader size={12} style={{ animation: 'spin 1s linear infinite' }} /> 下载中…
+                    </>
+                  ) : updateStatus === 'done' ? (
+                    <>
+                      <Check size={12} />{' '}
+                      {updateInfo.is_installer ? '安装程序已启动' : '重新加载中…'}
+                    </>
+                  ) : updateStatus === 'error' ? (
+                    '失败 — 重试？'
+                  ) : updateInfo.is_installer ? (
+                    <>
+                      <ArrowDownToLine size={12} /> 下载并安装
+                    </>
+                  ) : (
+                    <>
+                      <ArrowDownToLine size={12} /> 立即更新
+                    </>
+                  )}
                 </button>
               )}
             </div>
@@ -336,23 +467,38 @@ export default function GeneralTab({ settings, onUpdate }: Props) {
                 <button
                   onClick={() => setReleaseNotesOpen(o => !o)}
                   style={{
-                    display: 'flex', alignItems: 'center', gap: 4,
-                    background: 'transparent', border: 'none', cursor: 'pointer',
-                    fontSize: 11, color: 'var(--color-muted-foreground)', padding: 0, marginBottom: 6,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 4,
+                    background: 'transparent',
+                    border: 'none',
+                    cursor: 'pointer',
+                    fontSize: 11,
+                    color: 'var(--color-muted-foreground)',
+                    padding: 0,
+                    marginBottom: 6,
                   }}
                 >
                   {releaseNotesOpen ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
                   发布说明
                 </button>
                 {releaseNotesOpen && (
-                  <pre style={{
-                    fontSize: 11, fontFamily: 'monospace',
-                    background: 'var(--color-muted)', border: '1px solid var(--color-border)',
-                    borderRadius: 4, padding: '8px 10px', margin: 0,
-                    whiteSpace: 'pre-wrap', wordBreak: 'break-word',
-                    maxHeight: 200, overflow: 'auto',
-                    color: 'var(--color-foreground)',
-                  }}>
+                  <pre
+                    style={{
+                      fontSize: 11,
+                      fontFamily: 'monospace',
+                      background: 'var(--color-muted)',
+                      border: '1px solid var(--color-border)',
+                      borderRadius: 4,
+                      padding: '8px 10px',
+                      margin: 0,
+                      whiteSpace: 'pre-wrap',
+                      wordBreak: 'break-word',
+                      maxHeight: 200,
+                      overflow: 'auto',
+                      color: 'var(--color-foreground)',
+                    }}
+                  >
                     {updateInfo.release_notes}
                   </pre>
                 )}
@@ -381,9 +527,15 @@ export default function GeneralTab({ settings, onUpdate }: Props) {
         </>
       )}
 
-      <p style={{ fontSize: 11, color: 'var(--color-muted-foreground)', textAlign: 'center', marginTop: 8 }}>
-        设置存储在守护进程数据目录中，并会在会话之间保留。
-        {' '}更改会立即生效。
+      <p
+        style={{
+          fontSize: 11,
+          color: 'var(--color-muted-foreground)',
+          textAlign: 'center',
+          marginTop: 8,
+        }}
+      >
+        设置存储在守护进程数据目录中，并会在会话之间保留。 更改会立即生效。
       </p>
     </>
   )

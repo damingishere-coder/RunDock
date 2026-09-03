@@ -2,8 +2,7 @@
 
 use crate::cli::args::StartArgs;
 use crate::client::daemon_client::DaemonClient;
-use crate::models::api_types::EcosystemRequest;
-use anyhow::Result;
+use anyhow::{Context, Result};
 use serde_json::json;
 use std::collections::HashMap;
 
@@ -18,9 +17,13 @@ pub async fn run(client: &DaemonClient, args: StartArgs, json_mode: bool) -> Res
     // Parse KEY=VALUE env pairs
     let mut env: HashMap<String, String> = HashMap::new();
     for kv in args.env.unwrap_or_default() {
-        if let Some((k, v)) = kv.split_once('=') {
-            env.insert(k.to_string(), v.to_string());
+        let Some((key, value)) = kv.split_once('=') else {
+            anyhow::bail!("invalid --env value '{kv}'; expected KEY=VALUE");
+        };
+        if key.is_empty() {
+            anyhow::bail!("invalid --env value '{kv}'; KEY cannot be empty");
         }
+        env.insert(key.to_string(), value.to_string());
     }
 
     let body = json!({
@@ -45,7 +48,12 @@ pub async fn run(client: &DaemonClient, args: StartArgs, json_mode: bool) -> Res
         let name = result["name"].as_str().unwrap_or("?");
         let id = result["id"].as_str().unwrap_or("?");
         let status = result["status"].as_str().unwrap_or("?");
-        println!("[alter] started '{}' ({}): {}", name, &id[..8.min(id.len())], status);
+        println!(
+            "[RunDock] started '{}' ({}): {}",
+            name,
+            &id[..8.min(id.len())],
+            status
+        );
     }
     Ok(())
 }
@@ -54,7 +62,7 @@ async fn run_ecosystem(client: &DaemonClient, path: &str, json_mode: bool) -> Re
     ensure_daemon(client).await?;
 
     let abs_path = std::fs::canonicalize(path)
-        .unwrap_or_else(|_| std::path::PathBuf::from(path))
+        .with_context(|| format!("cannot resolve ecosystem config path '{path}'"))?
         .to_string_lossy()
         .to_string();
 
@@ -66,10 +74,10 @@ async fn run_ecosystem(client: &DaemonClient, path: &str, json_mode: bool) -> Re
     } else {
         let started = result["started"].as_u64().unwrap_or(0);
         let total = result["total"].as_u64().unwrap_or(0);
-        println!("[alter] started {started}/{total} apps from ecosystem config");
+        println!("[RunDock] started {started}/{total} apps from ecosystem config");
         if let Some(errors) = result["errors"].as_array() {
             for e in errors {
-                eprintln!("[alter] error: {}", e.as_str().unwrap_or("unknown"));
+                eprintln!("[RunDock] error: {}", e.as_str().unwrap_or("unknown"));
             }
         }
     }
@@ -78,7 +86,7 @@ async fn run_ecosystem(client: &DaemonClient, path: &str, json_mode: bool) -> Re
 
 async fn ensure_daemon(client: &DaemonClient) -> Result<()> {
     if !client.is_alive().await {
-        eprintln!("[alter] daemon is not running. Start it with: alter daemon start");
+        eprintln!("[RunDock] daemon is not running. Start it with: alter daemon start");
         std::process::exit(1);
     }
     Ok(())
