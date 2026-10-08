@@ -2,7 +2,7 @@
 
 import type { ProjectActionResponse, ProjectInfo, ProjectStatus } from '@/types'
 
-export const PROJECT_CATEGORIES = ['常用', '待定'] as const
+export const PROJECT_CATEGORIES = ['常用', '暂时不用', '待定'] as const
 
 export function projectCategoryRank(category: string): number {
   if (category === '常用') return 0

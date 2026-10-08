@@ -44,6 +44,81 @@ function renderPage(reload = vi.fn()) {
   }
 }
 
+describe('ProjectsPage category collapse', () => {
+  const inactiveProject = {
+    ...project,
+    id: 'inactive-1',
+    display_name: 'QQ Study',
+    category: '暂时不用',
+  }
+
+  function renderCategories(entry = '/processes', inactive = inactiveProject) {
+    return render(
+      <MemoryRouter initialEntries={[entry]}>
+        <ProjectsPage projects={[project, inactive]} error={null} reload={vi.fn()} />
+      </MemoryRouter>
+    )
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.mocked(api.getPorts).mockResolvedValue({ ports: [] })
+  })
+
+  it('defaults temporarily unused projects to a collapsed group while common projects stay visible', () => {
+    renderCategories()
+    const group = screen.getByRole('region', { name: '暂时不用分组' })
+    expect(within(group).getByRole('button', { name: '展开暂时不用分组' })).toHaveAttribute(
+      'aria-expanded',
+      'false'
+    )
+    expect(within(group).getByText('1')).toBeVisible()
+    expect(within(group).getByText('QQ Study')).not.toBeVisible()
+    expect(screen.getByTestId('project-identity-project-1')).toBeVisible()
+  })
+
+  it('expands and collapses a group without changing project metadata or runtime', async () => {
+    const user = userEvent.setup()
+    renderCategories()
+    await user.click(screen.getByRole('button', { name: '展开暂时不用分组' }))
+    expect(screen.getByTestId('project-identity-inactive-1')).toBeVisible()
+    await user.click(screen.getByRole('button', { name: '收起暂时不用分组' }))
+    expect(screen.getByTestId('project-identity-inactive-1')).not.toBeVisible()
+    expect(api.updateProject).not.toHaveBeenCalled()
+    expect(api.startProject).not.toHaveBeenCalled()
+    expect(api.stopProject).not.toHaveBeenCalled()
+    expect(api.restartProject).not.toHaveBeenCalled()
+  })
+
+  it('reveals matching projects during search and restores collapse when search is cleared', async () => {
+    const user = userEvent.setup()
+    renderCategories()
+    const search = screen.getByRole('textbox', { name: '搜索项目' })
+    await user.type(search, 'QQ Study')
+    expect(screen.getByTestId('project-identity-inactive-1')).toBeVisible()
+    await user.clear(search)
+    expect(screen.getByTestId('project-identity-inactive-1')).not.toBeVisible()
+  })
+
+  it('reveals a temporarily unused project reached through a direct link', () => {
+    renderCategories('/processes#inactive-1')
+    expect(screen.getByTestId('project-identity-inactive-1')).toBeVisible()
+  })
+
+  it('keeps existing custom categories separate and offers the new category in the move selector', () => {
+    renderCategories('/processes', { ...inactiveProject, category: '实验项目' })
+    expect(
+      within(screen.getByRole('region', { name: '实验项目分组' })).getByText('QQ Study')
+    ).toBeVisible()
+    expect(
+      within(screen.getByRole('region', { name: '常用分组' })).queryByText('QQ Study')
+    ).not.toBeInTheDocument()
+    const select = screen.getByRole('combobox', { name: '移动 AI JobPilot 分类' })
+    expect(within(select).getByRole('option', { name: '暂时不用' })).toBeInTheDocument()
+    expect(within(select).getByRole('option', { name: '实验项目' })).toBeInTheDocument()
+  })
+})
+
 describe('ProjectsPage project identity', () => {
   beforeEach(() => {
     vi.clearAllMocks()

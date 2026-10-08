@@ -59,6 +59,7 @@ import {
   type TerminalShortcuts,
 } from '@/components/TerminalPanel'
 import { api } from '@/lib/api'
+import { projectCategoryRank } from '@/lib/projects'
 import type { ProjectInfo, UpdateInfo } from '@/types'
 
 export { AuthGuard } from '@/components/AuthGuard'
@@ -179,7 +180,9 @@ function Layout({ onLock, canLock }: { onLock: () => void; canLock: boolean }) {
 
   // @group BusinessLogic > SidebarList : One row per active logical project
   const [sidebarSearch, setSidebarSearch] = useState('')
-  const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set())
+  const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(
+    () => new Set(['暂时不用'])
+  )
 
   function toggleSidebarCategory(category: string) {
     setCollapsedCategories(prev => {
@@ -207,12 +210,12 @@ function Layout({ onLock, canLock }: { onLock: () => void; canLock: boolean }) {
     active.sort((a, b) => a.display_name.localeCompare(b.display_name, 'zh-CN'))
     const map = new Map<string, ProjectInfo[]>()
     for (const project of active) {
-      const category = project.category === '待定' ? '待定' : '常用'
+      const category = project.category
       if (!map.has(category)) map.set(category, [])
       map.get(category)!.push(project)
     }
-    return [...map.entries()].sort(([a], [b]) =>
-      a === '常用' ? -1 : b === '常用' ? 1 : a.localeCompare(b, 'zh-CN')
+    return [...map.entries()].sort(
+      ([a], [b]) => projectCategoryRank(a) - projectCategoryRank(b) || a.localeCompare(b, 'zh-CN')
     )
   }, [projects, sidebarSearch])
 
@@ -582,7 +585,7 @@ function Layout({ onLock, canLock }: { onLock: () => void; canLock: boolean }) {
                     key={category}
                     category={category}
                     projects={items}
-                    collapsed={collapsedCategories.has(category)}
+                    collapsed={collapsedCategories.has(category) && !sidebarSearch.trim()}
                     onToggle={() => toggleSidebarCategory(category)}
                     onNavigate={project => {
                       setSidebarOpen(false)

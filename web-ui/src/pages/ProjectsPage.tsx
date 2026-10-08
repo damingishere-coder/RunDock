@@ -1,4 +1,4 @@
-// @group BusinessLogic : Project-first list grouped into common and pending categories
+// @group BusinessLogic : Project-first list with collapsible categories
 
 import { useCallback, useMemo, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
@@ -16,6 +16,7 @@ import { api } from '@/lib/api'
 import {
   PROJECT_CATEGORIES,
   projectActionError,
+  projectCategoryRank,
   projectStatusColor,
   projectStatusLabel,
   sortProjects,
@@ -43,6 +44,9 @@ export default function ProjectsPage({ projects, error, reload }: Props) {
   const { dialogState, confirm, handleConfirm, handleCancel } = useDialog()
   const [search, setSearch] = useState(() => new URLSearchParams(locationSearch).get('q') ?? '')
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set(hash ? [hash.slice(1)] : []))
+  const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(
+    () => new Set(['暂时不用'])
+  )
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(() =>
     hash ? hash.slice(1) : null
   )
@@ -69,15 +73,33 @@ export default function ProjectsPage({ projects, error, reload }: Props) {
     const grouped = new Map<string, ProjectInfo[]>()
     for (const category of PROJECT_CATEGORIES) grouped.set(category, [])
     for (const project of visibleProjects) {
-      const category = PROJECT_CATEGORIES.includes(
-        project.category as (typeof PROJECT_CATEGORIES)[number]
-      )
-        ? project.category
-        : '常用'
-      grouped.get(category)!.push(project)
+      const categoryProjects = grouped.get(project.category) ?? []
+      categoryProjects.push(project)
+      grouped.set(project.category, categoryProjects)
     }
     return [...grouped.entries()]
+      .filter(
+        ([category, categoryProjects]) => category !== '暂时不用' || categoryProjects.length > 0
+      )
+      .sort(
+        ([a], [b]) => projectCategoryRank(a) - projectCategoryRank(b) || a.localeCompare(b, 'zh-CN')
+      )
   }, [visibleProjects])
+
+  const categories = useMemo(
+    () => [...new Set([...PROJECT_CATEGORIES, ...projects.map(project => project.category)])],
+    [projects]
+  )
+
+  const categoryGroups = groups.map(([category, categoryProjects]) => ({
+    category,
+    categoryProjects,
+    groupId: `project-category-${encodeURIComponent(category)}`,
+    isCollapsed:
+      collapsedCategories.has(category) &&
+      !search.trim() &&
+      !categoryProjects.some(project => project.id === hash.slice(1)),
+  }))
 
   const selectedProject = useMemo(
     () => projects.find(project => project.id === selectedProjectId) ?? visibleProjects[0] ?? null,
@@ -152,6 +174,15 @@ export default function ProjectsPage({ projects, error, reload }: Props) {
       const next = new Set(current)
       if (next.has(id)) next.delete(id)
       else next.add(id)
+      return next
+    })
+  }
+
+  function toggleCategory(category: string) {
+    setCollapsedCategories(current => {
+      const next = new Set(current)
+      if (next.has(category)) next.delete(category)
+      else next.add(category)
       return next
     })
   }
@@ -320,18 +351,50 @@ export default function ProjectsPage({ projects, error, reload }: Props) {
 
       <div className="rundock-projects-body">
         <main className="rundock-projects-list">
-          {groups.map(([category, categoryProjects]) => (
-            <section key={category} className="rundock-project-group">
+          {categoryGroups.map(({ category, categoryProjects, groupId, isCollapsed }) => (
+            <section
+              key={category}
+              className="rundock-project-group"
+              aria-label={`${category}分组`}
+            >
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 9 }}>
-                <h3 style={{ margin: 0, fontSize: 13, letterSpacing: '0.04em' }}>{category}</h3>
-                <span style={countPillStyle}>{categoryProjects.length}</span>
+                <h3 style={{ margin: 0, fontSize: 13, letterSpacing: '0.04em' }}>
+                  <button
+                    type="button"
+                    onClick={() => toggleCategory(category)}
+                    aria-label={`${isCollapsed ? '展开' : '收起'}${category}分组`}
+                    aria-expanded={!isCollapsed}
+                    aria-controls={groupId}
+                    disabled={!!search.trim()}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      padding: 0,
+                      border: 'none',
+                      background: 'transparent',
+                      color: 'inherit',
+                      font: 'inherit',
+                      cursor: search.trim() ? 'default' : 'pointer',
+                    }}
+                  >
+                    {isCollapsed ? <ChevronRight size={15} /> : <ChevronDown size={15} />}
+                    {category}
+                    <span style={countPillStyle}>{categoryProjects.length}</span>
+                  </button>
+                </h3>
                 {category === '待定' && (
                   <span style={{ fontSize: 11, color: 'var(--color-muted-foreground)' }}>
                     暂不维护，默认停用且不会批量启动
                   </span>
                 )}
               </div>
-              <div className="rundock-project-group-card">
+              <div
+                id={groupId}
+                className="rundock-project-group-card"
+                hidden={isCollapsed}
+                style={isCollapsed ? { display: 'none' } : undefined}
+              >
                 {categoryProjects.length === 0 ? (
                   <div
                     style={{ padding: 18, fontSize: 12, color: 'var(--color-muted-foreground)' }}
@@ -541,9 +604,9 @@ export default function ProjectsPage({ projects, error, reload }: Props) {
                               disabled={!!currentBusy}
                               onChange={event => void moveProject(project, event.target.value)}
                               aria-label={`移动 ${project.display_name} 分类`}
-                              style={{ ...inputStyle, width: 68, height: 28, padding: '4px' }}
+                              style={{ ...inputStyle, width: 96, height: 28, padding: '4px' }}
                             >
-                              {PROJECT_CATEGORIES.map(item => (
+                              {categories.map(item => (
                                 <option key={item}>{item}</option>
                               ))}
                             </select>
