@@ -103,6 +103,10 @@ pub async fn run(state: Arc<DaemonState>, config: DaemonConfig) -> Result<()> {
         .merge(web::router())
         .nest("/api/v1", api::router(Arc::clone(&state)))
         .layer(cors)
+        .layer(axum::middleware::from_fn_with_state(
+            crate::config::desktop_access::DesktopAccess::load()?,
+            web::desktop_access::enforce,
+        ))
         .layer(TraceLayer::new_for_http());
 
     tracing::info!("HTTP server listening on http://{addr}");

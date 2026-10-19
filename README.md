@@ -25,6 +25,18 @@ tray, and enables current-user login startup by default. Closing the window
 hides it to the tray; **Exit RunDock** closes only the desktop app and leaves the
 daemon and managed projects running.
 
+For desktop-only use, the desktop shell and daemon share
+`%APPDATA%\alter-pm2\desktop-access.json`. After launching the updated desktop
+shell once, set `desktop_only` to `true` in that file, retaining its generated
+credential, and restart the daemon and desktop shell. Browser routes, assets,
+and requests from already-open browser pages are then rejected; the tray no
+longer offers **Open in browser**. Projects, logs, and settings keep using the
+same data directory. CLI and local API integrations retain their existing
+authentication. This is a browser access preference, not an OS security
+boundary or a replacement for API authentication. Set `desktop_only` back to
+`false` and restart both programs to restore browser use. Invalid configuration
+fails closed instead of silently enabling the web dashboard.
+
 ### Debian / Ubuntu (signed APT repository)
 
 Download the public key, inspect its fingerprint against the key attached to the matching [GitHub Release](https://github.com/damingishere-coder/RunDock/releases), then install it:
