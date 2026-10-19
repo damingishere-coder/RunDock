@@ -10,10 +10,6 @@ fn browser_request(headers: &HeaderMap) -> bool {
     ["sec-fetch-mode", "sec-fetch-site", "sec-ch-ua", "origin"]
         .iter()
         .any(|name| headers.contains_key(*name))
-        || headers
-            .get(header::USER_AGENT)
-            .and_then(|value| value.to_str().ok())
-            .is_some_and(|agent| agent.contains("Mozilla/"))
 }
 
 pub async fn enforce(
@@ -83,6 +79,7 @@ mod tests {
             let response = client
                 .get(format!("{base}{path}"))
                 .header(header::USER_AGENT, "Mozilla/5.0")
+                .header("sec-fetch-site", "same-origin")
                 .send()
                 .await
                 .unwrap();
@@ -100,6 +97,18 @@ mod tests {
         let api = format!("{base}/api/v1/system/health");
         assert_eq!(
             client.get(&api).send().await.unwrap().status(),
+            StatusCode::OK
+        );
+        // PowerShell's native HTTP client also uses a Mozilla-style user agent.
+        // Only browser-controlled request metadata should block local API tools.
+        assert_eq!(
+            client
+                .get(&api)
+                .header(header::USER_AGENT, "Mozilla/5.0 PowerShell/7.6.5")
+                .send()
+                .await
+                .unwrap()
+                .status(),
             StatusCode::OK
         );
         assert_eq!(
