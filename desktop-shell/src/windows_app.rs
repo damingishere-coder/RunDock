@@ -165,12 +165,11 @@ fn handle_shell_action(app: &AppHandle, action: Option<&str>) {
     match action {
         Some("retry") => launch_dashboard(app.clone()),
         Some("open-logs") => open_with_windows(&alter::config::paths::data_dir().to_string_lossy()),
-        Some("open-browser") => {
+        Some("open-browser")
             if alter::config::desktop_access::DesktopAccess::load()
-                .is_ok_and(|access| !access.desktop_only)
-            {
-                open_with_windows(DASHBOARD_URL);
-            }
+                .is_ok_and(|access| !access.desktop_only) =>
+        {
+            open_with_windows(DASHBOARD_URL);
         }
         _ => {}
     }
