@@ -199,8 +199,13 @@ fn create_main_window(app: &tauri::App) -> tauri::Result<()> {
     let navigation_app = app.handle().clone();
     let new_window_app = app.handle().clone();
     let close_app = app.handle().clone();
-    let window = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
-        .user_agent(&access.user_agent().expect("desktop credential initialized"))
+    let builder = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()));
+    let builder = if access.desktop_only {
+        builder.user_agent(&access.user_agent().expect("desktop credential initialized"))
+    } else {
+        builder
+    };
+    let window = builder
         .initialization_script(if access.desktop_only {
             "document.addEventListener('DOMContentLoaded', () => document.querySelector('a[href=\"rundock-shell://open-browser\"]')?.setAttribute('hidden', ''));"
         } else {
