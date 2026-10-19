@@ -199,6 +199,10 @@ pub async fn run_cli(cli: Cli) -> anyhow::Result<()> {
         Commands::Unstartup => cli::commands::startup::run_unstartup().await?,
 
         Commands::Web => {
+            anyhow::ensure!(
+                !crate::config::desktop_access::DesktopAccess::load()?.desktop_only,
+                "RunDock 网页端已停用，请使用 RunDock 软件窗口。"
+            );
             let daemon_exe = std::env::current_exe()?;
             crate::daemon::lifecycle::ensure_daemon(&daemon_exe, &cli.host, cli.port).await?;
             let url = format!("http://{}:{}/", cli.host, cli.port);

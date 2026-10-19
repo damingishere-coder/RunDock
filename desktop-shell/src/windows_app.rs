@@ -165,7 +165,13 @@ fn handle_shell_action(app: &AppHandle, action: Option<&str>) {
     match action {
         Some("retry") => launch_dashboard(app.clone()),
         Some("open-logs") => open_with_windows(&alter::config::paths::data_dir().to_string_lossy()),
-        Some("open-browser") => open_with_windows(DASHBOARD_URL),
+        Some("open-browser") => {
+            if alter::config::desktop_access::DesktopAccess::load()
+                .is_ok_and(|access| !access.desktop_only)
+            {
+                open_with_windows(DASHBOARD_URL);
+            }
+        }
         _ => {}
     }
 }
@@ -188,10 +194,18 @@ fn initialize_autostart(app: &AppHandle) {
 }
 
 fn create_main_window(app: &tauri::App) -> tauri::Result<()> {
+    let access = alter::config::desktop_access::DesktopAccess::initialize_desktop()
+        .map_err(tauri::Error::Anyhow)?;
     let navigation_app = app.handle().clone();
     let new_window_app = app.handle().clone();
     let close_app = app.handle().clone();
     let window = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
+        .user_agent(&access.user_agent().expect("desktop credential initialized"))
+        .initialization_script(if access.desktop_only {
+            "document.addEventListener('DOMContentLoaded', () => document.querySelector('a[href=\"rundock-shell://open-browser\"]')?.setAttribute('hidden', ''));"
+        } else {
+            ""
+        })
         .title("RunDock")
         .inner_size(1280.0, 820.0)
         .min_inner_size(960.0, 640.0)
@@ -249,6 +263,8 @@ fn create_main_window(app: &tauri::App) -> tauri::Result<()> {
 }
 
 fn create_tray(app: &tauri::App) -> tauri::Result<()> {
+    let access =
+        alter::config::desktop_access::DesktopAccess::load().map_err(tauri::Error::Anyhow)?;
     let open = MenuItem::with_id(app, "open", "打开 RunDock", true, None::<&str>)?;
     let browser = MenuItem::with_id(app, "browser", "在浏览器中打开", true, None::<&str>)?;
     let autostart = CheckMenuItem::with_id(
@@ -267,7 +283,11 @@ fn create_tray(app: &tauri::App) -> tauri::Result<()> {
         true,
         None::<&str>,
     )?;
-    let menu = Menu::with_items(app, &[&open, &browser, &autostart, &separator, &quit])?;
+    let menu = if access.desktop_only {
+        Menu::with_items(app, &[&open, &autostart, &separator, &quit])?
+    } else {
+        Menu::with_items(app, &[&open, &browser, &autostart, &separator, &quit])?
+    };
     let autostart_item = autostart.clone();
     TrayIconBuilder::with_id("rundock-tray")
         .icon(tauri::image::Image::from_bytes(include_bytes!(

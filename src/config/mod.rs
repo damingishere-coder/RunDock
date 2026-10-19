@@ -3,6 +3,7 @@
 pub mod atomic_file;
 pub mod auth_config;
 pub mod daemon_config;
+pub mod desktop_access;
 pub mod ecosystem;
 pub mod env_file;
 pub mod log_alert_config;

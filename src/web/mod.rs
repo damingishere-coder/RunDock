@@ -9,6 +9,8 @@ use axum::{
 };
 use rust_embed::Embed;
 
+pub mod desktop_access;
+
 #[derive(Embed)]
 #[folder = "web-ui/dist/"]
 struct Assets;
